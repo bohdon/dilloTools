@@ -34,6 +34,6 @@ data_files = get_data_files(distRoot, root, distRoot)
 
 setup(
     name='dilloTools',
-    version='3.0',
+    version='3.1',
     data_files=data_files,
 )

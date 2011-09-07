@@ -6,7 +6,6 @@ def addAllTools(d):
     
     d.clearAllTools()
     d.addCat('Modeling', color=[73, 103, 55], colorDepth=255)
-    d.addMelTool('Remove Crease', 'boRemovePolyCrease;', 'removePolyCrease.png')
     d.addMelTool('Mirror Geometry with Crease', 'boMirrorGeometryCrease;', 'mirrorGeometryCrease.png')
     d.addMelTool('Roadkill', 'RoadKill;', 'roadkill.png')
     d.addMelTool('Face Putty', 'facePutty;', 'facePutty.png')
