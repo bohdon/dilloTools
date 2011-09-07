@@ -24,7 +24,6 @@ def addAllTools(d):
     d.addMelTool('boUtilities', 'source boUtilities; boUtilities;', 'boUtilities.png')
     d.addPyTool('Resetter', 'import boResetter\nreload(boResetter)\nboResetter.GUI()', 'resetter.png', annotation='A tool for resetting animation controls easily')
     d.addMelTool('Rigging Tools', 'dwRiggingTools;', 'dwRiggingTools.png')
-    d.addMelTool('js Facial', 'jsFacial;', 'jsFacial.png')
     d.addMelTool('boSliders', 'source boSliders; boSliders;', 'boSliders.png')
     d.addMelTool('Preset Curve Controllers', 'rig101WireControllers;', 'wire.png')
     d.addMelTool('Parent to Surface', 'parentToSurface;', 'parentToSurface.png')
