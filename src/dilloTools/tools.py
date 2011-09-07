@@ -8,6 +8,7 @@ def addAllTools(d):
     d.addCat('Modeling', color=[73, 103, 55], colorDepth=255)
     d.addMelTool('Mirror Geometry with Crease', 'boMirrorGeometryCrease;', 'mirrorGeometryCrease.png')
     d.addMelTool('Roadkill', 'RoadKill;', 'roadkill.png')
+    d.addPyTool('UV Snapshot', 'import boUVSnapshot\nboUVSnapshot.GUI()', 'uvSnapshot.png')
     d.addMelTool('Face Putty', 'facePutty;', 'facePutty.png')
     d.addMelTool('Symmetry Tool', 'source abSymMesh.mel; abSymMesh;', 'abSymmMesh.png')
     d.addMelTool('Blend Taper', 'source blendTaper.mel; blendTaper;', 'blendTaper.png')
