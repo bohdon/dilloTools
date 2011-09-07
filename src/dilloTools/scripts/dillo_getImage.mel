@@ -1,0 +1,12 @@
+/*
+    Procedure for getting a dilloTools relative image.
+    This allows third party scripts to use icons nested in the images folder.
+*/
+
+
+global proc string dillo_getImage(string $image) {
+    /* Return the full path to a dillo tools image */
+    python("import dilloTools");
+    string $fullImage = python("dilloTools.getDilloImage(\"" + $image + "\")");
+    return $fullImage;
+}

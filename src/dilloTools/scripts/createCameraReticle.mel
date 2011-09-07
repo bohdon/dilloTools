@@ -1,0 +1,726 @@
+////////////////////////////////////////////////////////////////////////////////
+//
+//  $RCSfile: createCameraReticle.mel,v $
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      
+//
+//  CREATED BY
+//      Jayme Wilkinson
+//
+//  CREATTION DATE
+//      Mon Feb 26 19:00:31 EST 2007
+//
+//  HISTORY
+//      $Log$
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  Copyright (c) 1999 - 2007 Jayme Wilkinson Inc.
+//
+//  The software and information contained herein are proprietary to, and
+//  comprise valuable trade secrets of, Jayme Wilkinson, which intends
+//  to preserve as trade secrets such software and information. This software
+//  and information or any other copies thereof may not be provided or
+//  otherwise made available to any other person or organization.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  global proc string getTextBanner()
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//     
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//     	string 	The string value of the PROD-SEQ-SHOT, date and time values
+//
+////////////////////////////////////////////////////////////////////////////////
+global proc string getProdSeqShotDateTime()
+{
+	string $result;
+	
+	//	Add the prod-seq-shot portion of the text banner
+	if (`optionVar -q cameraReticleProdSeqShot` == 1)
+	{
+		//	Get the name of the production.
+		string $prod = `getenv "PROD"`;
+		if ($prod == "") $prod = "unknown";
+		
+    	string $seq = `getenv "SEQ"`;
+    	if ($seq == "") $seq = "unknown";
+		
+		string $shot = `getenv "SHOT"`;
+    	if ($shot == "") $shot = "unknown";
+		
+    	$result += ($prod + " - " + $seq + " - " + $shot); 
+	}
+			
+	$result = $result + "    ";
+
+	//	Add the date portion of the reticle
+	if ((`optionVar -q cameraReticleDate`  == 1) || (`optionVar -q cameraReticleTime` == 1))
+	{
+		string $date;
+		string $time;
+
+		if (`optionVar -q cameraReticleDate` == 1)
+		{
+			$date = 	`about -cd`;
+			string $month[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+			string $buffer[]; tokenize $date "/" $buffer;
+    	
+			$date = ($month[int($buffer[1]) - 1] + " " + $buffer[2] + ", " + $buffer[0]);
+		}
+		else
+		{
+			$date = "         ";
+		}
+
+    	
+		if (`optionVar -q cameraReticleTime` == 1)
+		{
+			$time = `about -ct`;
+			int    $AM   = true;
+			string $buffer[]; tokenize $time ":" $buffer;
+    	
+			if (int($buffer[0]) > 12)
+			{
+				$buffer[0] = int($buffer[0]) - 12;
+				$AM = false;
+			}
+    	
+			$time = ($buffer[0] + ":" + $buffer[1] + ":" + $buffer[2]);
+			if ($AM) $time += " AM"; else $time += " PM";
+		}
+		else
+		{
+			$time = "        ";
+		}
+		
+		$result += ($date + " " + $time);
+	}
+	
+	return $result;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  global proc string getUser()
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      string 	The login name of the current user.
+//
+////////////////////////////////////////////////////////////////////////////////
+global proc string getUserName()
+{
+	string $result;
+	
+	//	Add the user name portion of the reticle
+	if (`optionVar -q cameraReticleUserName`)
+	{
+		$result += `getenv "USER"`;
+	}
+
+	return $result;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  global proc string getFocalLengthFrameCounter()
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS PROCEDURE/FUNCTION HERE.
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      ENTER A DESCRIPTION OF WHAT THIS PROCEDURE RETURNS HERE.
+//
+////////////////////////////////////////////////////////////////////////////////
+global proc string getFrameCounter()
+{
+	string $result;
+
+	//	Add the focal length portion of the reticle	
+	int	$frameCounterType = `optionVar -q cameraReticleFrameCounterType`;                                                          	
+	switch ($frameCounterType)
+	{
+		case 1:
+			//	Frames
+			string $frame = `currentTime -q`;
+			
+			while (size($frame) < 4) $frame = "0" + $frame;
+			
+			$result += $frame;
+			
+			break;                                                                              
+			           
+		case 2:
+			//	Frame Range
+			string $start   = `playbackOptions -q -min`;
+			string $curr    = `currentTime -q`;
+			string $end     = `playbackOptions -q -max`;
+
+			while (size($start) < 4) $start = "0" + $start;
+			while (size($curr)  < 4) $curr  = "0" + $curr;
+			while (size($end)   < 4) $end   = "0" + $end;
+			
+			$result += $start + " " + $curr + " " + $end;
+			
+			break;
+			
+		case 3:
+			//	Foot Frames
+			string $ft  = (int)`currentTime -q` / 16;
+    		string $fr  = (int)`currentTime -q` % 16;
+    		
+    		while (size($ft) < 2) $ft = "0" + $ft;                                                              
+    		while (size($fr) < 2) $fr = "0" + $fr;
+			
+			$result += $ft + " - " + $fr;
+
+			break;
+		
+		case 4:
+			//	Timecode
+			int $fps = 30;
+			string $HH = int((`currentTime -q` / ($fps * 60 * 60)) % 60);
+			string $MM = int((`currentTime -q` / ($fps * 60)) % 60);
+			string $SS = int((`currentTime -q` / $fps) % 60);
+			string $FR = int(`currentTime -q` % $fps);                             
+			
+			while (size($HH) < 2) $HH = "0" + $HH;
+			while (size($MM) < 2) $MM = "0" + $MM;
+			while (size($SS) < 2) $SS = "0" + $SS;
+			while (size($FR) < 2) $FR = "0" + $FR;
+			      
+			$result += $HH + ":" + $MM + ":" + $SS + ":" + $FR;			
+			
+			break;
+	}
+
+    return $result;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  global proc adjustFocusDistance(string $HUD)
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS PROCEDURE/FUNCTION HERE.
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      ENTER A DESCRIPTION OF WHAT THIS PROCEDURE RETURNS HERE.
+//
+////////////////////////////////////////////////////////////////////////////////
+global proc adjustFocusDistance(string $HUD)
+{
+	// Since undo is not turned off automatically, we must
+	// do it ourselves. The HUD will fire off many calls to this
+	// procedure during a drag so we don't want to flood the undo
+	// queue.
+	undoInfo -swf false;
+	
+	
+	//	Get the current panel
+	string $currentPanel = `getPanel -withFocus`;
+	
+	//	Get the camera used in the currentPanel
+	string $camera = `modelPanel -q -cam $currentPanel`;
+	string $temp[] = `listRelatives -s $camera`;
+	string $cameraShape = $temp[0];
+	
+	string $attr  = $cameraShape + ".focusDistance";
+	float  $value = `hudSlider -q -v $HUD`;
+	setAttr $attr $value;
+	
+	// Re-enable the undo queue.
+	undoInfo -swf true;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  global proc adjustFocalLength(string $HUD)
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS PROCEDURE/FUNCTION HERE.
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      ENTER A DESCRIPTION OF WHAT THIS PROCEDURE RETURNS HERE.
+//
+////////////////////////////////////////////////////////////////////////////////
+global proc adjustFocalLength(string $HUD)
+{
+	// Since undo is not turned off automatically, we must
+	// do it ourselves. The HUD will fire off many calls to this
+	// procedure during a drag so we don't want to flood the undo
+	// queue.
+	undoInfo -swf false;
+
+	//	Get the current panel
+	string $currentPanel = `getPanel -withFocus`;
+	
+	//	Get the camera used in the currentPanel
+	string $camera = `modelPanel -q -cam $currentPanel`;
+	string $temp[] = `listRelatives -s $camera`;
+	string $cameraShape = $temp[0];
+	
+	float  $value = `hudSlider -q -v $HUD`;
+	setAttr ($cameraShape + ".focalLength") $value;
+	                                                              
+	// Re-enable the undo queue.
+	undoInfo -swf true;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  proc setOptionVars(int $forceFactorySettings)
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS PROCEDURE/FUNCTION HERE.
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      ENTER A DESCRIPTION OF WHAT THIS PROCEDURE RETURNS HERE.
+//
+////////////////////////////////////////////////////////////////////////////////
+proc setOptionVars(int $forceFactorySettings)
+{
+	//	Production Data
+	if ($forceFactorySettings || !`optionVar -exists cameraReticleProdSeqShot`) optionVar -intValue cameraReticleProdSeqShot 1;
+	
+	//	Date Time Data
+	if ($forceFactorySettings || !`optionVar -exists cameraReticleDate`) optionVar -intValue cameraReticleDate 1;
+	if ($forceFactorySettings || !`optionVar -exists cameraReticleTime`) optionVar -intValue cameraReticleTime 1;
+	
+	//	User Name
+	if ($forceFactorySettings || !`optionVar -exists cameraReticleUserName`) optionVar -intValue cameraReticleUserName 1;
+	
+    //  Frame Counter Type                                            
+	if ($forceFactorySettings || !`optionVar -exists cameraReticleFrameCounter`) optionVar -intValue cameraReticleFrameCounter 1;
+    if ($forceFactorySettings || !`optionVar -exists cameraReticleFrameCounterType`) optionVar -intValue cameraReticleFrameCounterType 1;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  global proc createCameraReticleSetup(string $parent, int $forceFactorySettings)
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS PROCEDURE/FUNCTION HERE.
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      ENTER A DESCRIPTION OF WHAT THIS PROCEDURE RETURNS HERE.
+//
+////////////////////////////////////////////////////////////////////////////////
+global proc createCameraReticleSetup(string $parent, int $forceFactorySettings)
+{
+    //  Retrieve the option settings
+    setOptionVars ($forceFactorySettings);
+    setParent $parent;
+	                                            
+	//	Production Data
+	if (`radioButtonGrp -exists cameraReticleProdSeqShotItem`) radioButtonGrp -e -sl `optionVar -q cameraReticleProdSeqShot` cameraReticleProdSeqShotItem;
+
+	//  Date Time Data
+	if (`radioButtonGrp -exists cameraReticleDateItem`) radioButtonGrp -e -sl `optionVar -q cameraReticleDate` cameraReticleDateItem;
+	if (`radioButtonGrp -exists cameraReticleTimeItem`) radioButtonGrp -e -sl `optionVar -q cameraReticleTime` cameraReticleTimeItem;
+	
+	//	User Name 
+	if (`radioButtonGrp -exists cameraReticleUserNameItem`) radioButtonGrp -e -sl `optionVar -q cameraReticleUserName` cameraReticleUserNameItem;
+	
+	//  Frame Counter Type  
+	if (`radioButtonGrp -exists cameraReticleFrameCounterItem`) radioButtonGrp -e -sl `optionVar -q cameraReticleFrameCounter` cameraReticleFrameCounterItem;   
+	if (`optionMenuGrp -exists cameraReticleFrameCounterTypeItem`) optionMenuGrp -e -sl `optionVar -q cameraReticleFrameCounterType` cameraReticleFrameCounterTypeItem;   	
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  global proc createCameraReticleCallback(string $parent, int $doIt)
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS PROCEDURE/FUNCTION HERE.
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      ENTER A DESCRIPTION OF WHAT THIS PROCEDURE RETURNS HERE.
+//
+////////////////////////////////////////////////////////////////////////////////
+global proc createCameraReticleCallback(string $parent, int $doIt)
+{
+    //////////////////////////////////////////////////////////////////////////
+    //
+    //  Set the optionVar's from the control values, and then perform the
+    //  command.
+    //
+    //////////////////////////////////////////////////////////////////////////
+    setParent $parent;
+       
+	//	Production Data
+	if (`radioButtonGrp -exists cameraReticleProdSeqShotItem`) 	optionVar -iv cameraReticleProdSeqShot `radioButtonGrp -q -sl cameraReticleProdSeqShotItem`;
+
+	//	Date Time Data	
+	if (`radioButtonGrp -exists cameraReticleDateItem`) 	  	optionVar -iv cameraReticleDate `radioButtonGrp -q -sl cameraReticleDateItem`;
+	if (`radioButtonGrp -exists cameraReticleTimeItem`) 	  	optionVar -iv cameraReticleTime `radioButtonGrp -q -sl cameraReticleTimeItem`;
+
+	//  User Name                                                                                                                                    
+	if (`radioButtonGrp -exists cameraReticleUserNameItem`)		optionVar -iv cameraReticleUserName `radioButtonGrp -q -sl cameraReticleUserNameItem`;
+	
+	//	Frame Counter Type
+	if (`radioButtonGrp -exists cameraReticleFrameCounterItem`) 	optionVar -iv cameraReticleFrameCounter `radioButtonGrp -q -sl cameraReticleFrameCounterItem`;
+	if (`optionMenuGrp -exists cameraReticleFrameCounterTypeItem`) 	optionVar -iv cameraReticleFrameCounterType `optionMenuGrp -q -sl cameraReticleFrameCounterTypeItem`;
+   
+    if ($doIt) createCameraReticle;                                                                                                                                           
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  proc createCameraReticleOptions()
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS PROCEDURE/FUNCTION HERE.
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      ENTER A DESCRIPTION OF WHAT THIS PROCEDURE RETURNS HERE.
+//
+////////////////////////////////////////////////////////////////////////////////
+proc createCameraReticleOptions()
+{
+    //  Name of the command for this option box.
+    string $commandName = "createCameraReticle";
+    
+    //  Build the option box actions.
+    string $callback = ($commandName + "Callback");
+    string $setup = ($commandName + "Setup");
+    
+    ///////////////////////////////////////////////////////////////////////////
+    //
+    //	STEP 1:  Get the option box.
+    //	============================
+    //
+    //	The value returned is the name of the layout to be used as
+    //	the parent for the option box UI.
+    //
+    ///////////////////////////////////////////////////////////////////////////
+    string $layout = getOptionBox();
+    setParent $layout;
+    
+    ///////////////////////////////////////////////////////////////////////////
+    //
+    //	STEP 2:  Pass the command name to the option box.
+    //	=================================================
+    //
+    //	Any default option box behaviour based on the command name is set 
+    //	up with this call.  For example, updating the 'Help' menu item with
+    //	the name of the command.
+    //
+    ///////////////////////////////////////////////////////////////////////////
+    setOptionBoxCommandName($commandName);
+    
+    ///////////////////////////////////////////////////////////////////////////
+    //
+    //	STEP 3:  Activate the default UI template.
+    //	==========================================
+    //
+    //	Activate the default UI template so that the layout of this 
+    //	option box is consistent with the layout of the rest of the 
+    //	application.
+    //
+    ///////////////////////////////////////////////////////////////////////////
+    setUITemplate -pushTemplate DefaultTemplate;
+    
+    ///////////////////////////////////////////////////////////////////////////
+    //
+    //	STEP 4: Create option box contents.
+    //	===================================
+    //
+    //      This, of course, will vary from option box to option box.	
+    //
+    ///////////////////////////////////////////////////////////////////////////
+    
+    //  Turn on the wait cursor.
+    waitCursor -state true;
+    tabLayout -tabsVisible 0 -scrollable 1;
+    string $parent = `columnLayout -adjustableColumn 1`;
+    
+    //  Create the option box UI elements.
+    columnLayout -adj true;
+		frameLayout -l "Text Banner Properties" -cl 0 -cll 1;
+			columnLayout -adj 1;
+				radioButtonGrp -l "Prod-Seq-Shot" -nrb 2 -la2 "On" "Off" cameraReticleProdSeqShotItem;
+				radioButtonGrp -l "Date" -nrb 2 -la2 "On" "Off" cameraReticleDateItem;
+				radioButtonGrp -l "Time" -nrb 2 -la2 "On" "Off" cameraReticleTimeItem;
+				radioButtonGrp -l "User Name" -nrb 2 -la2 "On" "Off" cameraReticleUserNameItem;
+				radioButtonGrp -l "Frame Counter" -nrb 2 -la2 "On" "Off" cameraReticleFrameCounterItem;
+				optionMenuGrp -l "Frame Counter Type" cameraReticleFrameCounterTypeItem;
+				menuItem -label "Frames";
+				menuItem -label "Frame Range";
+				menuItem -label "Foot - Frames";
+				menuItem -label "Timecode";
+			setParent ..; 
+		setParent ..;
+	setParent ..;
+			
+	//  Turn off the wait cursor.
+	waitCursor -state false;
+	
+	
+	///////////////////////////////////////////////////////////////////////////
+	//
+	//	Step 5: Deactivate the default UI template.
+	//	===========================================
+	//
+	///////////////////////////////////////////////////////////////////////////
+	setUITemplate -popTemplate;
+	
+	
+	///////////////////////////////////////////////////////////////////////////
+	//
+	//	Step 6: Customize the buttons.  
+	//	==============================
+	//
+	//	Provide more descriptive labels for the buttons.  This is not 
+	//	necessary, but in some cases, for example, a button labelled 
+	//	'Create' may be more meaningful to the user than one labelled
+	//	'Apply'.
+	//
+	//	Disable those buttons that are not applicable to the option box.
+	//
+	//	Attach actions to those buttons that are applicable to the option
+	//	box.  Note that the 'Close' button has a default action attached 
+	//	to it that will hide the window.  If a a custom action is
+	//	attached to the 'Close' button then be sure to call the 'hide the
+	//	option box' procedure within the custom action so that the option
+	//	box is hidden properly.
+	//
+	///////////////////////////////////////////////////////////////////////////
+	
+	
+	///////////////////////////////////////////////////////////////////////////
+	//
+	//	'Apply' button.
+	//
+	///////////////////////////////////////////////////////////////////////////
+	string $applyBtn = getOptionBoxApplyBtn();
+	button -edit -l "Create Camera Reticle" -command ($callback + " " + $parent + " " + 1) $applyBtn;
+	
+	
+	///////////////////////////////////////////////////////////////////////////
+	//	
+	//	'Save' button.
+	//
+	///////////////////////////////////////////////////////////////////////////
+	string $saveBtn = getOptionBoxSaveBtn();
+	button -edit -command ($callback + " " + $parent + " " + 0 + "; hideOptionBox") $saveBtn;
+
+
+	///////////////////////////////////////////////////////////////////////////
+	//
+	//	'Reset' button.
+	//                                                                                                                
+	///////////////////////////////////////////////////////////////////////////
+	string $resetBtn = getOptionBoxResetBtn();
+	button -edit -command ($setup + " " + $parent + " " + 1) $resetBtn;
+	
+		
+	///////////////////////////////////////////////////////////////////////////
+	//
+	//	Step 7: Set the option box title.
+	//	=================================
+	//
+	///////////////////////////////////////////////////////////////////////////
+	setOptionBoxTitle ("Create Camera Reticle Options");
+	
+	
+	///////////////////////////////////////////////////////////////////////////
+	//
+	//	Step 8: Customize the 'Help' menu item text.
+	//	============================================
+	//
+	//	By default, the 'Help' menu item is set up when the command name
+	//	is passed to the option box.  Normally, you do not need to
+	//	customize the 'Help' menu item.
+	//  
+	//	To customize the 'Help' menu item use the following example.
+	//
+	// 	string $helpItem = getOptionBoxHelpItem();
+	// 	menuItem -edit
+	//     -label "New Label"
+	//     -command "CustomCommand"
+	//     $helpItem;
+	//
+	///////////////////////////////////////////////////////////////////////////
+	
+	///////////////////////////////////////////////////////////////////////////
+	//
+	//	Step 9: Set the current values of the option box.
+	//	=================================================
+	//
+	///////////////////////////////////////////////////////////////////////////
+	eval (($setup + " " + $parent + " " + 0));
+	
+	///////////////////////////////////////////////////////////////////////////
+	//
+	//	Step 10: Show the option box.
+	//	=============================
+	//
+	///////////////////////////////////////////////////////////////////////////
+	showOptionBox();
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  proc string createCamearReticleHelp()
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS PROCEDURE/FUNCTION HERE.
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      ENTER A DESCRIPTION OF WHAT THIS PROCEDURE RETURNS HERE.
+//
+////////////////////////////////////////////////////////////////////////////////
+proc string createCamearReticleHelp()
+{
+	return "  Command: Creates a Text Heads up Display for the currently open scene file.";
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  global proc assembleCmd()
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS PROCEDURE/FUNCTION HERE.
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      ENTER A DESCRIPTION OF WHAT THIS PROCEDURE RETURNS HERE.
+//
+////////////////////////////////////////////////////////////////////////////////
+proc string assembleCmd()
+{
+	string $cmd;
+	
+	//	Add/Remove the Prod-Seq-Shot portion of the reticle
+	if (`optionVar -q cameraReticleProdSeqShot` == 2)
+	{
+		$cmd += "if (`headsUpDisplay -exists HUDprodSeqShotDateTime`) headsUpDisplay -remove HUDprodSeqShotDateTime;\n";
+	}
+	else
+	{
+		$cmd += "if (`headsUpDisplay -exists HUDprodSeqShotDateTime`) headsUpDisplay -remove HUDprodSeqShotDateTime;\n";
+		$cmd += "headsUpDisplay -section 6 -block 3 -blockSize \"large\" -dfs \"large\" -command \"getProdSeqShotDateTime\" -atr HUDprodSeqShotDateTime;\n";
+    }
+			
+	
+	//  Add/Remove the user name portion of the reticle
+	if (`optionVar -q cameraReticleUserName` == 2)
+	{
+		$cmd += "if (`headsUpDisplay -exists HUDUserName`) headsUpDisplay -remove HUDUserName;\n";
+	}
+	else
+	{
+		$cmd += "if (`headsUpDisplay -exists HUDUserName`) headsUpDisplay -remove HUDUserName;\n";
+		$cmd += "headsUpDisplay -section 7 -block 3 -blockSize \"large\" -dfs \"large\" -command \"getUserName\" -atr HUDUserName;\n";
+	}
+
+	//	Add/Remove the frame counter portion of the reticle
+	if (`optionVar -q cameraReticleFrameCounter` == 2)
+	{
+		$cmd += "if (`headsUpDisplay -exists HUDFrameCounter`) headsUpDisplay -remove HUDFrameCounter;\n";
+	}
+	else
+	{
+		$cmd += "if (`headsUpDisplay -exists HUDFrameCounter`) headsUpDisplay -remove HUDFrameCounter;\n";
+		$cmd += "headsUpDisplay -section 8 -block 3 -blockSize \"large\" -dfs \"large\" -command \"getFrameCounter\" -atr HUDFrameCounter;\n";
+	}
+	
+	return $cmd;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  global proc createCameraReticle()
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      Creates the HUD display elements that will show the text banner of the 
+//		camera reticle to the user.
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      None
+//
+////////////////////////////////////////////////////////////////////////////////
+global proc createCameraReticle()
+{
+	string $cmd = "";
+	createCameraReticleOptions;
+	setOptionVars(false);                           
+	$cmd = `assembleCmd`;
+	evalEcho($cmd);
+}

@@ -1,0 +1,32 @@
+//Title:	dwCreateLegFoot.mel
+//Author:	David Walden 
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date:		March 29, 2004
+//
+//Description: Assigns a unique naming prefix based on $namingPrefix and $sideFlagInt arguments.
+global proc string dwRTAssignPrefix (string $namingPrefix, int $sideFlagInt)
+{
+
+string $prefix;
+
+//Assign $prefix to $namingPrefix
+if (`dwRTValidateName $namingPrefix`)
+	$prefix += $namingPrefix;
+
+else if (! `dwRTValidateName $namingPrefix`)
+	error "Naming prefix invalid. Remove special characters and try again.";
+
+//Add side of body to $prefix.
+if ($sideFlagInt == 1)
+	$prefix += "L_";
+else if ($sideFlagInt == 2)
+	$prefix += "R_";
+else if (! $sideFlagInt)
+	error "Side of body not selected in UI.";
+else if ($sideFlagInt > 2)
+	error "$sideFlagInt specified incorrectly. Valid inputs are 1 (left) or 2 (right).";
+	
+return $prefix;
+}

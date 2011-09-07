@@ -1,0 +1,75 @@
+//Title:	dwHelpInsertJoints.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+
+//PROCEDURE THAT CREATES INSERT JOINTS HELP WINDOW.
+global proc dwHelpInsertJoints()
+{
+if (`window -ex dwHelpInsertJointsUI`)
+	deleteUI dwHelpInsertJointsUI;
+
+if (`windowPref -exists dwHelpInsertJointsUI`)
+	windowPref -remove dwHelpInsertJointsUI;
+
+window -t "Insert Joints Help" -wh 460 420 dwHelpInsertJointsUI;
+	string $form = `formLayout`;
+		string $scroll = `scrollLayout`;
+			columnLayout;
+				rowColumnLayout -nc 2 -cw 1 100 -cw 2 200;
+					text -label "Author: " -font boldLabelFont;
+					text -label "David Walden";
+					text -label "";
+					text -label "www.davidwalden.com";
+					text -label "";
+					text -label "dwalden74@hotmail.com";
+					setParent..;
+					
+				text -label "" -h 30;
+				
+				text -label "  Usage:" -font boldLabelFont -align left -w 150;
+				text -label " 1) Select the parent joint under which you want to insert a new joint or multiple joints.";
+				text -label " 2) Click on \"Insert Joint\" or \"Insert Multiple Joints\" in UI accordingly.";
+				
+				text -label "" -h 15;
+				
+				text -label "   About: " -font boldLabelFont;
+				string $aboutText = "  This script allows the user to insert a single joint or multiple joints under a selected \n";
+				$aboutText += "   parent joint. When a single joint is inserted  with the \"Insert Joint\" button, the user\n";
+				$aboutText += "   can specify its position as a weighted percentage along the vector defined by the parent\n";
+				$aboutText += "   and the child joints. When \"Insert Multiple Joints\" is chosen, multipe joints will be\n";
+				$aboutText += "   inserted and spaced evenly along the vector defined by the parent and the child joints.\n";
+				
+				text -label $aboutText -align left;
+				
+				text -label "" -h 20;
+				
+				text -l "   Notes: " -font boldLabelFont;
+				string $notesText = "   Interactive placement checkbox: :\n";
+				$notesText += "     Allows user to position the inserted joint interactively between the parent and the child.\n";
+				$notesText += "     joints. This is deselected as default, as it can make undoing the joint placement rather\n";
+				$notesText += "     difficult.\n";
+				text -label $notesText -align left;
+				
+				text -label "" -h 6;
+				 
+				
+				setParent..;
+			setParent..;
+		string $closeButton = `button -label "Close Window" -c "deleteUI dwHelpInsertJointsUI"`;
+		setParent..;
+	
+	formLayout -e
+		-attachForm $scroll left 0
+		-attachForm $scroll top 0
+		-attachForm $scroll right 0
+		-attachControl $scroll bottom 0 $closeButton
+		
+		-attachForm $closeButton left 0
+		-attachNone $closeButton top
+		-attachForm $closeButton right 0
+		-attachForm $closeButton bottom 0
+		$form;
+		
+showWindow dwHelpInsertJointsUI;
+}

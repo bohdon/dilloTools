@@ -1,0 +1,59 @@
+//Title:	dwRT_CreateIKSplineSpine_Version.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+
+
+//Description: An intermediate procedure; tells Maya which type of IK Spline Spine rig to create, based on
+//		the current Maya version. For those with Maya 5.0 or greater, the Spline Spine will take
+//		advantage of the advanced twist options of the Spline IK handle.
+
+global proc dwRT_CreateIKSplineSpine_Version (string $spineStartJoint, 
+						string $spineEndJoint,
+						int $stretchCheck, 
+						string $stretchAxis, 
+						int $controlType, 
+						int $controlsColor, 
+						string $rootJoint,
+						int $neckHeadCheck,
+						int $neckCheck,
+						string $neckJoint,
+						int $headCheck,
+						string $headJoint,
+						string $prefix,
+						int $ikSpineForcePreviousVersion)
+{
+if ((`dwRT_GetMayaVersion` < 5.0) || ($ikSpineForcePreviousVersion))
+	{
+	dwCreateIKSplineSpine ($spineStartJoint, 
+				$spineEndJoint,
+				$stretchCheck, 
+				$stretchAxis, 
+				$controlType, 
+				$controlsColor, 
+				$rootJoint,
+				$neckHeadCheck,
+				$neckCheck,
+				$neckJoint,
+				$headCheck,
+				$headJoint,
+				$prefix);
+	}
+
+else
+	{
+	dwRT_CreateIKSplineSpine_Maya5 ($spineStartJoint, 
+					$spineEndJoint,
+					$stretchCheck, 
+					$stretchAxis, 
+					$controlType, 
+					$controlsColor, 
+					$rootJoint,
+					$neckHeadCheck,
+					$neckCheck,
+					$neckJoint,
+					$headCheck,
+					$headJoint,
+					$prefix);
+	}
+}

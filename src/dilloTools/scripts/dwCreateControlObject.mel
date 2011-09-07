@@ -1,0 +1,216 @@
+//Title:	dwCreateControlObject.mel
+//Author:	David Walden 
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Created: Sept. 2 2003
+//
+//
+//Updated Nov. 12 2003: Added double arrow control type.
+//
+//Updated March 20, 2004: Added $defaultManipulator argument.
+//
+//DESCRIPTION: PROCEDURE CREATES A SPLINE CONTROL OBJECT. *RETURNS THE NAME OF THE CONTROL CREATED.*
+
+//$controlType- determines the type of the cntrl obj: circle, square, bounding box, etc.
+//$size - the size of the object; based on 1 unit.
+//$name - name of the cntrl obj.
+//$orientAxis - how the obj is oriented: 1 - pointing down the X; 2 - pointing down Y; 3 - pointing down Z.
+
+global proc string dwCreateControlObject(int $controlType, 
+						float $size, 
+						string $name, 
+						int $orientAxis,
+						int $defaultManipulator)
+{
+//Bounding Box spline control.
+string $control;
+if ($controlType == 1)
+	{
+	$control = `curve
+		-d 1 
+		-p ($size/2) ($size/2) ($size/2) 
+		-p ($size/2) ($size/2) (-$size/2) 
+		-p (-$size/2) ($size/2) (-$size/2) 
+		-p (-$size/2) ($size/2) ($size/2) 
+		-p ($size/2) ($size/2) ($size/2) 
+		-p ($size/2) (-$size/2) ($size/2) 
+		-p ($size/2) (-$size/2) (-$size/2) 
+		-p ($size/2) ($size/2) (-$size/2) 
+		-p ($size/2) (-$size/2) (-$size/2) 
+		-p (-$size/2) (-$size/2) (-$size/2) 
+		-p (-$size/2) ($size/2) (-$size/2) 
+		-p (-$size/2) (-$size/2) (-$size/2) 
+		-p (-$size/2) (-$size/2) ($size/2) 
+		-p (-$size/2) ($size/2) ($size/2) 
+		-p (-$size/2) (-$size/2) ($size/2) 
+		-p ($size/2) (-$size/2) ($size/2) 
+		-k 0 -k 1 -k 2 -k 3 -k 4 -k 5 -k 6 -k 7 -k 8 -k 9 -k 10 -k 11 -k 12 -k 13 -k 14 -k 15 `;
+	
+	//Update May 7 2004: Rename. This ensures the shape node will have a proper name as well as the transform.
+	$control = `rename $control $name`;
+	
+	//Reassign $name (in case $name is something like "object#".
+	$name = $control;
+	
+	DeleteHistory;
+	if ($orientAxis == 1)
+		move -wd -ws ($size/2) 0 0 $name;
+		
+	else if ($orientAxis == 2)
+		move -wd -ws 0 ($size/2) 0 $name;
+	
+	else if ($orientAxis == 3)
+		move -wd -ws 0 0 ($size/2) $name;
+	
+	makeIdentity -apply true -t 1 $name;
+		
+	move -a -wd 0 0 0 ($name + ".rotatePivot") ($name + ".scalePivot");
+	}
+
+//Circle spline control.
+if ($controlType == 2)
+	{
+	string $circle[] = `circle -n $name 
+		-c 0 0 0 
+		-nr 0 1 0 
+		-sw 360 
+		-r ($size/2) 
+		-d 3 
+		-ut 0 
+		-tol 0.01 
+		-s 8 
+		-ch 0`;
+	
+	//Reassign $name (in case $name is something like "object#".
+	$name = $circle[0];
+	
+	DeleteHistory;
+	if ($orientAxis == 1)
+		rotate -ws 0 0 90 $name;
+	
+	else if ($orientAxis == 3)
+		rotate -ws 90 0 0 $name;
+	
+	makeIdentity -apply true -r 1 $name;
+	}
+
+//Square spline control.
+if ($controlType == 3)
+	{
+	$control = `curve
+		-d 1 
+		-p (-$size/2) 0 ($size/2) 
+		-p (-$size/2) 0 (-$size/2) 
+		-p ($size/2) 0 (-$size/2) 
+		-p ($size/2) 0 ($size/2) 
+		-p (-$size/2) 0 ($size/2) 
+		-k 0 -k 1 -k 2 -k 3 -k 4 `;
+	
+	//Update May 7 2004: Rename. This ensures the shape node will have a proper name as well as the transform.
+	$control = `rename $control $name`;
+	
+	//Reassign $name (in case $name is something like "object#".
+	$name = $control;
+	
+	DeleteHistory;
+	if ($orientAxis == 1)
+		rotate -ws 0 0 90 $name;
+	
+	else if ($orientAxis == 3)
+		rotate -ws 90 0 0 $name;
+	
+	makeIdentity -apply true -r 1 $name;
+	}
+
+
+
+//Double-sided arrow arc thingy.
+if ($controlType == 4)
+{
+/*OLD:
+$control = `curve 
+	-d 1 
+	-p 0.499805 -0.0024732 0.00136457 
+	-p 0.476117 0.264181 7.06681e-005 
+	-p 0.284892 0.147894 0.000124584 
+	-p 0.499805 -0.0024732 0.00136457 
+	-p 0.476117 0.264181 7.06681e-005 
+	-p 0.380505 0.206037 9.76258e-005 
+	-p 0.328728 0.271531 -0.000336577 
+	-p 0.256697 0.34395 -0.000854151 
+	-p 0.170267 0.397972 -0.00132311 
+	-p 0.0714507 0.431087 -0.00172674 
+	-p -0.0310931 0.439726 -0.00202659 
+	-p -0.131653 0.424866 -0.0022127 
+	-p -0.227691 0.386663 -0.00227936 
+	-p -0.312339 0.32643 -0.00221524 
+	-p -0.379331 0.24983 -0.00203067 
+	-p -0.407495 0.192589 -0.00183724 
+	-p -0.506252 0.245213 -0.00233127 
+	-p -0.497754 0.00128719 -0.001181 
+	-p -0.308738 0.139965 -0.00134321 
+	-p -0.407495 0.192589 -0.00183724 
+	-k 0 -k 1 -k 2 -k 3 -k 4 -k 5 -k 6 -k 7 -k 8 -k 9 
+	-k 10 -k 11 -k 12 -k 13 -k 14 -k 15 -k 16 -k 17 -k 18 -k 19`;
+*/
+//NEW:
+$control = `curve -d 1 
+	-p -0.448259 0.236973 -0.00223102 
+	-p -0.527447 0.279169 -0.00254208 
+	-p -0.516425 -0.0372164 -0.00105019 
+	-p -0.27126 0.142657 -0.00126068 
+	-p -0.359009 0.189415 -0.00175448 
+	-p -0.337369 0.221861 -0.00179493 
+	-p -0.278567 0.289095 -0.00195693 
+	-p -0.203612 0.342431 -0.00201371 
+	-p -0.118583 0.376255 -0.00195469 
+	-p -0.0295169 0.389417 -0.00178985 
+	-p 0.0612625 0.381769 -0.0015244 
+	-p 0.148776 0.352441 -0.00116693 
+	-p 0.22531 0.304605 -0.000751673 
+	-p 0.29127 0.238289 -0.000277721 
+	-p 0.324964 0.19567 4.93783e-006 
+	-p 0.248329 0.149067 2.64962e-005 
+	-p 0.523526 -0.0434795 0.0016144 
+	-p 0.493194 0.297973 -4.23875e-005 
+	-p 0.407443 0.245826 -0.0002638 
+	-p 0.366186 0.304773 -0.000395433 
+	-p 0.288084 0.383295 -0.000956629 
+	-p 0.191758 0.443503 -0.00147929 
+	-p 0.0816389 0.480405 -0.00192908 
+	-p -0.0326693 0.490035 -0.00226333 
+	-p -0.144723 0.473477 -0.00247071 
+	-p -0.25177 0.430895 -0.00254501 
+	-p -0.346111 0.363765 -0.00247355 
+	-p -0.421293 0.277799 -0.00226641 
+	-p -0.448259 0.236973 -0.00223102 
+	-k 0 -k 1 -k 2 -k 3 -k 4 -k 5 -k 6 -k 7 -k 8 -k 9 -k 10 -k 11 -k 12 -k 13 -k 14 -k 15 -k 16 -k 17 -k 18 -k 19 -k 20 -k 21 -k 22 -k 23 -k 24 -k 25 -k 26 -k 27 -k 28 `;
+
+
+	//Update May 7 2004: Rename. This ensures the shape node will have a proper name as well as the transform.
+	$control = `rename $control $name`;
+
+	//Reassign $name (in case $name is something like "object#".
+	$name = $control;
+
+	scale $size $size $size $name;
+	
+	//OLD: if ($orientAxis == 1)
+	//	rotate -ws 0 90 0 $name;
+	
+	//else if ($orientAxis == 2)
+	//	rotate -ws 90 0 0 $name;
+	
+	//if ($orientAxis == 1)
+	//rotate -ws -90 0 0 $name;
+	makeIdentity -apply true -s 1 $name;
+}
+
+
+//Set .showDefaultManip attr accordingly.
+setAttr ($name + ".showManipDefault") $defaultManipulator;
+
+return $name;
+
+}//END OF PROCEDURE.

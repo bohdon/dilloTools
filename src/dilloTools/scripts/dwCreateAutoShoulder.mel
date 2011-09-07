@@ -1,0 +1,371 @@
+//Title:	dwCreateAutoShoulder.mel
+//Author:	David Walden 
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//See "About dwRiggingTools in main UI "Help" menu for detailed update descriptions.
+//
+//Dates: Dec. 2002 - Jan. 2003
+//Updated Sept 2-6 2003:
+//		Changed "aim" IK chain solver to ikRPSolver (was previously ikSCSolver - didn´t work with Maya 5.0).
+//		Removed "Animate by Position". Now user can only animate shoulder by FK rotation.
+//		Shoulder control object now positions itself based on length of clavicle (ie, works with
+//		any current linear unit settings).
+//
+//Updated Nov 16. 2003:
+//		Updated dwRiggingTools UI. Only a 1-bone clavicle is now supported. dwCreateAutoShoulder procedure still supports
+//		a 2-bone clavicle, if necessary (although I feel it is quite useless).
+//
+//Description: PROCEDURE TO CREATE AUTO-SHOULDER SETUP.
+//		***RETURNS THE NAME OF THE ORIENTGRP***
+global proc string dwCreateAutoShoulder(string $prefix,
+				int $sideFlagInt,
+				int $clavicleNumberOfJoints, 
+				string $clavicleJoint, 
+				string $ikHandle, 
+				int $controlsColor)
+{
+
+/*
+//Assign $prefix.
+string $prefix;
+if ($sideFlagInt == 1)
+	$prefix = "L_";
+if ($sideFlagInt == 2)
+	$prefix = "R_";
+if (! $sideFlagInt)
+	error "Side of body not selected in UI.";
+
+//Add ID string to $sideFlag. This should be used when character has more than one arm chain on each body side.
+if ((size($armID) > 0) && ($armID != " "))
+	$prefix += ($armID + "_");
+*/
+
+string $initialSelection[] = `ls -sl`;
+
+
+//DEFINE NECESSARY VARIABLES.
+string $ikJointsArray[] = `ikHandle -q -jointList $ikHandle`;
+if (size($ikJointsArray)>2)
+	error "Check IK joint hierarchy. IK Arm has more than 3 joints.";
+	
+string $ikShoulder = $ikJointsArray[0];
+string $ikElbow = $ikJointsArray[1];
+
+select -r $ikElbow;
+pickWalk -d down;
+string $ikWristArray[] = `ls -sl`;
+string $ikWrist = $ikWristArray[0];
+
+string $ikControlObject[] = `listRelatives -p $ikHandle`;
+if (size($ikControlObject) == 0)
+	error "IK Handle must have parent control object. Click \"Undo\" and try again.";
+
+float $claviclePosition[] = `xform -q -ws -t $clavicleJoint`;
+float $shoulderPosition[] = `xform -q -ws -t $ikShoulder`;
+float $elbowPosition[] = `xform -q -ws -t $ikElbow`;
+float $wristPosition[] = `xform -q -ws -t $ikWrist`;
+
+string $clavicleJoint1 = $clavicleJoint;
+select -r $clavicleJoint;	
+pickWalk -d down;
+string $clav2[] = `ls -sl`;
+string $clavicleJoint2 = $clav2[0];
+			
+select -cl;
+		
+float $clavicle1Position[] = `xform -q -ws -t $clavicleJoint1`;
+float $clavicle2Position[] = `xform -q -ws -t $clavicleJoint2`;	
+		
+string $controlCurve;
+vector $clavicleVector = <<$claviclePosition[0], $claviclePosition[1], $claviclePosition[2]>>;
+vector $shoulderVector = <<$shoulderPosition[0], $shoulderPosition[1], $shoulderPosition[2]>>;
+$lengthClavicle = mag($shoulderVector - $clavicleVector);
+
+string $poleVectorArray[] = `poleVectorConstraint -q -targetList $ikHandle`;
+if (size($poleVectorArray) != 1)
+	error "IK Handle must have 1 pole vector.";
+string $poleVectorIKArm = $poleVectorArray[0];
+
+select -r $clavicleJoint;
+pickWalk -d up;
+string $torsoJoint[] = `ls -sl`;
+if ($torsoJoint[0] == $clavicleJoint)
+	error "No torso joint in skeleton hierarchy (clavicle must be child of torso joint). Click Undo and retry.";
+	
+string $shoulderControlOrientGrp;
+	if ($clavicleNumberOfJoints == 1)
+		{
+		//Create dummy IK hierarchy. This is used for aiming the auto-shoulder.
+		select -cl;
+		
+		string $dummyClavicle = `joint -p $claviclePosition[0] $claviclePosition[1] $claviclePosition[2] -n ($prefix + "Clavicle_Dummy") -rotationOrder xyz`;
+		string $dummyShoulder = `joint -p $shoulderPosition[0] $shoulderPosition[1] $shoulderPosition[2] -n ($prefix + "Shoulder_Dummy") -rotationOrder xyz`;
+		joint -e -zso -oj xyz $dummyClavicle;
+		string $dummyElbow = `joint -p $elbowPosition[0] $elbowPosition[1] $elbowPosition[2] -n ($prefix + "Elbow_Dummy") -rotationOrder xyz`;
+		joint -e -zso -oj xyz $dummyShoulder;
+		string $dummyWrist = `joint -p $wristPosition[0] $wristPosition[1] $wristPosition[2] -n ($prefix + "Wrist_Dummy") -rotationOrder xyz`;
+		joint -e -zso -oj xyz $dummyElbow;
+	
+		string $dummyIKHandle[] = `ikHandle -solver ikRPsolver -sj $dummyShoulder -ee $dummyWrist -n ($prefix + "DummyIKHandle")`;
+		parent $dummyIKHandle[0] $ikControlObject[0];
+		setAttr ($dummyIKHandle[0] + ".visibility") 0;
+		
+		
+		parent $dummyClavicle $torsoJoint[0];
+	
+		setAttr ($dummyClavicle + ".visibility") 0;
+	
+		poleVectorConstraint $poleVectorIKArm $dummyIKHandle[0];
+	
+		select -cl;
+		
+		//Create aim joint hierarchy and parent to torso.
+		string $aimJointStart = `joint -p $claviclePosition[0] $claviclePosition[1] $claviclePosition[2] -n ($prefix + "ShoulderJoint_Aim_Start") -rotationOrder xyz`;
+		string $aimJointEnd = `joint -p $elbowPosition[0] $elbowPosition[1] $elbowPosition[2] -n ($prefix + "ShoulderJoint_Aim_End") -rotationOrder xyz`;
+		joint -e -zso -oj xyz $aimJointStart;
+	
+		float $aimJointEndXValue = `getAttr ($aimJointEnd + ".tx")`;
+		setAttr ($aimJointEnd + ".tx") ($aimJointEndXValue/2);
+	
+		parent $aimJointStart $torsoJoint[0];
+		setAttr ($aimJointStart + ".v") 0;
+	
+		string $aimIKHandle[] = `ikHandle -solver ikSCsolver -sj $aimJointStart -ee $aimJointEnd -n ($prefix + "AimIKHandle")`;
+		parent $aimIKHandle[0] $torsoJoint[0];
+		setAttr ($aimIKHandle[0] + ".v") 0;
+	
+		//Create 1st aim locator.
+		float $aimJointEndPosition[] = `xform -q -ws -t $aimJointEnd`;
+		string $aimStartLocator[] = `spaceLocator -n ($prefix + "AutoShoulder_Aim_Start")`;
+		move -a $aimJointEndPosition[0] $aimJointEndPosition[1] $aimJointEndPosition[2] $aimStartLocator[0];
+		parent $aimStartLocator[0] $torsoJoint[0];
+		makeIdentity -apply true -t 1 $aimStartLocator[0];
+		setAttr ($aimStartLocator[0] + ".v") 0;
+	
+		//Create second aim locator.
+		string $aimEndLocator[] = `spaceLocator -n ($prefix + "AutoShoulder_Aim_End")`;
+		move -a $elbowPosition[0] $elbowPosition[1] $elbowPosition[2] $aimEndLocator[0];
+		parent $aimEndLocator[0] $dummyElbow;
+		makeIdentity -apply true -t 1 $aimEndLocator[0];
+	
+		//Create shoulder control box, assign variable and lock attributes. Create Compensate group nodes constrained to 
+		//$aimJointStart.
+		$controlCurve = `curve -d 1 
+					-p 0.499805 -0.0024732 0.00136457 
+					-p 0.476117 0.264181 7.06681e-005 
+					-p 0.284892 0.147894 0.000124584 
+					-p 0.499805 -0.0024732 0.00136457 
+					-p 0.476117 0.264181 7.06681e-005 
+					-p 0.380505 0.206037 9.76258e-005 
+					-p 0.328728 0.271531 -0.000336577 
+					-p 0.256697 0.34395 -0.000854151 
+					-p 0.170267 0.397972 -0.00132311 
+					-p 0.0714507 0.431087 -0.00172674 
+					-p -0.0310931 0.439726 -0.00202659 
+					-p -0.131653 0.424866 -0.0022127 
+					-p -0.227691 0.386663 -0.00227936 
+					-p -0.312339 0.32643 -0.00221524 
+					-p -0.379331 0.24983 -0.00203067 
+					-p -0.407495 0.192589 -0.00183724 
+					-p -0.506252 0.245213 -0.00233127 
+					-p -0.497754 0.00128719 -0.001181 
+					-p -0.308738 0.139965 -0.00134321 
+					-p -0.407495 0.192589 -0.00183724 
+					-k 0 -k 1 -k 2 -k 3 -k 4 -k 5 -k 6 -k 7 -k 8 -k 9 
+					-k 10 -k 11 -k 12 -k 13 -k 14 -k 15 -k 16 -k 17 -k 18 -k 19`;
+		scale -r ($lengthClavicle * 3/4) ($lengthClavicle * 3/4) ($lengthClavicle * 3/4);
+		if ($sideFlagInt == 1)
+			{
+			move -a ($shoulderPosition[0] - ($lengthClavicle/2)) ($shoulderPosition[1] + ($lengthClavicle/3)) $shoulderPosition[2];
+			}
+		if ($sideFlagInt == 2)
+			{
+			move -a ($shoulderPosition[0] + ($lengthClavicle/2)) ($shoulderPosition[1] + ($lengthClavicle/3)) $shoulderPosition[2];
+			}
+		move -a $claviclePosition[0] $claviclePosition[1] $claviclePosition[2] ($controlCurve + ".rotatePivot") ($controlCurve + ".scalePivot");
+	
+		
+		
+		
+		rename ($prefix + "SHOULDER_CONTROL");
+		string $shoulderControl = ($prefix + "SHOULDER_CONTROL");
+	
+		//Add color scheme to Shoulder Control.
+		if ($controlsColor > 1)
+			{
+			setAttr ($shoulderControl + ".overrideEnabled") 1;
+			setAttr ($shoulderControl + ".overrideColor") ($controlsColor - 1);
+			}
+	
+		$shoulderControlOrientGrp = `group -em -n ($prefix + "SHOULDER_CONTROL_OrientGrp")`;
+		pointConstraint $aimJointStart $shoulderControlOrientGrp;
+		string $orientConstrainTemp[] = `orientConstraint $aimJointStart $shoulderControlOrientGrp`;
+		
+		parent $shoulderControl $shoulderControlOrientGrp;
+		makeIdentity -apply true -t 1 -r 1 -s 1 $shoulderControl;
+		
+		dwLockHideAttributes (0, 0, $shoulderControl, "tx ty tz rx sx sy sz v");
+			
+		dwLockHideAttributes (0, 0, $shoulderControlOrientGrp, "tx ty tz rx ry rz sx sy sz v");
+		
+		//Create IKHandle on clavicle bone.
+		string $clavicleIKHandle[] = `ikHandle -solver ikRPsolver -sj $clavicleJoint -ee $ikShoulder -n ($prefix + "ClavicleIKHandle")`;
+		parent $clavicleIKHandle[0] $shoulderControl;
+		setAttr ($clavicleIKHandle[0] + ".visibility") 0;
+	
+		//Create position constraint between $aimIKHandle and 2 aim locators.
+		string $aimPointConstraint[] = `pointConstraint -n ($prefix + "Aim_PointConstraint") $aimEndLocator[0] $aimStartLocator[0] $aimIKHandle[0]`;
+	
+		//Connect attributes using "reverse" utility node.
+		dwBlendByReverse ($shoulderControl, "AutoOrient", ($prefix + "Shoulder_Auto_Orient_Reverse"), ($aimPointConstraint[0] + "." + $aimEndLocator[0] + "W0"), ($aimPointConstraint[0] + "." + $aimStartLocator[0] + "W1"), 0);
+		
+		
+		//END CLAVICLENUMBEROFJOINTS "IF".
+		}
+		
+		
+		
+		
+		
+	if ($clavicleNumberOfJoints == 2)
+		{
+		//Create dummy IK hierarchy. This is used for aiming the auto-shoulder.		
+		select -cl;
+		string $dummyClavicle = `joint -p $clavicle1Position[0] $clavicle1Position[1] $clavicle1Position[2] -n ($prefix + "Clavicle_Dummy") -rotationOrder xyz`;
+		string $dummyShoulder = `joint -p $shoulderPosition[0] $shoulderPosition[1] $shoulderPosition[2] -n ($prefix + "Shoulder_Dummy") -rotationOrder xyz`;
+		joint -e -zso -oj xyz $dummyClavicle;
+		string $dummyElbow = `joint -p $elbowPosition[0] $elbowPosition[1] $elbowPosition[2] -n ($prefix + "Elbow_Dummy") -rotationOrder xyz`;
+		joint -e -zso -oj xyz $dummyShoulder;
+		string $dummyWrist = `joint -p $wristPosition[0] $wristPosition[1] $wristPosition[2] -n ($prefix + "Wrist_Dummy") -rotationOrder xyz`;
+		joint -e -zso -oj xyz $dummyElbow;
+	
+		string $dummyIKHandle[] = `ikHandle -solver ikRPsolver -sj $dummyShoulder -ee $dummyWrist -n ($prefix + "DummyIKHandle")`;
+		parent $dummyIKHandle[0] $ikControlObject[0];
+		setAttr ($dummyIKHandle[0] + ".visibility") 0;
+	
+		parent $dummyClavicle $torsoJoint[0];
+	
+		setAttr ($dummyClavicle + ".visibility") 0;
+	
+		poleVectorConstraint $poleVectorIKArm $dummyIKHandle[0];
+	
+		select -cl;
+	
+		//Create aim joint hierarchy and parent to torso.
+		string $aimJointStart = `joint -p $clavicle1Position[0] $clavicle1Position[1] $clavicle1Position[2] -n ($prefix + "ShoulderJoint_Aim_Start") -rotationOrder xyz`;
+		string $aimJointEnd = `joint -p $elbowPosition[0] $elbowPosition[1] $elbowPosition[2] -n ($prefix + "ShoulderJoint_Aim_End") -rotationOrder xyz`;
+		joint -e -zso -oj xyz $aimJointStart;
+	
+		float $aimJointEndXValue = `getAttr ($aimJointEnd + ".tx")`;
+		setAttr ($aimJointEnd + ".tx") ($aimJointEndXValue/2);
+	
+		parent $aimJointStart $torsoJoint[0];
+		setAttr ($aimJointStart + ".visibility") 0;
+	
+		string $aimIKHandle[] = `ikHandle -solver ikSCsolver -sj $aimJointStart -ee $aimJointEnd -n ($prefix + "AimIKHandle")`;
+		parent $aimIKHandle[0] $torsoJoint[0];
+		setAttr ($aimIKHandle[0] + ".visibility") 0;
+	
+		//Create 1st aim locator.
+		float $aimJointEndPosition[] = `xform -q -ws -t $aimJointEnd`;
+		string $aimStartLocator[] = `spaceLocator -n ($prefix + "AutoShoulder_Aim_Start")`;
+		move -a $aimJointEndPosition[0] $aimJointEndPosition[1] $aimJointEndPosition[2] $aimStartLocator[0];
+		parent $aimStartLocator[0] $torsoJoint[0];
+		makeIdentity -apply true -t 1 $aimStartLocator[0];
+		setAttr ($aimStartLocator[0] + ".visibility") 0;
+	
+		//Create second aim locator.
+		string $aimEndLocator[] = `spaceLocator -n ($prefix + "AutoShoulder_Aim_End")`;
+		move -a $elbowPosition[0] $elbowPosition[1] $elbowPosition[2] $aimEndLocator[0];
+		parent $aimEndLocator[0] $dummyElbow;
+		makeIdentity -apply true -t 1 $aimEndLocator[0];
+	
+		//Create shoulder control box, assign variable, set override color, lock attributes, and parent to $aimJointStart;.
+		$controlCurve = `curve -d 1 
+					-p 0.499805 -0.0024732 0.00136457 
+					-p 0.476117 0.264181 7.06681e-005 
+					-p 0.284892 0.147894 0.000124584 
+					-p 0.499805 -0.0024732 0.00136457 
+					-p 0.476117 0.264181 7.06681e-005 
+					-p 0.380505 0.206037 9.76258e-005 
+					-p 0.328728 0.271531 -0.000336577 
+					-p 0.256697 0.34395 -0.000854151 
+					-p 0.170267 0.397972 -0.00132311 
+					-p 0.0714507 0.431087 -0.00172674 
+					-p -0.0310931 0.439726 -0.00202659 
+					-p -0.131653 0.424866 -0.0022127 
+					-p -0.227691 0.386663 -0.00227936 
+					-p -0.312339 0.32643 -0.00221524 
+					-p -0.379331 0.24983 -0.00203067 
+					-p -0.407495 0.192589 -0.00183724 
+					-p -0.506252 0.245213 -0.00233127 
+					-p -0.497754 0.00128719 -0.001181 
+					-p -0.308738 0.139965 -0.00134321 
+					-p -0.407495 0.192589 -0.00183724 
+					-k 0 -k 1 -k 2 -k 3 -k 4 -k 5 -k 6 -k 7 -k 8 -k 9 
+					-k 10 -k 11 -k 12 -k 13 -k 14 -k 15 -k 16 -k 17 -k 18 -k 19`;
+		
+		scale -r ($lengthClavicle * 3/4) ($lengthClavicle * 3/4) ($lengthClavicle * 3/4);
+		if ($sideFlagInt == 1)
+			{
+			move -a ($shoulderPosition[0] - ($lengthClavicle/2)) ($shoulderPosition[1] + ($lengthClavicle/3)) $shoulderPosition[2];
+			}
+		if ($sideFlagInt == 2)
+			{
+			move -a ($shoulderPosition[0] + ($lengthClavicle/2)) ($shoulderPosition[1] + ($lengthClavicle/3)) $shoulderPosition[2];
+			}
+		move -a $clavicle1Position[0] $clavicle1Position[1] $clavicle1Position[2] ($controlCurve + ".rotatePivot") ($controlCurve + ".scalePivot");
+		
+		
+		
+		rename ($prefix + "SHOULDER_CONTROL");
+		string $shoulderControl = ($prefix + "SHOULDER_CONTROL");
+	
+		//Add color scheme to Shoulder Control.
+		if ($controlsColor > 1)
+			{
+			setAttr ($shoulderControl + ".overrideEnabled") 1;
+			setAttr ($shoulderControl + ".overrideColor") ($controlsColor - 1);
+			}
+	
+		$shoulderControlOrientGrp = `group -em -n ($prefix + "SHOULDER_CONTROL_OrientGrp")`;
+		pointConstraint $aimJointStart $shoulderControlOrientGrp;
+		string $orientConstrainTemp[] = `orientConstraint $aimJointStart $shoulderControlOrientGrp`;
+		
+		parent $shoulderControl $shoulderControlOrientGrp;
+		makeIdentity -apply true -t 1 -r 1 -s 1 $shoulderControl;
+		
+		dwLockHideAttributes (0, 0, $shoulderControl, "tx ty tz rx sx sy sz v");
+		
+		dwLockHideAttributes (0, 0, $shoulderControlOrientGrp, "tx ty tz rx ry rz sx sy sz v");
+	
+		//Create IKHandle on clavicle bone.
+		string $clavicleIKHandle[] = `ikHandle -solver ikRPsolver -sj $clavicleJoint1 -ee $clavicleJoint2 -n ($prefix + "ClavicleIKHandle")`;
+		string $clavicleEndEffector = `ikHandle -q -ee $clavicleIKHandle[0]`;
+		move -a $shoulderPosition[0] $shoulderPosition[1] $shoulderPosition[2] ($clavicleEndEffector + ".rotatePivot") ($clavicleEndEffector + ".scalePivot");
+		parent $clavicleIKHandle[0] $shoulderControl;
+		setAttr ($clavicleIKHandle[0] + ".visibility") 0;
+	
+		//Add attribute to $shoulderControl to control the aim of the auto-shoulder & rotations of 2nd Clavicle joint.
+		addAttr -longName "Clavicle2_RotY" -at "float" -defaultValue 0 -keyable 1 $shoulderControl;
+		addAttr -longName "Clavicle2_RotZ" -at "float" -defaultValue 0 -keyable 1 $shoulderControl;
+	
+		//Create position constraint between $aimIKHandle and 2 aim locators.
+		string $aimPointConstraint[] = `pointConstraint -n ($prefix + "Aim_PointConstraint") $aimEndLocator[0] $aimStartLocator[0] $aimIKHandle[0]`;
+	
+		//Connect attributes (use "reverse" utility node on "AutoOrient" attribute).
+		dwBlendByReverse ($shoulderControl, "AutoOrient", ($prefix + "Shoulder_Auto_Orient_Reverse"), ($aimPointConstraint[0] + "." + $aimEndLocator[0] + "W0"), ($aimPointConstraint[0] + "." + $aimStartLocator[0] + "W1"), 0);
+		
+		connectAttr ($shoulderControl + ".Clavicle2_RotY") ($clavicleJoint2 + ".ry");
+		connectAttr ($shoulderControl + ".Clavicle2_RotZ") ($clavicleJoint2 + ".rz");
+		
+		//END CLAVICLENUMBEROFJOINTS "IF".
+		}
+
+
+
+select -r $initialSelection;
+
+return $shoulderControlOrientGrp;
+}//END OF AUTO-SHOULDER PROCEDURE.

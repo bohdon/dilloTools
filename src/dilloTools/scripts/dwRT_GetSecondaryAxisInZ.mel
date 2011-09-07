@@ -1,0 +1,44 @@
+//Title:	dwRT_GetSecondaryAxisInZ.mel
+//Author:	David Walden 
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date:		July 6, 2004
+
+//Currently used only for dwRT_CreateIKSplineSpine_Maya5 to get the joints´ axis in positive Z, this returns
+//the name of the axis that is pointing in positive Z.
+
+global proc string dwRT_GetSecondaryAxisInZ(string $fromObject)
+{
+//Store initial selection.
+string $selection[] = `ls -sl`;
+
+//Create empty group, parent it to the goal object, makeIdentity, and move it 1 unit forward in global Z.
+string $null = `group -em -n "SecondaryAxisTEMP"`;
+parent $null $fromObject;
+makeIdentity $null;
+move -r 0 0 1 $null;
+
+float $translate[] = `getAttr ($null + ".translate")`;
+
+delete $null;
+
+select -r $selection;
+
+//Now, return the secondary axis. We omit the x axis as a possibility, therefore only either the y-axis
+//or the z-axis will have a translate value greater-than or less-than zero.
+string $secondaryAxis;
+if ($translate[1] > 0.0001)
+	$secondaryAxis = "y";
+
+else if ($translate[1] < -0.00001)
+	$secondaryAxis =  "-y";
+	
+else if ($translate[2] > 0.00001)
+	$secondaryAxis = "z";
+	
+else if ($translate[2] < -0.00001)
+	$secondaryAxis =  "-z";
+	
+return $secondaryAxis;
+}

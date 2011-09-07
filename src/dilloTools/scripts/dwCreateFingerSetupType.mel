@@ -1,0 +1,76 @@
+//Title:	dwCreateFingerSetupType.mel
+//Author:	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date:		March 20 2003
+//
+//Description: Determines which type of finger setup to build. This is similar in concept to dwCreateArmType.mel, as
+//		it takes input, and based on one factor, decides which type of setup to execute.
+
+global proc dwCreateFingerSetupType (string $handControl, 
+					int $thumbCheck, 
+					int $indexCheck, 
+					int $middleCheck, 
+					int $ringCheck, 
+					int $pinkyCheck,
+					string $thumb1,
+					string $index1,
+					string $middle1,
+					string $ring1,
+					string $pinky1,
+					int $pinkyCupCheck,
+					int $bendAxisInt,
+					int $spreadAxisInt,
+					int $fingerSetupType)
+{
+//Report error if no $fingerSetupType is specified in UI.
+if (! $fingerSetupType)
+	error "No Finger Control Type specified in UI. Try again.";
+if ($fingerSetupType > 2)
+	error "Finger Control Type specified incorrectly. Valid inputs are 1 (basic) or 2 (complete). Try again.";
+	
+
+switch ($fingerSetupType)
+	{
+	case 1:
+		dwCreateFingerControlsSimple
+			($handControl, 
+			$thumbCheck, 
+			$indexCheck, 
+			$middleCheck, 
+			$ringCheck, 
+			$pinkyCheck,
+			$thumb1,
+			$index1,
+			$middle1,
+			$ring1,
+			$pinky1,
+			$pinkyCupCheck,
+			$bendAxisInt,
+			$spreadAxisInt);
+		
+		break;
+	
+	
+	case 2:
+		dwCreateFingerControlsComplete
+			($handControl, 
+			$thumbCheck, 
+			$indexCheck, 
+			$middleCheck, 
+			$ringCheck, 
+			$pinkyCheck,
+			$thumb1,
+			$index1,
+			$middle1,
+			$ring1,
+			$pinky1,
+			$pinkyCupCheck,
+			$bendAxisInt,
+			$spreadAxisInt);
+			
+		break;
+	
+	}
+}

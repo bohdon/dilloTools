@@ -1,0 +1,59 @@
+//Title:	dwHelpCreateCharacterSet.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+
+//PROCEDURE THAT CREATES CHARACTER SET HELP WINDOW.
+global proc dwHelpCreateCharacterSet()
+{
+if (`window -ex dwHelpCreateCharacterSetUI`)
+	deleteUI dwHelpCreateCharacterSetUI;
+
+window -t "Create Character Set Help" -wh 450 250 dwHelpCreateCharacterSetUI;
+	string $form = `formLayout`;
+		string $scroll = `scrollLayout`;
+			columnLayout;
+				
+				rowColumnLayout -nc 2 -cw 1 100 -cw 2 200;
+					text -label " Author: " -font boldLabelFont;
+					text -label "David Walden";
+					text -label "";
+					text -label "www.davidwalden.com";
+					text -label "";
+					text -label "dwalden74@hotmail.com";
+					setParent..;
+				
+				text -label "" -h 30;
+				
+				
+				
+				text -label "   About: " -font boldLabelFont;
+				string $noteText;
+				$noteText += "  Creates character set hierarchy based on the rig created using the \"Create Biped Skeleton\" \n";
+				$noteText += "   in the Tools tab. \n";
+				text -label $noteText -align left;
+				
+				text -label "" -h 10;
+				
+				
+				 
+				
+				setParent..;
+			setParent..;
+		string $closeButton = `button -label "Close Window" -c "deleteUI dwHelpCreateCharacterSetUI"`;
+		setParent..;
+	
+	formLayout -e
+		-attachForm $scroll left 0
+		-attachForm $scroll top 0
+		-attachForm $scroll right 0
+		-attachControl $scroll bottom 0 $closeButton
+		
+		-attachForm $closeButton left 0
+		-attachNone $closeButton top
+		-attachForm $closeButton right 0
+		-attachForm $closeButton bottom 0
+		$form;
+		
+showWindow dwHelpCreateCharacterSetUI;
+}

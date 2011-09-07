@@ -1,0 +1,637 @@
+//Title:	dwCreateFingerControlsSimple.mel
+//Author:	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date:		Dec. 20 2003
+//
+//Updated:	March 21, 2004: Added "Fist" attr; cleaned up much of the syntax.
+//
+//Description:	Adds basic finger control attrs to a control object. Finger joints are driven via SDK.
+//
+
+global proc dwCreateFingerControlsSimple(string $handControl, 
+					int $thumbCheck, 
+					int $indexCheck, 
+					int $middleCheck, 
+					int $ringCheck, 
+					int $pinkyCheck,
+					string $thumb1,
+					string $index1,
+					string $middle1,
+					string $ring1,
+					string $pinky1,
+					int $pinkyCupCheck,
+					int $bendAxisInt,
+					int $spreadAxisInt)
+{
+if (!`objExists $handControl`)
+	error "Hand control mispelled or unspecified in UI.";
+
+if (($thumbCheck) && (! `size( $thumb1)`))
+	error "Thumb joint must be specified in UI.";
+if (($indexCheck) && (! `size( $index1)`))
+	error "Index joint must be specified in UI.";
+if (($middleCheck) && (! `size( $middle1)`))
+	error "Middle joint must be specified in UI.";
+if (($ringCheck) && (! `size( $ring1)`))
+	error "Ring joint must be specified in UI.";
+if (($pinkyCheck) && (! `size( $pinky1)`))
+	error "Pinky joint must be specified in UI.";
+
+
+
+//Declare joint variables.
+string $thumb2[];
+string $thumb3[];
+string $thumb4[];
+string $index2[];
+string $index3[];
+string $index4[];
+string $middle2[];
+string $middle3[];
+string $middle4[];
+string $ring2[];
+string $ring3[];
+string $ring4[];
+string $pinkyCup[];
+string $pinky2[];
+string $pinky3[];
+string $pinky4[];
+
+//Declare $numberOfFingers[] array to determine how many fingers we have in the setup (necessary only for "Spread" and "Fist" attributes.
+string $numberOfFingers[];
+int $i = 0;
+
+//Check for 2nd, 3rd and 4th finger joints.
+if ($thumbCheck)
+	{
+	$numberOfFingers[$i] = $thumb1;
+	$i++;
+	$thumb2 = `listRelatives -c -type joint -pa $thumb1`;
+	if (`size($thumb2)`)
+		$thumb3 = `listRelatives -c -type joint -pa $thumb2[0]`;
+	if (`size($thumb3)`)
+		$thumb4 = `listRelatives -c -type joint -pa $thumb3[0]`;
+	}
+
+if ($indexCheck)
+	{
+	$numberOfFingers[$i] = $index1;
+	$i++;
+	$index2 = `listRelatives -c -type joint -pa $index1`;
+	if (`size($index2)`)
+		$index3 = `listRelatives -c -type joint -pa $index2[0]`;
+	if (`size($index3)`)
+		$index4 = `listRelatives -c -type joint -pa $index3[0]`;
+	}
+
+if ($middleCheck)
+	{
+	$numberOfFingers[$i] = $middle1;
+	$i++;
+	$middle2 = `listRelatives -c -type joint -pa $middle1`;
+	if (`size($middle2)`)
+		$middle3 = `listRelatives -c -type joint -pa $middle2[0]`;
+	if (`size($middle3)`)
+		$middle4 = `listRelatives -c -type joint -pa $middle3[0]`;
+	}
+
+if ($ringCheck)
+	{
+	$numberOfFingers[$i] = $ring1;
+	$i++;
+	$ring2 = `listRelatives -c -type joint -pa $ring1`;
+	if (`size($ring2)`)
+		$ring3 = `listRelatives -c -type joint -pa $ring2[0]`;
+	if (`size($ring3)`)
+		$ring4 = `listRelatives -c -type joint -pa $ring3[0]`;
+	}
+
+if ($pinkyCheck)
+	{
+	$numberOfFingers[$i] = $pinky1;
+	if ($pinkyCupCheck)
+		$pinkyCup = `listRelatives -p -type joint -pa $pinky1`;
+	$pinky2 = `listRelatives -c -type joint -pa $pinky1`;
+	if (`size($pinky2)`)
+		$pinky3 = `listRelatives -c -type joint -pa $pinky2[0]`;
+	if (`size($pinky3)`)
+		$pinky4 = `listRelatives -c -type joint -pa $pinky3[0]`;
+	}
+
+
+string $thumbSideObjAttr;
+string $thumbInObjAttr;
+string $indexObjAttr;
+string $middleObjAttr;
+string $ringObjAttr;
+string $pinkyObjAttr;
+string $spreadObjAttr;
+string $fistObjAttr;
+
+
+
+//ADD ATTRS TO HAND CONTROL.
+//Add "__Simple__" attr first.
+if (($thumbCheck) || ($indexCheck) || ($middleCheck) || ($ringCheck) || ($pinkyCheck))
+	{
+	addAttr -ln "__SimpleFingers__" -k true -at double  -dv 0 $handControl;
+	setAttr -lock 1 ($handControl + ".__SimpleFingers__");
+	}
+if ($thumbCheck)
+	{$thumbSideObjAttr = dwRTAddFingerAttribute ($handControl, "Thumb_Side");
+	$thumbInObjAttr = dwRTAddFingerAttribute ($handControl, "Thumb_In");
+	}
+if ($indexCheck)
+	$indexObjAttr = dwRTAddFingerAttribute ($handControl, "Index");
+if ($middleCheck)
+	$middleObjAttr = dwRTAddFingerAttribute ($handControl, "Middle");
+if ($ringCheck)
+	$ringObjAttr = dwRTAddFingerAttribute ($handControl, "Ring");
+if ($pinkyCheck)
+	$pinkyObjAttr = dwRTAddFingerAttribute ($handControl, "Pinky");
+if ((! `attributeQuery -n $handControl -ex Spread`) && (`size $numberOfFingers` > 1))
+	$spreadObjAttr = dwRTAddFingerAttribute ($handControl, "Spread");
+if ((! `attributeQuery -n $handControl -ex Fist`) && (`size $numberOfFingers` > 1))
+	$fistObjAttr = dwRTAddFingerAttribute ($handControl, "Fist");
+
+
+//Before setting attributes on joint rotations, we need to get the correct axis of rotation AND determine 
+//whether or not the rotation is positive or negative. We need separate "plus" and "minus" variables for
+//bending the fingers normally - $bendPlus - and (slightly) backwards - $bendMinus.
+string $bendAxis;
+string $bendPlus;
+string $bendMinus;
+
+if (($bendAxisInt == 1) || ($bendAxisInt == 2))
+	$bendAxis = ".rx";
+else if (($bendAxisInt == 3) || ($bendAxisInt == 4))
+	$bendAxis = ".ry";
+else if (($bendAxisInt == 5) || ($bendAxisInt == 6))
+	$bendAxis = ".rz";
+
+if (($bendAxisInt == 2) || ($bendAxisInt == 4) || ($bendAxisInt == 6))
+	{
+	$bendPlus = "+";
+	$bendMinus = "-";
+	}
+else if (($bendAxisInt == 1) || ($bendAxisInt == 3) || ($bendAxisInt == 5))
+	{
+	$bendPlus = "-";
+	$bendMinus = "+";
+	}
+
+
+float $fingerXPosition;		//Variable will tell us if the finger is on the left hand or right hand. We need this for the spread.
+float $fingerPosition[];
+if ($thumbCheck)
+	$fingerPosition = `xform -q -ws -t $thumb1`;
+else if ($indexCheck)
+	$fingerPosition = `xform -q -ws -t $index1`;
+else if ($middleCheck)
+	$fingerPosition = `xform -q -ws -t $middle1`;
+else if ($ringCheck)
+	$fingerPosition = `xform -q -ws -t $ring1`;
+else if ($pinkyCheck)
+	$fingerPosition = `xform -q -ws -t $pinky1`;
+$fingerXPosition = $fingerPosition[0];
+
+string $spreadAxis;
+string $spreadPlus;
+string $spreadMinus;
+
+if ($spreadAxisInt == 1)
+	$spreadAxis = ".rx";
+else if ($spreadAxisInt == 2)
+	$spreadAxis = ".ry";	
+else if ($spreadAxisInt == 3)
+	$spreadAxis = ".rz";
+
+if ($bendAxisInt == 1)		//If bendAxis is -X...
+	{
+	//We need to assign $spreadPlus and $spreadMinus based on a) the bendAxis, and b) the spreadAxis.
+	//These values were arrived at through simple obversation and trial and error.
+	if ($spreadAxisInt == 2)	//If spreadAxis is Y...
+		{
+		$spreadPlus = "+";
+		$spreadMinus = "-";
+		}
+	else if ($spreadAxisInt == 3)	//If spreadAxis is Z...
+		{
+		$spreadPlus = "-";
+		$spreadMinus = "+";
+		}
+	}
+else if ($bendAxisInt == 2)	//If bendAxis is +X...
+	{
+	if ($spreadAxisInt == 2)	//If spreadAxis is Y...
+		{
+		$spreadPlus = "-";
+		$spreadMinus = "+";
+		}
+	else if ($spreadAxisInt == 3)	//If spreadAxis is Z...
+		{
+		$spreadPlus = "+";
+		$spreadMinus = "-";
+		}
+	}
+else if ($bendAxisInt == 3)	//If bendAxis is -Y...
+	{
+	if ($spreadAxisInt == 1)	//If spreadAxis is X...
+		{
+		$spreadPlus = "-";
+		$spreadMinus = "+";
+		}
+	else if ($spreadAxisInt == 3)	//If spreadAxis is Z...
+		{
+		$spreadPlus = "+";
+		$spreadMinus = "-";
+		}
+	}
+else if ($bendAxisInt == 4)	//If bendAxis is +Y...
+	{
+	if ($spreadAxisInt == 1)	//If spreadAxis is X...
+		{
+		$spreadPlus = "+";
+		$spreadMinus = "-";
+		}
+	else if ($spreadAxisInt == 3)	//If spreadAxis is Z...
+		{
+		$spreadPlus = "-";
+		$spreadMinus = "+";
+		}
+	}
+else if ($bendAxisInt == 5)	//If bendAxis is -Z...
+	{
+	if ($spreadAxisInt == 1)	//If spreadAxis is X...
+		{	
+		$spreadPlus = "+";
+		$spreadMinus = "-";
+		}
+	else if ($spreadAxisInt == 2)	//If spreadAxis is Y...
+		{	
+		$spreadPlus = "-";
+		$spreadMinus = "+";
+		}
+	}
+else if ($bendAxisInt == 6)	//If bendAxis is +Z...
+	{
+	if ($spreadAxisInt == 1)	//If spreadAxis is X...
+		{
+		$spreadPlus = "-";
+		$spreadMinus = "+";
+		}
+	else if ($spreadAxisInt == 2)	//If spreadAxis is Y...
+		{
+		$spreadPlus = "+";
+		$spreadMinus = "-";
+		}
+	}
+
+
+float $spreadValue;	//We need to store the spread value into a temp variable, then make it positive or negative depending on 
+			//whether $fingerXPosition is positive or negative.
+
+
+//SDK setup.
+if ($thumbCheck)
+	{
+	//Thumb side.
+	setDrivenKeyframe -itt spline -ott spline -cd $thumbSideObjAttr -dv 0 -v 0 ($thumb1 + $spreadAxis);
+
+	$spreadValue = ($spreadPlus + 45);
+	if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+	setDrivenKeyframe -itt linear -ott linear -cd $thumbSideObjAttr -dv 1 -v $spreadValue ($thumb1 + $spreadAxis);
+	
+	$spreadValue = ($spreadMinus + 35);
+	if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+	setDrivenKeyframe -itt linear -ott linear -cd $thumbSideObjAttr -dv -1 -v $spreadValue ($thumb1 + $spreadAxis);
+	
+	//Thumb in.
+	setDrivenKeyframe -itt spline -ott spline -cd $thumbInObjAttr -dv 0 -v 0 ($thumb1 + $bendAxis);
+	if (`size $thumb2`)
+		setDrivenKeyframe -itt spline -ott spline -cd $thumbInObjAttr -dv 0 -v 0 ($thumb2[0] + $bendAxis);
+	if (`size $thumb3`)
+		setDrivenKeyframe -itt spline -ott spline -cd $thumbInObjAttr -dv 0 -v 0 ($thumb3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $thumbInObjAttr -dv 1 -v ((float)($bendPlus + 50)) ($thumb1 + $bendAxis);
+	if (`size $thumb2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $thumbInObjAttr -dv 1 -v ((float)($bendPlus + 70)) ($thumb2[0] + $bendAxis);
+	if (`size $thumb3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $thumbInObjAttr -dv 1 -v ((float)($bendPlus + 80)) ($thumb3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $thumbInObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($thumb1 + $bendAxis);
+	if (`size $thumb2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $thumbInObjAttr -dv -1 -v ((float)($bendMinus + 25)) ($thumb2[0] + $bendAxis);
+	if (`size $thumb3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $thumbInObjAttr -dv -1 -v ((float)($bendMinus + 50)) ($thumb3[0] + $bendAxis);
+	}
+
+if ($indexCheck)
+	{
+	setDrivenKeyframe -itt spline -ott spline -cd $indexObjAttr -dv 0 -v 0 ($index1 + $bendAxis);
+	if (`size $index2`)
+		setDrivenKeyframe -itt spline -ott spline -cd $indexObjAttr -dv 0 -v 0 ($index2[0] + $bendAxis);
+	if (`size $index3`)
+		setDrivenKeyframe -itt spline -ott spline -cd $indexObjAttr -dv 0 -v 0 ($index3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $indexObjAttr -dv 1 -v ((float)($bendPlus + 60)) ($index1 + $bendAxis);
+	if (`size $index2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $indexObjAttr -dv 1 -v ((float)($bendPlus + 65)) ($index2[0] + $bendAxis);
+	if (`size $index3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $indexObjAttr -dv 1 -v ((float)($bendPlus + 85))($index3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $indexObjAttr -dv -1 -v ((float)($bendMinus + 20)) ($index1 + $bendAxis);
+	if (`size $index2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $indexObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($index2[0] + $bendAxis);
+	if (`size $index3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $indexObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($index3[0] + $bendAxis);
+	}
+
+if ($middleCheck)
+	{
+	setDrivenKeyframe -itt spline -ott spline -cd $middleObjAttr -dv 0 -v 0 ($middle1 + $bendAxis);
+	if (`size $middle2`)
+		setDrivenKeyframe -itt spline -ott spline -cd $middleObjAttr -dv 0 -v 0 ($middle2[0] + $bendAxis);
+	if (`size $middle3`)
+		setDrivenKeyframe -itt spline -ott spline -cd $middleObjAttr -dv 0 -v 0 ($middle3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $middleObjAttr -dv 1 -v ((float)($bendPlus + 60)) ($middle1 + $bendAxis);
+	if (`size $middle2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $middleObjAttr -dv 1 -v ((float)($bendPlus + 65)) ($middle2[0] + $bendAxis);
+	if (`size $middle3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $middleObjAttr -dv 1 -v ((float)($bendPlus + 85)) ($middle3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $middleObjAttr -dv -1 -v ((float)($bendMinus + 20)) ($middle1 + $bendAxis);
+	if (`size $middle2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $middleObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($middle2[0] + $bendAxis);
+	if (`size $middle3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $middleObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($middle3[0] + $bendAxis);
+	}
+
+if ($ringCheck)
+	{
+	setDrivenKeyframe -itt spline -ott spline -cd $ringObjAttr -dv 0 -v 0 ($ring1 + $bendAxis);
+	if (`size $ring2`)
+		setDrivenKeyframe -itt spline -ott spline -cd $ringObjAttr -dv 0 -v 0 ($ring2[0] + $bendAxis);
+	if (`size $ring3`)
+		setDrivenKeyframe -itt spline -ott spline -cd $ringObjAttr -dv 0 -v 0 ($ring3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $ringObjAttr -dv 1 -v ((float)($bendPlus + 60)) ($ring1 + $bendAxis);
+	if (`size $ring2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $ringObjAttr -dv 1 -v ((float)($bendPlus + 65)) ($ring2[0] + $bendAxis);
+	if (`size $ring3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $ringObjAttr -dv 1 -v ((float)($bendPlus + 85)) ($ring3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $ringObjAttr -dv -1 -v ((float)($bendMinus + 20)) ($ring1 + $bendAxis);
+	if (`size $ring2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $ringObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($ring2[0] + $bendAxis);
+	if (`size $ring3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $ringObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($ring3[0] + $bendAxis);
+	}
+
+if ($pinkyCheck)
+	{
+	if ($pinkyCupCheck)
+		setDrivenKeyframe -itt spline -ott spline -cd $pinkyObjAttr -dv 0 -v 0 ($pinkyCup[0] + $bendAxis);
+	setDrivenKeyframe -itt spline -ott spline -cd $pinkyObjAttr -dv 0 -v 0 ($pinky1 + $bendAxis);
+	if (`size $pinky2`)
+		setDrivenKeyframe -itt spline -ott spline -cd $pinkyObjAttr -dv 0 -v 0 ($pinky2[0] + $bendAxis);
+	if (`size $pinky3`)
+		setDrivenKeyframe -itt spline -ott spline -cd $pinkyObjAttr -dv 0 -v 0 ($pinky3[0] + $bendAxis);
+	
+	if ($pinkyCupCheck)	
+		setDrivenKeyframe -itt linear -ott linear -cd $pinkyObjAttr -dv 1 -v ((float)($bendPlus + 10)) ($pinkyCup[0] + $bendAxis);
+	setDrivenKeyframe -itt linear -ott linear -cd $pinkyObjAttr -dv 1 -v ((float)($bendPlus + 60)) ($pinky1 + $bendAxis);
+	if (`size $pinky2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $pinkyObjAttr -dv 1 -v ((float)($bendPlus + 60)) ($pinky2[0] + $bendAxis);
+	if (`size $pinky3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $pinkyObjAttr -dv 1 -v ((float)($bendPlus + 90)) ($pinky3[0] + $bendAxis);
+	
+	if ($pinkyCupCheck)
+		setDrivenKeyframe -itt linear -ott linear -cd $pinkyObjAttr -dv -1 -v ((float)($bendMinus + 8)) ($pinkyCup[0] + $bendAxis);
+	setDrivenKeyframe -itt linear -ott linear -cd $pinkyObjAttr -dv -1 -v ((float)($bendMinus + 20)) ($pinky1 + $bendAxis);
+	if (`size $pinky2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $pinkyObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($pinky2[0] + $bendAxis);
+	if (`size $pinky3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $pinkyObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($pinky3[0] + $bendAxis);
+	}
+
+
+//Spread.
+if ($thumbCheck)
+	setDrivenKeyframe -itt spline -ott spline -cd $spreadObjAttr -dv 0 -v 0 ($thumb1 + $spreadAxis);
+if ($indexCheck)
+	setDrivenKeyframe -itt spline -ott spline -cd $spreadObjAttr -dv 0 -v 0 ($index1 + $spreadAxis);
+if ($middleCheck)
+	setDrivenKeyframe -itt spline -ott spline -cd $spreadObjAttr -dv 0 -v 0 ($middle1 + $spreadAxis);
+if ($ringCheck)
+	setDrivenKeyframe -itt spline -ott spline -cd $spreadObjAttr -dv 0 -v 0 ($ring1 + $spreadAxis);
+if ($pinkyCheck)
+	{
+	setDrivenKeyframe -itt spline -ott spline -cd $spreadObjAttr -dv 0 -v 0 ($pinky1 + $spreadAxis);
+	if ($pinkyCupCheck)
+		setDrivenKeyframe -itt spline -ott spline -cd $spreadObjAttr -dv 0 -v 0 ($pinkyCup[0] + $spreadAxis);
+	}
+
+if ($thumbCheck)
+	{
+	$spreadValue = ($spreadPlus + 27);
+	if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+	setDrivenKeyframe -itt linear -ott linear -cd $spreadObjAttr -dv 1 -v $spreadValue ($thumb1 + $spreadAxis);
+	}
+if ($indexCheck)
+	{
+	$spreadValue = ($spreadPlus + 27);
+	if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+	setDrivenKeyframe -itt linear -ott linear -cd $spreadObjAttr -dv 1 -v $spreadValue ($index1 + $spreadAxis);
+	}
+if ($middleCheck)
+	{
+	$spreadValue = ($spreadPlus + 10);
+	if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+	setDrivenKeyframe -itt linear -ott linear -cd $spreadObjAttr -dv 1 -v $spreadValue ($middle1 + $spreadAxis);
+	}
+if ($ringCheck)
+	{
+	$spreadValue = ($spreadMinus + 10);
+	if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+	setDrivenKeyframe -itt spline -ott spline -cd $spreadObjAttr -dv 1 -v $spreadValue ($ring1 + $spreadAxis);
+	}
+if ($pinkyCheck)
+	{
+	$spreadValue = ($spreadMinus + 17);
+	if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+	setDrivenKeyframe -itt linear -ott linear -cd $spreadObjAttr -dv 1 -v $spreadValue ($pinky1 + $spreadAxis);
+	if ($pinkyCupCheck)
+		{
+		$spreadValue = ($spreadMinus + 9);
+		if ($fingerXPosition < 0)
+			$spreadValue *= -1;
+		setDrivenKeyframe -itt linear -ott linear -cd $spreadObjAttr -dv 1 -v $spreadValue ($pinkyCup[0] + $spreadAxis);
+		}
+	}
+
+if ($thumbCheck)
+	{
+	$spreadValue = ($spreadMinus + 48);
+	if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+	setDrivenKeyframe -itt linear -ott linear -cd $spreadObjAttr -dv -1 -v $spreadValue ($thumb1 + $spreadAxis);
+	}
+if ($indexCheck)
+	{
+	$spreadValue = ($spreadMinus + 4);
+	if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+	setDrivenKeyframe -itt linear -ott linear -cd $spreadObjAttr -dv -1 -v $spreadValue ($index1 + $spreadAxis);
+	}
+if ($middleCheck)
+	{
+	$spreadValue = ($spreadPlus + 5);
+	if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+	setDrivenKeyframe -itt linear -ott linear -cd $spreadObjAttr -dv -1 -v $spreadValue ($middle1 + $spreadAxis);
+	}
+if ($ringCheck)
+	{
+	$spreadValue = ($spreadPlus + 14);
+	if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+	setDrivenKeyframe -itt spline -ott spline -cd $spreadObjAttr -dv -1 -v $spreadValue ($ring1 + $spreadAxis);
+	}
+if ($pinkyCheck)
+	{
+	$spreadValue = ($spreadPlus + 15);
+	if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+	setDrivenKeyframe -itt linear -ott linear -cd $spreadObjAttr -dv -1 -v $spreadValue ($pinky1 + $spreadAxis);
+	if ($pinkyCupCheck)
+		{
+		$spreadValue = ($spreadPlus + 6);
+		if ($fingerXPosition < 0)
+		$spreadValue *= -1;
+		setDrivenKeyframe -itt linear -ott linear -cd $spreadObjAttr -dv -1 -v $spreadValue ($pinkyCup[0] + $spreadAxis);
+		}
+	}
+
+
+
+//Fist.
+if ($thumbCheck)
+	{
+	setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($thumb1 + $bendAxis);
+	if (`size $thumb2`)
+		setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($thumb2[0] + $bendAxis);
+	if (`size $thumb3`)
+		setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($thumb3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 50)) ($thumb1 + $bendAxis);
+	if (`size $thumb2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 70)) ($thumb2[0] + $bendAxis);
+	if (`size $thumb3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 80)) ($thumb3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($thumb1 + $bendAxis);
+	if (`size $thumb2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 25)) ($thumb2[0] + $bendAxis);
+	if (`size $thumb3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 50)) ($thumb3[0] + $bendAxis);
+	}
+if ($indexCheck)
+	{
+	setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($index1 + $bendAxis);
+	if (`size $index2`)
+		setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($index2[0] + $bendAxis);
+	if (`size $index3`)
+		setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($index3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 60)) ($index1 + $bendAxis);
+	if (`size $index2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 65)) ($index2[0] + $bendAxis);
+	if (`size $index3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 85))($index3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 20)) ($index1 + $bendAxis);
+	if (`size $index2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($index2[0] + $bendAxis);
+	if (`size $index3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($index3[0] + $bendAxis);
+	}
+if ($middleCheck)
+	{
+	setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($middle1 + $bendAxis);
+	if (`size $middle2`)
+		setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($middle2[0] + $bendAxis);
+	if (`size $middle3`)
+		setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($middle3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 60)) ($middle1 + $bendAxis);
+	if (`size $middle2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 65)) ($middle2[0] + $bendAxis);
+	if (`size $middle3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 85)) ($middle3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 20)) ($middle1 + $bendAxis);
+	if (`size $middle2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($middle2[0] + $bendAxis);
+	if (`size $middle3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($middle3[0] + $bendAxis);
+	}
+if ($ringCheck)
+	{
+	setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($ring1 + $bendAxis);
+	if (`size $ring2`)
+		setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($ring2[0] + $bendAxis);
+	if (`size $ring3`)
+		setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($ring3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 60)) ($ring1 + $bendAxis);
+	if (`size $ring2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 65)) ($ring2[0] + $bendAxis);
+	if (`size $ring3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 85)) ($ring3[0] + $bendAxis);
+	
+	setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 20)) ($ring1 + $bendAxis);
+	if (`size $ring2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($ring2[0] + $bendAxis);
+	if (`size $ring3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($ring3[0] + $bendAxis);
+	}
+if ($pinkyCheck)
+	{
+	if ($pinkyCupCheck)
+		setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($pinkyCup[0] + $bendAxis);
+	setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($pinky1 + $bendAxis);
+	if (`size $pinky2`)
+		setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($pinky2[0] + $bendAxis);
+	if (`size $pinky3`)
+		setDrivenKeyframe -itt spline -ott spline -cd $fistObjAttr -dv 0 -v 0 ($pinky3[0] + $bendAxis);
+	
+	if ($pinkyCupCheck)	
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 10)) ($pinkyCup[0] + $bendAxis);
+	setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 60)) ($pinky1 + $bendAxis);
+	if (`size $pinky2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 60)) ($pinky2[0] + $bendAxis);
+	if (`size $pinky3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv 1 -v ((float)($bendPlus + 90)) ($pinky3[0] + $bendAxis);
+	
+	if ($pinkyCupCheck)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 8)) ($pinkyCup[0] + $bendAxis);
+	setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 20)) ($pinky1 + $bendAxis);
+	if (`size $pinky2`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr-dv -1 -v ((float)($bendMinus + 30)) ($pinky2[0] + $bendAxis);
+	if (`size $pinky3`)
+		setDrivenKeyframe -itt linear -ott linear -cd $fistObjAttr -dv -1 -v ((float)($bendMinus + 30)) ($pinky3[0] + $bendAxis);
+	}
+	
+print "Finger setup complete. Finger controls can be modified by adjusting the SDK animCurves on the finger joints.";
+}//END OF PROCEDURE.

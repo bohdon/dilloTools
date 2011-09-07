@@ -1,0 +1,34 @@
+//Title:	dwCreateIKFKArm.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date:		March 20, 2004
+//
+//Description: Returns a  conversion factor based on the Maya´s current linear units.
+
+global proc float dwRTGetLinearUnitConversion()
+{
+string $currentUnits = `currentUnit -q -l`;
+
+float $conversionFactor;
+
+if ($currentUnits == "mm")
+	$conversionFactor = 10;
+else if ($currentUnits == "cm")
+	$conversionFactor = 1;
+else if ($currentUnits == "m")
+	$conversionFactor = 0.01;
+else if ($currentUnits == "km")
+	$conversionFactor = 0.0001;
+else if ($currentUnits == "in")
+	$conversionFactor = 0.393701;
+else if ($currentUnits == "ft")
+	$conversionFactor = 0.0328084;
+else if ($currentUnits == "yd")
+	$conversionFactor = 0.0109361;
+else if ($currentUnits == "mi")
+	$conversionFactor = 6.21371e-06;
+
+return $conversionFactor;
+}

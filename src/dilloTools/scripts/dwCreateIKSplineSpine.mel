@@ -1,0 +1,514 @@
+//Title:	dwCreateIKSplineSpine.mel
+//Author:	David Walden 
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date:		Jan. 9 2003
+//
+//Update:	March 19, 2004 - Added controls for neck and head. Moved pivot point of hipControl to slightly above the root.
+//
+//Update:	April 1, 2004: point and orient constrained hip and shoulder groups to animation chain joints. Now we can hide
+//				the animation chain, as it doesn´t need to be seen.
+//
+//Description: MAIN PROCEDURE TO CREATE IK-SPLINE SPINE SETUP.
+global proc dwCreateIKSplineSpine (string $spineStartJoint, 
+					string $spineEndJoint,
+					int $stretchCheck, 
+					string $stretchAxis, 
+					int $controlType, 
+					int $controlsColor, 
+					string $rootJoint,
+					int $neckHeadCheck,
+					int $neckCheck,
+					string $neckJoint,
+					int $headCheck,
+					string $headJoint,
+					string $prefix)
+{
+//Report errors if user inputs bad info.
+if (! `objExists $rootJoint`)
+	error ("No root joint exists with given name " + $rootJoint + ". Try again.");
+if ((($neckHeadCheck) && ($neckCheck)) && ((! `size $neckJoint`) || (! `objExists $neckJoint`) || (`nodeType $neckJoint` != "joint")))
+	error "Neck joint specified incorrectly. Try again.";
+if ((($neckHeadCheck) && ($headCheck)) && ((! `size $headJoint`) || (! `objExists $headJoint`) || (`nodeType $headJoint` != "joint")))
+	error "Head joint specified incorrectly. Try again.";
+
+//Report error if root joint and first joint are the same.
+if ($spineStartJoint == $rootJoint)
+	error "The root joint and first spine joint are identical. Spine should start on the first joint above the root. Try again.";
+
+//Report error if naming prefix is invalid.
+if (! `dwRTValidateName $prefix`)
+	error "Naming prefix invalid. Remove special characters and try again.";
+
+//Get initial selection.
+string $selection[] = `ls -sl`;
+
+string $ikSplineIKHandle[] = `ikHandle 
+				-solver ikSplineSolver 
+				-n ($prefix + "IK_Spine_IK_Handle") 
+				-sj $spineStartJoint
+				-ee $spineEndJoint
+				-createCurve 1
+				-simplifyCurve 1
+				-rootOnCurve 1
+				-parentCurve 0
+				-numSpans 2
+				-rootTwistMode 0`;
+
+
+string $spineJoints[] = `ikHandle -q -jl $ikSplineIKHandle[0]`;
+int $sizeSpineJoints = `size($spineJoints)`;
+
+//Add spine end joint as the last index in the joint list....
+$spineJoints[$sizeSpineJoints] = $spineEndJoint;
+
+//...and refresh size variable.
+$sizeSpineJoints = `size($spineJoints)`;
+
+rename $ikSplineIKHandle[1] ($prefix + "IK_Spine_Effector");
+string $ikSpineCurve = `rename $ikSplineIKHandle[2] ($prefix + "IK_Spine_Curve")`;	
+
+setAttr ($ikSplineIKHandle[0] + ".v") 0;
+setAttr ($ikSpineCurve + ".v") 0;
+
+
+
+
+//GET LIST OF CV´S IN CURVE.
+select -r ($ikSpineCurve + ".cv[*]");
+string $ikSpineCurveCVs[] = `filterExpand -ex true -sm 28`;
+int $sizeBackClusters = `size($ikSpineCurveCVs)`;
+
+string $createBackSpineCluster[];   //String array which creates clusters.
+string $backSpineClusters[];	   //String array which will hold Cluster names- $createBackSpineCluster[0]
+string $backSpineClusterHandles[]; //String array which will hold Cluster Handle names- $createBackSpineCluster[1]
+int $i = 0;
+for ($cv in $ikSpineCurveCVs)
+	{
+	select -r $cv;
+	$createBackSpineCluster = `cluster -n ($prefix + "spineCluster" + $i + "_")`;
+	$backSpineClusters[$i] = $createBackSpineCluster[0];
+	$backSpineClusterHandles[$i] = $createBackSpineCluster[1];
+	setAttr ($backSpineClusterHandles[$i] + ".v") 0;
+	$i++;
+	}
+
+
+//CREATE STRETCHY SPINE IF SELECTED IN UI. CURRENTLY WILL STRETCH ONLY ALONG X-AXIS.
+if ($stretchCheck)
+	{
+	select -r $ikSpineCurve;
+	string $ikSpineCurveInfo = `arclen -ch 1`;
+	float $ikSpineCurveLength = `getAttr ($ikSpineCurveInfo + ".arcLength")`;
+
+	string $backStretchDivideNode = `shadingNode -asUtility -n ($prefix + "Back_Stretch_Divide") multiplyDivide`;
+	setAttr ($backStretchDivideNode + ".operation") 2;
+
+	connectAttr ($ikSpineCurveInfo + ".arcLength") ($backStretchDivideNode + ".input1X");
+	setAttr ($backStretchDivideNode + ".input2X") $ikSpineCurveLength;
+	
+	
+	string $backStretchMultiplyNode;
+	for ($i = 1; $i < $sizeSpineJoints; $i++)
+		{
+		$backStretchMultiplyNode = `shadingNode -asUtility -n ($prefix + $spineJoints[$i] + "_Stretch_Multiply") multiplyDivide`;
+		setAttr ($backStretchMultiplyNode + ".operation") 1;
+		
+		connectAttr ($backStretchDivideNode + ".outputX") ($backStretchMultiplyNode + ".input1X");
+		float $transValue;
+		//Currently stretching is available only along the X-axis.
+		if ($stretchAxis == "X")
+			{
+			$transValue = `getAttr ($spineJoints[$i] + ".tx")`;
+			setAttr ($backStretchMultiplyNode + ".input2X") $transValue;
+			connectAttr -f ($backStretchMultiplyNode + ".outputX") ($spineJoints[$i] + ".tx");
+			}
+		/*
+		if ($stretchAxis == "Y")
+			{
+			$transValue = `getAttr ($spineJoints[$i] + ".ty")`;
+			setAttr ($backStretchMultiplyNode + ".input2X") $transValue;
+			connectAttr ($backStretchMultiplyNode + ".outputX") ($spineJoints[$i] + ".ty");
+			}
+		if ($stretchAxis == "Z")
+			{
+			$transValue = `getAttr ($spineJoints[$i] + ".tz")`;
+			setAttr ($backStretchMultiplyNode + ".input2X") $transValue;
+			connectAttr ($backStretchMultiplyNode + ".outputX") ($spineJoints[$i] + ".tz");
+			}
+		*/
+		}
+	}
+
+//Create controls for hips and shoulder. Currently using "H" and "S" text (although not sure if that´s the best choice).
+//Create "H" for hips.
+//FIRST GET LENGTH OF BACK, WHICH WILL HELP US DETERMINE THE SIZE OF OUR SPLINE CONTROL OBJECTS.
+float $spineLength = dwRTGetDistance ($rootJoint, $spineEndJoint);
+
+//We´ll need the positions of the root and the last spine joint for later.
+float $rootPosition[] = `xform -q -ws -t $rootJoint`;
+float $lastSpineJointPosition[] = `xform -q -ws -t ($spineEndJoint)`;
+
+//Create the hipControl obj.
+string $hipControl = dwCreateControlObject(2, ($spineLength/1.5), ($prefix + "HIP_CONTROL"), 2, 2);
+
+//Move the $hipControl *slightly* above the root pos.
+move -a $rootPosition[0] ($rootPosition[1] + ($spineLength/20)) $rootPosition[2] $hipControl;
+//Move the pivot point even more above the root position.
+move -r 0 ($spineLength/5) 0 ($hipControl + ".rotatePivot") ($hipControl + ".scalePivot");
+makeIdentity -apply true -t 1 -s 1;
+
+
+//Create "S" for Shoulder.
+string $shoulderControlText[] = `textCurves -t "S" -f "Arial" -ch 0`;
+pickWalk -d down;
+pickWalk -d down;
+parent -w;
+delete $shoulderControlText;
+string $selTemp[] = `ls -sl`;
+string $shoulderControl = `rename $selTemp[0] ($prefix + "UPPER_TORSO_STRETCH_CONTROL")`;
+setAttr ($shoulderControl + ".showManipDefault") 1;
+
+rotate -a 0 90 0;
+move -a $lastSpineJointPosition[0] $lastSpineJointPosition[1] $lastSpineJointPosition[2];
+//Place it in behind the spine.
+move -r 0 0 (-$spineLength/8);
+makeIdentity -apply true -r 1 -t 1 -s 1;
+move -a $lastSpineJointPosition[0] $lastSpineJointPosition[1] $lastSpineJointPosition[2] ($shoulderControl + ".rotatePivot") ($shoulderControl + ".scalePivot");
+
+
+//Parent cluster handles to control objects.
+parent $backSpineClusterHandles[0] $hipControl;
+parent $backSpineClusterHandles[1] $hipControl;
+parent $backSpineClusterHandles[3] $shoulderControl;
+parent $backSpineClusterHandles[4] $shoulderControl;
+	
+	//Constrain middle CV, but make sure the CV doesn´t change position. So... Create 2 group nodes: one parented under the shoulder, 
+	//one parented under the hips, each placed at the position of the middle CV. Then constrain CV to these 2 group nodes.
+	float $middleCVPosition[] = `xform -q -ws -rp $backSpineClusterHandles[2]`;
+	string $underShouldersCVOffset = `group -em -n ($prefix + "Middle_BackCurveCV_Offset_underShoulders")`;
+	move -a $middleCVPosition[0] $middleCVPosition[1] $middleCVPosition[2];
+	parent $underShouldersCVOffset $shoulderControl;
+	makeIdentity -apply true -t 1;
+	string $underHipsCVOffset = `group -em -n ($prefix + "Middle_BackCurveCV_Offset_underHips")`;
+	move -a $middleCVPosition[0] $middleCVPosition[1] $middleCVPosition[2];
+	parent $underHipsCVOffset $hipControl;
+	makeIdentity -apply true -t 1;
+	pointConstraint -n ($prefix + "PointConstrainMiddleCV2ShoulderHips") $underShouldersCVOffset $underHipsCVOffset $backSpineClusterHandles[2];
+
+//Constrain root joint of spine to $hipControl. Create duplicate of root joint, delete its children,
+//parent this joint to the $hipControl, then constrain the root to this joint. This allows for differences
+//in rotations and orientations between $hipControl and root, while keeping the orient and point constraint.
+string $rootDup[] = `duplicate -n ($prefix + "rootJoint_hipOrient") $rootJoint`;
+string $rootDupChildren[] = `listRelatives -f -c $rootDup[0]`;
+	delete $rootDupChildren;
+parent $rootDup[0] $hipControl;
+pointConstraint -n ($prefix + "PointConstrainRoot2Hips") $rootDup[0] $rootJoint;
+orientConstraint -n ($prefix + "OrientConstrainRoot2Hips") $rootDup[0] $rootJoint;
+setAttr ($rootDup[0] + ".v") 0;
+
+
+//Create animation chain. A 3-bone chain going from the hip joint to the shoulder joint.
+select -cl;
+float $rootPosition[3] = `xform -q -ws -t $rootJoint`;
+string $torso1Joint = `joint -p $rootPosition[0] $rootPosition[1] $rootPosition[2] -n ($prefix + "Base_Torso_J")`;
+
+string $torso2Joint = `joint -p $lastSpineJointPosition[0] $lastSpineJointPosition[1] $lastSpineJointPosition[2] -n ($prefix + "Lower_Torso_J")`;
+joint -e -zso -oj xyz $torso1Joint;
+float $torsoLastXValue = `getAttr ($torso2Joint + ".tx")`;
+setAttr ($torso2Joint + ".tx") ($torsoLastXValue * 1/3);
+
+string $torso3Joint = `joint -p $lastSpineJointPosition[0] $lastSpineJointPosition[1] $lastSpineJointPosition[2] -n ($prefix + "Upper_Torso_J")`;
+joint -e -zso -oj xyz $torso2Joint;
+setAttr ($torso3Joint + ".tx") ($torsoLastXValue * 1/3);
+
+string $torso4Joint = `joint -p $lastSpineJointPosition[0] $lastSpineJointPosition[1] $lastSpineJointPosition[2] -n ($prefix + "Upper_Torso_End_J")`;
+joint -e -zso -oj xyz $torso3Joint;
+
+//Orient animation chain.
+string $animationChain[] = {$torso1Joint, $torso2Joint, $torso3Joint, $torso4Joint};
+dwOrientJoints ($animationChain, 1, 2, 2);
+
+//OLD: Parent shoulder control to $torso4Joint: Unparent children, freeze, reparent children.
+//NEW: point and orient constrain a group node to $torso4Joint, then parent $shoulderControl to this. This way
+//we can hide the animation chain (which clutters viewport).
+string $shoulderControlGrp = `group -em -n ($prefix + "UPPER_TORSO_STRETCH_GRP")`;
+pointConstraint $torso4Joint $shoulderControlGrp;
+orientConstraint $torso4Joint $shoulderControlGrp;
+
+string $shoulderChildren[] = `listRelatives -c -type transform $shoulderControl`;
+parent -w $shoulderChildren;
+//OLD: parent $shoulderControl $torso4Joint;
+parent $shoulderControl $shoulderControlGrp;
+makeIdentity -apply true -t 1 -r 1 -s 1 $shoulderControl;
+parent $shoulderChildren $shoulderControl;
+
+//Now hide the animation chain (hide 2nd joint because 1st joint will have $hipControl parented under it).
+setAttr ($torso1Joint + ".v") 0;
+
+
+//Do similar for $hipControl.
+parent $hipControl $torso1Joint;
+string $hipChildren[] = `listRelatives -c -type transform $hipControl`;
+parent -w $hipChildren;
+
+string $hipOrientGrp = `group -em -n ($prefix + "HipControl_OrientGrp")`;
+move -a $rootPosition[0] $rootPosition[1] $rootPosition[2] $hipOrientGrp;
+
+//OLD: parent $hipOrientGrp $torso1Joint;
+pointConstraint $torso1Joint $hipOrientGrp;
+//We need to offset this orientGrp using the torso1 joint´s jointOrientX attr.
+float $torso1OrientX = `getAttr ($torso1Joint + ".jointOrientX")`;
+setAttr ($hipOrientGrp + ".rx") (180 - $torso1OrientX);
+
+string $hipOrientCompGrp = `group -em -n ($prefix + "hipOrient_CompGRP")`;
+parent $hipOrientCompGrp $hipOrientGrp;
+makeIdentity -t 1 $hipOrientCompGrp;
+
+parent $hipControl $hipOrientCompGrp;
+makeIdentity -apply true -t 1 -r 1 -s 1 $hipControl;
+parent $hipChildren $hipControl;
+
+
+//Create FK Control objects on $torso2Joint and $torso3Joint.
+string $torso2OrientGrp;
+string $torso3OrientGrp;
+string $upperTorsoFreeOrientGrp;
+//string $upperTorsoFollowOrientGrp;
+//string $upperTorsoOrientGrp;
+//string $upperTorsoFreeOrientConstraint[];
+string $lowerTorsoControl;
+string $upperTorsoControl;
+if ($controlType > 1)
+	{
+	/*
+	$torso2OrientGrp = dwCreateFKControl($torso2Joint, $torso3Joint, 1, 1, "orientConstrainRotations", 1, 0, $controlType, ($spineLength/2), 2, $prefix, "LOWER_TORSO_CONTROL");
+	$torso3OrientGrp = dwCreateFKControl($torso3Joint, $torso4Joint, 1, 1, "orientConstrainRotations", 1, 0, $controlType, ($spineLength/2), 2, $prefix, "UPPER_TORSO_CONTROL");
+	*/
+	
+	//Update May 5 2004:
+	$torso2OrientGrp = dwCreateFKControlForSpine ($torso2Joint, 
+							0,
+							$torso3Joint,
+							($controlType - 1), 
+							($spineLength/2), 
+							($prefix + "LOWER_TORSO_CONTROL"), 
+							1, 2, 1);
+	
+	$torso3OrientGrp = dwCreateFKControlForSpine ($torso3Joint, 
+							0,
+							$torso4Joint,
+							($controlType - 1), 
+							($spineLength/2), 
+							($prefix + "UPPER_TORSO_CONTROL"), 
+							1, 2, 1);
+	
+	$lowerTorsoControl = ($prefix + "LOWER_TORSO_CONTROL");
+	$upperTorsoControl = ($prefix + "UPPER_TORSO_CONTROL");
+	
+	//Do Free_Orient setup on upper torso.
+	$upperTorsoFreeOrientGrp = dwCreateFreeOrientFKSetup ($torso3Joint,
+									($prefix + "UpperTorso"),
+									$lowerTorsoControl,
+									$upperTorsoControl,
+									$torso3OrientGrp);
+	
+	//Add override color scheme to FK control boxes.
+	if ($controlsColor > 1)
+		{
+		setAttr ($lowerTorsoControl + ".overrideEnabled") 1;
+		setAttr ($lowerTorsoControl + ".overrideColor") ($controlsColor - 1);
+		}
+	
+	}
+
+
+//If neck-head check is true, create controls for the neck and head joints, using dwCreateFKControlForSpine.mel and dwCreateFreeOrientFKSetup.mel
+string $neckControlOrientGrp;
+string $headControlOrientGrp;
+string $neckControlFreeOrientGrp;
+string $headControlFreeOrientGrp;
+if ($neckHeadCheck)
+	{
+	if ($neckCheck)
+		{
+		if ($headCheck)
+			{
+			$neckControlOrientGrp = dwCreateFKControlForSpine ($neckJoint, 
+								$stretchCheck,
+								$headJoint,
+								($controlType - 1), 
+								($spineLength/4), 
+								($prefix + "NECK_CONTROL"), 
+								1, 2, 1);
+			}
+		else if (! $headCheck)
+			{
+			//Try to get the first joint-child of the neck.
+			string $neckChildren[] = `listRelatives -c -type joint $neckJoint`;
+			$neckControlOrientGrp = dwCreateFKControlForSpine ($neckJoint, 
+								$stretchCheck,
+								$neckChildren[0],
+								($controlType - 1), 
+								($spineLength/4), 
+								($prefix + "NECK_CONTROL"), 
+								1, 2, 1);
+			}
+		$neckControlFreeOrientGrp = dwCreateFreeOrientFKSetup ($neckJoint,
+									($prefix + "Neck"),
+									$upperTorsoControl,
+									($prefix + "NECK_CONTROL"),
+									$neckControlOrientGrp);
+		//Add override color scheme to FK control boxes.
+		if ($controlsColor > 1)
+			{
+			setAttr ($prefix + "NECK_CONTROL.overrideEnabled") 1;
+			setAttr ($prefix + "NECK_CONTROL.overrideColor") ($controlsColor - 1);
+			}
+		}
+	
+	if ($headCheck)
+		{
+		//No stretch on the head. Doesn´t require a child joint as an input.
+		$headControlOrientGrp = dwCreateFKControlForSpine ($headJoint, 
+								0,
+								"headJointChild_DummyInput",	//we don´t want to stretch the head, so just give a dummy string.
+								($controlType - 1), 
+								($spineLength/3), 
+								($prefix + "HEAD_CONTROL"), 
+								1,
+								2,
+								1);
+								
+		//If user chose to create a neck control, do "Free_Orient" setup using Neck as follow obj.
+		if ($neckCheck)
+			{
+			$headControlFreeOrientGrp = dwCreateFreeOrientFKSetup ($headJoint,
+										($prefix + "Head"),
+										($prefix + "NECK_CONTROL"),
+										($prefix + "HEAD_CONTROL"),
+										$headControlOrientGrp);
+			}
+		//Otherwise, use ($torso3Joint + "_Control") as follow obj.
+		else if (! $neckCheck)
+			{
+			$headControlFreeOrientGrp = dwCreateFreeOrientFKSetup ($headJoint,
+										($prefix + "Head"),
+										$upperTorsoControl,
+										($prefix + "HEAD_CONTROL"),
+										$headControlOrientGrp);
+			}
+		//Add override color scheme to FK control boxes.
+		if ($controlsColor > 1)
+			{
+			setAttr ($prefix + "HEAD_CONTROL.overrideEnabled") 1;
+			setAttr ($prefix + "HEAD_CONTROL.overrideColor") ($controlsColor - 1);
+			}
+		}
+	}
+
+
+
+
+//Create COG Controller.
+string $COGControl = dwCreateControlObject(3, ($spineLength/1.3), ($prefix + "COG_CONTROL"), 2, 1);
+move -a $rootPosition[0] $rootPosition[1] $rootPosition[2];
+makeIdentity -apply true -t 1;
+//Parent animation chain and hip and shoulder controls.
+parent $torso1Joint $COGControl;
+parent $hipOrientGrp $COGControl;
+parent $shoulderControlGrp $COGControl;
+
+if ($controlsColor > 1)
+		{
+		setAttr ($COGControl + ".overrideEnabled") 1;
+		setAttr ($COGControl+ ".overrideColor") ($controlsColor - 1);
+		}
+
+//Create orient hierarchy. Controls back twist, even when character is flipped upside down.
+select -cl;
+string $hipOrientJoint = `joint -p $rootPosition[0] $rootPosition[1] $rootPosition[2] -n ($prefix + "hip_orient")`;
+string $shoulderOrientJoint = `joint -p $lastSpineJointPosition[0] $lastSpineJointPosition[1] $lastSpineJointPosition[2] -n ($prefix + "shoulder_orient")`;
+joint -e -zso -oj xyz $hipOrientJoint;
+string $shoulderOrientEndJoint = `joint -p $lastSpineJointPosition[0] ($lastSpineJointPosition[1] + 2) $lastSpineJointPosition[2] -n ($prefix + "shoulder_orient_end")`;
+joint -e -zso -oj xyz $shoulderOrientEndJoint;
+
+string $orientChain[] = {$hipOrientJoint, $shoulderOrientJoint, $shoulderOrientEndJoint};
+for ($joint in $orientChain)
+	{setAttr ($joint + ".rotateOrder") 3;}
+
+//Important here. In future versions we should be able to orient the joints as necessary to the scene.
+dwOrientJoints ($orientChain, 2, 3, 2);
+
+
+string $orientIKHandle[2] = `ikHandle -solver ikSCsolver -sj $hipOrientJoint -ee $shoulderOrientJoint -n ($prefix + "orient_IKHandle")`;
+
+//Orient the $shoulderOrientJoint to the $shoulderControl. Note that if the joints are oriented differently in the setup,
+//we would need to orient this joint in a defferent manner. Probably is best to parent a grp node under the $shoulderControl, 
+//orient this group as desired , then orient constrain $shoulderOrientJoint to this group node.
+orientConstraint $shoulderControl $shoulderOrientJoint;
+
+expression -n ($prefix + "backTwistExpression") -s ($ikSplineIKHandle[0] + ".twist = " + $shoulderOrientJoint + ".ry");
+pointConstraint $shoulderControl $orientIKHandle[0];
+parent $orientIKHandle[0] $hipOrientJoint $hipControl;
+
+setAttr ($orientIKHandle[0] + ".v") 0;
+setAttr ($hipOrientJoint + ".v") 0;
+
+
+//Create DoNotTouch Group for extra controls.
+string $doNotTouchGrp = `group -em -n ($prefix + "Spine_DoNotTouch")`;
+parent $backSpineClusterHandles[2] $ikSpineCurve  $ikSplineIKHandle[0] $doNotTouchGrp;
+dwLockHideAttributes (0, 0, $doNotTouchGrp, "tx ty tz rx ry rz sx sy sz v");
+
+//Clean up some stuff by parenting to the COG.
+//parent $upperTorsoOrientGrp $upperTorsoFreeOrientGrp $COGControl;
+
+//Currently user must choose a control type.
+//if ($controlType > 1)
+//{
+parent 
+	$torso2OrientGrp
+	$torso3OrientGrp
+	$upperTorsoFreeOrientGrp
+	$COGControl;
+	
+if ($neckHeadCheck)
+	{
+	if ($neckCheck)
+		parent $neckControlOrientGrp $neckControlFreeOrientGrp $COGControl;
+	if ($headCheck)
+	 	parent $headControlOrientGrp $headControlFreeOrientGrp $COGControl;
+	}
+//}
+//Create SpineControlsGrp. Set rotation order of control objects to xzy.
+string $spineControlsGrp = `group -em -n ($prefix + "Spine_Controls")`;
+
+//OLD: parent $doNotTouchGrp $COGControl $spineControlsGrp;
+//Don´t parent the $doNotTouchGrp. It needs to be parented outside the entire control hierarchy.
+parent $COGControl $spineControlsGrp;
+
+//In future versions we should be able to set the rotation order in any way.
+setAttr ($COGControl + ".rotateOrder") 3;
+setAttr ($hipControl + ".rotateOrder") 3;
+setAttr ($shoulderControl + ".rotateOrder") 3;
+//if ($controlType > 1)
+//	{
+//	setAttr ($lowerTorsoControl + ".rotateOrder") 3;
+//	setAttr ($upperTorsoControl + ".rotateOrder") 3;
+//	}
+
+dwLockHideAttributes (0, 0, $spineControlsGrp, "tx ty tz rx ry rz sx sy sz v");
+dwLockHideAttributes (0, 0, $COGControl, "sx sy sz v");
+dwLockHideAttributes (0, 0, $shoulderControl, "rx ry rz sx sy sz v");
+//dwLockHideAttributes (1, 0, $shoulderControl, "tx tz");
+dwLockHideAttributes (0, 0, $hipControl, "sx sy sz v");
+
+//Select initial selection.
+select -r $selection;
+
+//Print happy message.
+print "IK-Spline spine setup completed.\n";
+
+}//End of procedure.

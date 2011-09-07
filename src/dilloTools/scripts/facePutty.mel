@@ -1,0 +1,358 @@
+//Title:	facePutty.mel
+//Author: 	Kristafer S. Vale
+//		www.ringling.edu/~kvale
+//		kvale@imageworks.com
+//
+//Dates: 	Sept. 2006 - Sept. 16, 2006.
+//
+//DESCRIPTION:  MAIN FACEPUTTY UI.
+//
+//
+
+//PROCEDURE CREATES MAIN FACE PUTTY UI WINDOW.
+
+//
+//2010 8 22:
+//  Minor update for 2011 GUI
+//  Removed dead help menu
+//Bohdon Sayre
+
+global proc facePutty()
+{	
+if (`window -ex facePuttyUI`)
+	deleteUI facePuttyUI;
+
+if (`windowPref -ex facePuttyUI`)
+    windowPref -e -wh 216 348 facePuttyUI;
+
+window
+	-rtf 1
+	-t "Face Putty v1.0.1" 
+	-menuBar true
+	-s 1
+	-wh 216 248
+	facePuttyUI;
+
+string $formFPTools = `formLayout "FacePuttyTools"`;
+			columnLayout;
+			
+			frameLayout 
+				-w 212
+				-marginWidth 4
+				-marginHeight 4
+				-borderStyle "etchedIn" 
+				-labelVisible 1 
+				-l "Face Putty Tools:"
+				-ann "This is the main toolbox for Face Putty.";
+				
+				columnLayout -adj 1 fpMainToolBoxColumnLayout;
+					text -l "      1. Select some verts on the head.\n2. Hit the Add Widget button.\n3. Have Fun with Face Putty!";
+					text -l "" -h 15;
+						button 
+						-l "Add Widget"
+						-c "fpMakeWidget;"
+						-ann "Add a Widget at the location of the selected verts."
+						fpCreateWidgetButton;
+
+					text -l "" -h 15;
+						button 
+							-l "Paint Selected Widget Weights "
+							-c "fpPaintWidgetWeights();"
+							-ann "Paint the Weights of the selected Widget."
+							fpPaintWeightsButton;
+					text -l "" -h 15;
+						button 
+							-l "Select Widget Radius "
+							-c "fpSelectRadius();"
+							-ann "Select the radius of the selected Widget."
+							fpSelectRadiusButton;		
+					text -l "" -h 15;
+						button 
+						-l "Reset Selected Widgets"
+						-c "fpResetSel();"
+						-ann "Reset Selected Face Putty Widgets."
+						fpResetSelButton;
+						
+					text -l "" -h 15;
+						button 
+						-l "Reset All Widgets"
+						-c "fpResetALL();"
+						-ann "Reset Everything that has to do with Face Putty."
+						fpResetAllButton;
+					
+					text -l "" -h 15;
+						button 
+						-l "Delete History"
+						-c "fpDeleteHistory();"
+						-ann "Delete History and Everything that has to do with Face Putty on just the selected target."
+						fpDeleteHistoryButton;
+						
+					text -l "" -h 15;
+						button 
+						-l "Delete All Widgets"
+						-c "fpDeleteALL();"
+						-ann "Delete Everything that has to do with Face Putty."
+						fpDeleteAllButton;
+
+
+
+						
+				
+
+
+showWindow facePuttyUI;
+///////////////////////////////////
+//////// End of UI Code ///////////
+///////////////////////////////////
+}
+
+
+///////////////////////////////////
+// Main Create Widgets Procedure //
+///////////////////////////////////
+
+global proc fpMakeWidget()
+{
+float $xyz[3];
+string $myVerts[] = `ls -sl`;
+string $myArray[] = stringToStringArray($myVerts[0], ".");
+string $targetHead = $myArray[0];
+
+int $count = 0;
+
+int $mySize;
+string $stupidArrays[], $facePutty_CTLs[];
+	
+string $selVtx[] = `filterExpand -ex 1 -fp 1 -sm 31`;
+if (!size($selVtx)) error "No vertices selected.";
+	
+	
+for ($vtx in $selVtx)
+{
+	if( `objExists GRP_facePutty_CTLs` ) {
+		string $currentHighestCTL = `getAttr GRP_facePutty_CTLs.highest`;
+		string $newCount = `substitute "facePutty_CTL_" $currentHighestCTL ""`;
+		int $convertNewCount = $newCount;
+		print ("newCount is "+$newCount+"\n");
+		print ("print converted count is : "+$convertNewCount+"\n");
+		$count = ($convertNewCount+1) ;
+		print ("count is now "+$count+"\n");
+	} else {
+		$count = $count;
+	}
+	
+	
+	$xyz = `pointPosition -w $vtx`;
+	circle -c 0 0 0 -nr 0 1 0 -sw 360 -r 1 -d 3 -ut 0 -tol 0.01 -s 8 -ch 0 -n "MyRadiusCTL";
+	curve -d 1 -p 0 0 1 -p 0 0.5 0.866025 -p 0 0.866025 0.5 -p 0 1 0 -p 0 0.866025 -0.5 -p 0 0.5 -0.866025 -p 0 0 -1 -p 0 -0.5 -0.866025 -p 0 -0.866025 -0.5 -p 0 -1 0 -p 0 -0.866025 0.5 -p 0 -0.5 0.866025 -p 0 0 1 -p 0.707107 0 0.707107 -p 1 0 0 -p 0.707107 0 -0.707107 -p 0 0 -1 -p -0.707107 0 -0.707107 -p -1 0 0 -p -0.866025 0.5 0 -p -0.5 0.866025 0 -p 0 1 0 -p 0.5 0.866025 0 -p 0.866025 0.5 0 -p 1 0 0 -p 0.866025 -0.5 0 -p 0.5 -0.866025 0 -p 0 -1 0 -p -0.5 -0.866025 0 -p -0.866025 -0.5 0 -p -1 0 0 -p -0.707107 0 0.707107 -p 0 0 1 -k 0 -k 1 -k 2 -k 3 -k 4 -k 5 -k 6 -k 7 -k 8 -k 9 -k 10 -k 11 -k 12 -k 13 -k 14 -k 15 -k 16 -k 17 -k 18 -k 19 -k 20 -k 21 -k 22 -k 23 -k 24 -k 25 -k 26 -k 27 -k 28 -k 29 -k 30 -k 31 -k 32 -n "MyControl";
+	setAttr MyRadiusCTL.rx 90;
+	setAttr MyRadiusCTL.sx 2;
+	setAttr MyRadiusCTL.sy 2;
+	setAttr MyRadiusCTL.sz 2;
+
+	parent MyRadiusCTL MyControl;
+
+	$stupidArrays[0] = "MyControl";
+	string $stupidName = ("facePutty_CTL_"+$count);
+	$facePutty_CTLs[$count] = `rename $stupidArrays[0] $stupidName`;
+	rename MyRadiusCTL ("facePutty_Radius_"+$count);
+
+	string $currentCTL = $facePutty_CTLs[$count];
+	string $currentFallOff = (("facePutty_Radius_"+$count)+".scale.scaleX");
+	string $currentEnv = ($currentCTL+".Envelope");
+	
+	addAttr -ln Envelope -at double  -min 0 -max 2 -dv .5 $currentCTL;
+	setAttr -e -keyable true $currentEnv;
+	
+	scale -a 0.03 0.03 0.03 $facePutty_CTLs[$count];
+	move -a $xyz[0] $xyz[1] $xyz[2] $facePutty_CTLs[$count];
+		
+	normalConstraint  -n "MyConstraint" -aimVector 0 0 1 $targetHead $facePutty_CTLs[$count];
+	delete MyConstraint;
+		
+	select -r $facePutty_CTLs[$count];
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0;
+	select -cl;
+		
+	select $targetHead;
+	print ("count is now "+$count+"\n");
+	print ("The name of the CTL at $facePutty_CTLs[$count] is "+$facePutty_CTLs[$count]+"\n");
+	string $softName = ("facePutty_Soft"+($count));
+	softMod -n $softName -fr .2 -fc $xyz[0] $xyz[1] $xyz[2] -wn $facePutty_CTLs[$count] $facePutty_CTLs[$count];
+	string $currentSoftEnv = ($softName+".envelope");
+	string $currentSoftFallOff = ($softName+".falloffRadius");
+	connectAttr -f $currentEnv $currentSoftEnv;
+	shadingNode -asUtility multiplyDivide -n ("facePutty_"+$count+"_Mult");
+	setAttr ("facePutty_"+$count+"_Mult.operation") 2;
+	setAttr ("facePutty_"+$count+"_Mult.input2X") 5;
+	connectAttr -f ("facePutty_Radius_"+$count+".scaleX")("facePutty_"+$count+"_Mult.input1X");
+	connectAttr -f ("facePutty_"+$count+"_Mult.outputX ") $currentSoftFallOff;
+		
+	setAttr -lock true -keyable false ("facePutty_Radius_"+$count+".tx");
+	setAttr -lock true -keyable false ("facePutty_Radius_"+$count+".ty");
+	setAttr -lock true -keyable false ("facePutty_Radius_"+$count+".tz");
+	setAttr -lock true -keyable false ("facePutty_Radius_"+$count+".rx");
+	setAttr -lock true -keyable false ("facePutty_Radius_"+$count+".ry");
+	setAttr -lock true -keyable false ("facePutty_Radius_"+$count+".rz");
+	
+	
+	string $currentHighest = ("GRP_facePutty_CTLs.highest");
+	if (`objExists GRP_facePutty_CTLs`) {
+		parent $facePutty_CTLs[$count] GRP_facePutty_CTLs;
+	} else {
+	group -n "GRP_facePutty_CTLs" $facePutty_CTLs;
+	addAttr -ln highest -dt "string" GRP_facePutty_CTLs;
+	setAttr -e -keyable true $currentHighest;
+	select -cl;
+	}
+	select -cl;
+	select -r $facePutty_CTLs[$count];
+	string $currentHighestCTL = $facePutty_CTLs[$count];
+	setAttr $currentHighest -type "string" $currentHighestCTL;
+	$count++;
+}
+ 	
+}
+
+////////////////////////////////////////////////
+// Paint Weights on selected Widget Procedure //
+////////////////////////////////////////////////
+global proc fpPaintWidgetWeights()
+{
+string $currentSelection[] = `ls -sl`;
+string $currentWidget = $currentSelection[0];
+string $currentWidgetSoft = `substitute "CTL_" $currentWidget "Soft"`;
+string $currentWidgetWeights = ("softMod."+$currentWidgetSoft+".weights");
+string $currentGeoList[] = `softMod -q -g $currentWidgetSoft`;
+string $targetHead = `substitute "Shape" $currentGeoList[0] ""`;
+select -cl;
+select $targetHead;
+artSetToolAndSelectAttr( "artAttrCtx", $currentWidgetWeights);
+}
+
+////////////////////////////////////////////////
+// Paint Weights on selected Widget Procedure //
+////////////////////////////////////////////////
+global proc fpSelectRadius()
+{	
+string $currentSelection[] = `ls -sl`;
+if (`gmatch $currentSelection[0] "facePutty_CTL_*"`) {
+	string $currentWidget = $currentSelection[0];
+	string $currentWidgetRadius = `substitute "CTL_" $currentWidget "Radius_"`;
+	select -cl;
+	select $currentWidgetRadius;
+} else {
+	warning ("You must first select a Widget to use this button!");
+}
+
+}
+
+
+///////////////////////////////////////////////////
+// Reset Selected Face Putty Elements Procedure //
+//////////////////////////////////////////////////
+global proc fpResetSel()
+{
+string $mySelection[] = `ls -sl`;
+for ($ctl in $mySelection)
+{
+	if (`gmatch $ctl "*_Radius*"`){
+		catchQuiet (`setAttr ($ctl+".sx") 1`);
+		catchQuiet (`setAttr ($ctl+".sy") 1`);
+		catchQuiet (`setAttr ($ctl+".sz") 1`);
+	} else if (`gmatch $ctl "*facePutty_CTL*"`) {
+		catchQuiet (`setAttr ($ctl+".tx") 0`);
+		catchQuiet (`setAttr ($ctl+".ty") 0`);
+		catchQuiet (`setAttr ($ctl+".tz") 0`);
+		catchQuiet (`setAttr ($ctl+".rx") 0`);
+		catchQuiet (`setAttr ($ctl+".ry") 0`);
+		catchQuiet (`setAttr ($ctl+".rz") 0`);
+		catchQuiet (`setAttr ($ctl+".sx") 1`);
+		catchQuiet (`setAttr ($ctl+".sy") 1`);
+		catchQuiet (`setAttr ($ctl+".sz") 1`);
+		catchQuiet (`setAttr ($ctl+".Envelope") 0.5`);	
+	} else {
+	}
+}
+select -cl;
+}
+
+/////////////////////////////////////////////////////////
+// Select the Radius of the selected Widget Procedure //
+////////////////////////////////////////////////////////
+global proc fpResetALL()
+{
+select -cl;
+select "*facePutty*" ;
+string $mySelection[] = `ls -sl -dag`;
+for ($ctl in $mySelection)
+{
+	int $isGRP = `gmatch $ctl "*GRP_facePutty*"`;
+	int $isShape = `gmatch $ctl "*Shape*"`;
+	if ($isShape == 0 && $isGRP == 0) {
+		if (`gmatch $ctl "*_Radius*"`) {
+			catchQuiet (`setAttr ($ctl+".sx") 1`);
+			catchQuiet (`setAttr ($ctl+".sy") 1`);
+			catchQuiet (`setAttr ($ctl+".sz") 1`);
+		} else if (`gmatch $ctl "*facePutty_CTL*"`) {
+			catchQuiet (`setAttr ($ctl+".tx") 0`);
+			catchQuiet (`setAttr ($ctl+".ty") 0`);
+			catchQuiet (`setAttr ($ctl+".tz") 0`);
+			catchQuiet (`setAttr ($ctl+".rx") 0`);
+			catchQuiet (`setAttr ($ctl+".ry") 0`);
+			catchQuiet (`setAttr ($ctl+".rz") 0`);
+			catchQuiet (`setAttr ($ctl+".sx") 1`);
+			catchQuiet (`setAttr ($ctl+".sy") 1`);
+			catchQuiet (`setAttr ($ctl+".sz") 1`);
+			catchQuiet (`setAttr ($ctl+".Envelope") 0.5`);	
+		} else {
+		}
+	}
+}
+select -cl;
+}
+
+
+
+//////////////////////////////////////////////////
+// Delete history and widgets of selected mesh //
+/////////////////////////////////////////////////
+global proc fpDeleteHistory()
+{
+/*
+	string $currentSelection[] = `ls -sl`;
+	if (`gmatch $currentSelection[0] "facePutty_CTL_*"`) {
+		string $currentWidget = $currentSelection[0];
+		string $currentWidgetSoft = `substitute "CTL_" $currentWidget "Soft"`;
+		string $mySoftModSetArray[] = `listConnections -type objectSet $currentWidgetSoft`;
+		string $myGeo[] = `sets -q -no $mySoftModSetArray`;
+		if (`gmatch $myGeo[0] "*Shape*"`){
+			$myGeo[0] = `substitute "Shape" $myGeo[0] ""`;
+		} else {
+			$myGeo[0] = $myGeo[0];
+		}
+		print ($myGeo[0]);
+		select $myGeo[0];
+		DeleteHistory;
+		delete -ch;
+	} else {
+		DeleteHistory;
+		delete -ch;
+	}
+*/
+DeleteHistory;
+delete -ch;
+
+}
+
+
+//////////////////////////////////////////////
+// Delete all Face Putty Elements Procedure //
+//////////////////////////////////////////////
+global proc fpDeleteALL()
+{
+catchQuiet (`delete "facePutty_*_Mult*"`);
+catchQuiet (`delete "facePutty_CTL_*"`);
+catchQuiet (`delete "GRP_facePutty_CTLs*"`);
+
+}

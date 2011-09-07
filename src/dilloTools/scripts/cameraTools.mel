@@ -1,0 +1,80 @@
+// --------------------------------------------------------------------------
+// cameraTools - MEL Script
+// --------------------------------------------------------------------------
+//
+// DESCRIPTION:
+//	A friendly window for some nifty camera scripts
+//
+// AUTHOR
+//	Keith Osborn
+//
+// USAGE:
+//	cameraTools();
+//
+// --------------------------------------------------------------------------
+
+
+global proc cameraTools()
+{
+
+    if (`window -ex cameraToolsWin` != true)
+        {
+	window -w 310 -h 360 -t ("cameraTools") -in "cameraTools" -s true -tb true cameraToolsWin;
+
+	columnLayout ct_mainCol;
+
+	button -l "Create Thirds" -al "center" -w 300 -c ("createCameraContinuumGrid;") -ann "descriptive text goes here." butThirds;
+
+	button -l "Create Focus Screen" -al "center" -w 300 -c ("source createCameraFocusScreen.mel; createFocusScreen;") -ann "descriptive text goes here." butFocus;
+
+	button -l "Create Frustum" -al "center" -w 300 -c ("createCameraFrustum;") -ann "descriptive text goes here." butFrustum;
+
+	button -l "Create Golden Ratio" -al "center" -w 300 -c ("createCameraGoldenRatio;") -ann "descriptive text goes here." butRatio;
+
+
+
+	separator -style "none" -w 300 -h 10;
+	separator -style "in" -w 300 -h 8;
+
+	rowColumnLayout -nc 2 -cw 1 75 -cw 2 225;
+		text -l "Production: " -al "right";
+		textField -tx (`getenv PROD`) "tfPROD";
+		setParent "..";
+	rowColumnLayout -nc 2 -cw 1 75 -cw 2 225;
+		text -l "Sequence: " -al "right";
+		textField -tx (`getenv SEQ`) "tfSEQ";
+		setParent "..";
+	rowColumnLayout -nc 2 -cw 1 75 -cw 2 225;
+		text -l "Shot: " -al "right";
+		textField -tx (`getenv SHOT`) "tfSHOT";
+		setParent "..";
+
+	button -l "Assign" -al "center" -w 300 -c "assignProdSeqShot;" -ann "descriptive test goes here." butAssign;
+
+	button -l "Create Reticle" -al "center" -w 300 -c ("createCameraReticle;") -ann "descriptive text goes here." butReticle;
+
+
+
+
+	showWindow cameraToolsWin;
+	}
+    else	// else just pop it up from being minimized again
+    	{
+	showWindow cameraToolsWin;
+	}
+
+}
+
+
+global proc assignProdSeqShot()
+{
+string $setProd = `textField -q -tx tfPROD`;
+putenv PROD ($setProd);
+string $setSeq = `textField -q -tx tfSEQ`;
+putenv SEQ ($setSeq);
+string $setShot = `textField -q -tx tfSHOT`;
+putenv SHOT ($setShot);
+}
+
+
+// --------------------------------------------------------------------------

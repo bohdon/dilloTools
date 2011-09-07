@@ -1,0 +1,20 @@
+//Title:	dwDeleteBadChildren.mel
+//Author:	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date: Sept 13, 2003.
+//
+//DESCRIPTION: DELETES ALL CHILDREN THAT ARE NOT OF TYPE $NODETYPE. THIS IS USED FOR DELETING "EXTRA" CHILDREN OF JOINTS,
+//		FOR EXAMPLE, WHEN A JOINT CHAIN IS DUPLICATED AND WE WANT TO DISCARD ANY GEOMETRY THAT MIGHT BE PARENTED
+//		UNDER IT.
+
+global proc dwDeleteBadChildren (string $object, string $nodeType)
+{
+string $badChildren[] = `listRelatives -fullPath -c $object`;
+for ($badChild in $badChildren)
+	{
+	if (`objectType $badChild` != $nodeType)
+		delete $badChild;
+	}
+}//End of procedure.

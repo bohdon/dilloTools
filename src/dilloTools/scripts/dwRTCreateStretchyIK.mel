@@ -1,0 +1,162 @@
+//Title:	dwRTCreateStretchyIK.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date:		March 23-24, 2004
+//
+//Description: CALCULATES IK JOINTS´ LENGTHS BASED ON THE STRETCHVARIABLE_CONDITION NODE.
+//		Stretching can be clamped via an attr added to the IK control obj.
+global proc dwRTCreateStretchyIK(string $ikHandle, 			//ikHandle name
+					string $controlObj, 		//control obj
+					string $prefix, 		//unique naming prefix
+					int $stretchType)		//type of stretching: either 1 (scale) or 2 (translation)
+{
+//Report errors if input is incorrect.
+if (! `size $ikHandle`)
+	error "No ikHandle specified. Try again.";
+if (! `size $controlObj`)
+	error "No control object specified. Try again.";
+if (! `objExists $ikHandle`)
+	error ("No ikHandle exists with given name: " + $ikHandle + ". Try again.");
+if (`nodeType $ikHandle` != "ikHandle")
+	error ($ikHandle + " is not an ikHandle. Try again.");
+if (! `objExists $controlObj`)
+	error ("No control object exists with given name: " + $controlObj + ". Try again.");
+if (! `size $prefix`)
+	error "No naming prefix specified. Try again.";
+if ($prefix == " ")
+	error "ID String invalid. Try again.";
+if (! `dwRTValidateName $prefix`)
+	error "Naming prefix invalid. Remove special characters and try again.";
+
+
+//First get the initial selection and info about the joint chain.
+string $selection[] = `ls -sl`;
+string $jointList[] = `ikHandle -q -jl $ikHandle`;
+int $sizeJointList = `size $jointList`;
+
+//We need to add the last joint to this array. We´ll need this for the distance measurement as well as
+//for parenting the 2nd distance dim locator.
+string $lastJoint[] = `listRelatives -c -type "joint" $jointList[$sizeJointList - 1]`;
+$jointList[$sizeJointList] = $lastJoint[0];
+$sizeJointList = `size $jointList`;
+
+//Report error if stretchType is "by translation" and joints have a negative length (skip 1st joint in array, because
+//for this one it doesn´t matter if it´s positive or negative (ie, femur, shoulder).
+if ($stretchType == 2)
+	{
+	for ($j in $jointList)
+		{
+		//Skip 1st joint.
+		if ($j == $jointList[0])
+			continue;
+		else 	
+			dwReportErrorNegativeJointLength $j;
+		}
+	}
+
+
+//Get the length of each joint (should be equal to the .tx of each joint´s first child, but that´s not important right now).
+int $i;
+float $jointLength[];
+for ($i = 0; $i < ($sizeJointList - 1); $i++)
+	{	
+	$jointLength[$i] = dwRTGetDistance ($jointList[$i], $jointList[$i + 1]);
+	//print ($jointLength[$i] + "\n");
+	}
+
+//Get the total length of the IK chain.
+float $chainLength = 0;
+for ($length in $jointLength)
+	$chainLength += $length;
+
+
+//DO THAT DISTANCEDIMENSION THANG.
+//1: CREATE LOCATOR1 NEEDED FOR DISTANCEDIMENSION NODE.
+string $dimensionLocator1[] = `spaceLocator -p 0 0 0 -n ($prefix + "_Stretch_Locator1")`;
+string $dimensionLocator1Shape[] = `listRelatives -s $dimensionLocator1[0]`;
+parent $dimensionLocator1[0] $jointList[0];
+pointConstraint $jointList[0] $dimensionLocator1[0];
+setAttr ($dimensionLocator1[0] + ".v") 0;
+dwLockHideAttributes (0, 0, $dimensionLocator1[0], "tx ty tz rx ry rz sx sy sz v");
+
+//2: CREATE LOCATOR2 NEEDED FOR DISTANCEDIMENSION NODE.
+string $dimensionLocator2[] = `spaceLocator -p 0 0 0 -n ($prefix + "_Stretch_Locator2")`;
+string $dimensionLocator2Shape[] = `listRelatives -s $dimensionLocator2[0]`;
+//NOTE: We don´t want to point constrain this to the control obj. The control obj might NOT be in the same place as the last joint.
+//Instead, move it to the position of the last joint.
+float $lastJointPosition[] = `xform -q -ws -rp $jointList[$sizeJointList - 1]`;
+move -rpr $lastJointPosition[0] $lastJointPosition[1] $lastJointPosition[2] $dimensionLocator2[0];
+parent $dimensionLocator2[0] $controlObj;
+setAttr ($dimensionLocator2[0] + ".v") 0;
+dwLockHideAttributes (0, 0, $dimensionLocator2[0], "tx ty tz rx ry rz sx sy sz v");
+
+//3: CREATE DISTANCEDIMENSION NODE TO MEASURE DISTANCE BETWEEN SHOULDER AND IK HANDLE.
+//NOTE*: THIS MUST BE PASSED THROUGH A UNITCONVERSION NODE IN ORDER FOR THE CORRECT VALUE TO BE OUTPUT.
+//UNFORTUNATELY DISTANCEDIMENSION NODE ONLY OUTPUTS CENTIMETERS!!! :(
+string $distanceDimNode = `createNode -n ($prefix + "_IKDistanceDimension") distanceDimShape`;
+string $distanceDimNodeTransform[] = `listRelatives -p $distanceDimNode`;
+connectAttr ($dimensionLocator1Shape[0] + ".worldPosition[0]") ($distanceDimNode + ".startPoint");
+connectAttr ($dimensionLocator2Shape[0] + ".worldPosition[0]") ($distanceDimNode + ".endPoint");
+setAttr ($distanceDimNodeTransform[0] + ".v") 0;
+dwLockHideAttributes (0, 0, $distanceDimNodeTransform[0], "tx ty tz rx ry rz sx sy sz v");
+parent $distanceDimNodeTransform[0] $jointList[0];
+
+
+//CREATE DIVIDE NODE. THIS DIVIDES THE LENGTH OF IKHANDLE->SHOULDER BY THE ORIGINAL LENGTH OF THE ARM.
+//THIS IS USED FOR STRETCHING.
+string $stretchLengthDivide = `createNode -n ($prefix + "_Stretch_Length_Divide") multiplyDivide`;
+setAttr ($stretchLengthDivide + ".operation") 2;
+
+//CREATE UNITCONVERSION NODE TO CONVERT DISTANCEDIMENSION "DISTANCE". SET UNITCONVERSION VALUE BASED ON CURRENTUNITS.
+float $conversionFactor = dwRTGetLinearUnitConversion();	
+string $conversionNode = `createNode -n ($prefix + "_Stretch_UnitConversion") unitConversion`;
+setAttr ($conversionNode + ".conversionFactor") $conversionFactor;
+connectAttr ($distanceDimNode + ".distance") ($conversionNode + ".input");   
+connectAttr ($conversionNode + ".output") ($stretchLengthDivide + ".input1X");
+setAttr ($stretchLengthDivide + ".input2X") $chainLength;
+	
+	
+	
+//If $stretchType is "scaling"...
+if ($stretchType == 1)
+	{
+	//NOW CALCULATE IK JOINTS´ SCALE VALUES BASED ON THAT CRAZY STRETCHVARIABLE_CONDITION NODE.
+	for ($i = 0; $i < ($sizeJointList - 1); $i++)
+		{
+		dwConnectByCondition(($prefix + "_IKStretch_Condition"), 2, 
+					($stretchLengthDivide + ".outputX"), 1.0, 
+					($stretchLengthDivide + ".outputX"), 1.0, 
+					($prefix + "_" + $jointList[$i] + "_IKStretch1_Multiply"),
+					($prefix + "_" + $jointList[$i] + "_IKStretch2_Multiply"),  
+					1, $jointList[$i], "sx",  					//This is the only line that is different between the two stretch type.
+					1, ($jointList[$i] + "_IKStretch_Clamp"), 
+					$controlObj, ($jointList[$i]+ "_IKStretch_Range"));
+		}
+	}
+	
+	
+//If $stretchType is "translation"...
+else if ($stretchType == 2)
+	{
+	//NOW CALCULATE IK JOINTS´ LENGTHS BASED ON THE FREAKY STRETCHVARIABLE_CONDITION NODE.
+	for ($i = 1; $i < ($sizeJointList); $i++)
+		{
+		dwConnectByCondition(($prefix + "_IKStretch_Condition"), 2, 
+					($stretchLengthDivide + ".outputX"), 1.0, 
+					($stretchLengthDivide + ".outputX"), 1.0, 
+					($prefix + "_" + $jointList[$i] + "_IKStretch1_Multiply"), 
+					($prefix + "_" + $jointList[$i] + "_IKStretch2_Multiply"), 
+					$jointLength[$i - 1], $jointList[$i], "tx",
+					1, ($jointList[$i] + "_IKStretch_Clamp"), 
+					$controlObj, ($jointList[$i] + "_IKStretch_Range"));
+		}	
+	}	
+
+
+
+//Reselect initial selection.
+select -r $selection;
+
+} //End of El Globo Proco.

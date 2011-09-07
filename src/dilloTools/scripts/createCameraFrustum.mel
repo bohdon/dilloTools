@@ -1,0 +1,202 @@
+////////////////////////////////////////////////////////////////////////////////
+//
+//  $RCSfile$
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS FILE HERE.
+//
+//  CREATED BY
+//      Jayme Wilkinson
+//
+//  CREATTION DATE
+//      Tue Jul 03 01:01:21 EDT 2007
+//
+//  HISTORY
+//      $Log$
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  Copyright (c) 1999 - 2007 Jayme Wilkinson.
+//
+//  The software and information contained herein are proprietary to, and
+//  comprise valuable trade secrets of, Jayme Wilkinson, which intends
+//  to preserve as trade secrets such software and information. This software
+//  and information or any other copies thereof may not be provided or
+//  otherwise made available to any other person or organization.
+//
+////////////////////////////////////////////////////////////////////////////////     
+
+////////////////////////////////////////////////////////////////////////////////
+//                        
+//  global proc createCameraFrustum()
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS PROCEDURE/FUNCTION HERE.
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      ENTER A DESCRIPTION OF WHAT THIS PROCEDURE RETURNS HERE.
+//
+////////////////////////////////////////////////////////////////////////////////
+global proc createCameraFrustum()
+{
+	string $camera; string $cameraShape;
+	string $temp[] = `ls -sl`;
+	if (`size($temp)` == 1) 
+	{	
+		//  Get the camera shape of this node.
+		$camera = $temp[0];
+		$temp = `listRelatives -s -type camera $camera`;
+		if (`size($temp)` != 1) error "Camera Frustum: Camera shape not found.";
+	    $cameraShape = $temp[0];
+	}
+	else
+	{
+		 error "Camera Frustum: Could not get a camera to attatch the camera frustum to.";
+	}
+	
+	//  Check to see if there is already a continuumGrid attached to this camera
+	for ($shape in `listRelatives $camera`)
+	{
+		if (startsWith($shape, "frustum")) 
+		{                                           
+			error "A Camera Frustum seems to already exist on this camera.";
+		}             
+	}
+	
+	//	Create 4 curves that is 1x1 for the top, left, right, and bottom sections of the camera frustum
+	string $top    	= `curve -d 1 -p -0.5 0.5 0 -p 0.5 0.5 0 -p 0.5 -0.5 0 -p -0.5 -0.5 0 -k 0 -k 1 -k 2 -k 3 -n "topFace#"`;
+	string $left    = `curve -d 1 -p -0.5 0.5 0 -p 0.5 0.5 0 -p 0.5 -0.5 0 -p -0.5 -0.5 0 -k 0 -k 1 -k 2 -k 3 -n "leftFace#"`;
+	string $right   = `curve -d 1 -p -0.5 0.5 0 -p 0.5 0.5 0 -p 0.5 -0.5 0 -p -0.5 -0.5 0 -k 0 -k 1 -k 2 -k 3 -n "rightFace#"`;
+	string $bottom  = `curve -d 1 -p -0.5 0.5 0 -p 0.5 0.5 0 -p 0.5 -0.5 0 -p -0.5 -0.5 0 -k 0 -k 1 -k 2 -k 3 -n "bottomFace#"`;
+	string $parent  = `group -r -em -p $camera -n "frustum#"`;
+	 
+	//	Lock the attributes of the curves we just created
+	setAttr -l true ($top    + ".t"); setAttr -l true ($top    + ".r"); setAttr -l true ($top    + ".s"); setAttr -l true ($top    + ".sh"); setAttr -l true ($top    + ".ra");
+	setAttr -l true ($left   + ".t"); setAttr -l true ($left   + ".r"); setAttr -l true ($left   + ".s"); setAttr -l true ($left   + ".sh"); setAttr -l true ($left   + ".ra");
+	setAttr -l true ($right  + ".t"); setAttr -l true ($right  + ".r"); setAttr -l true ($right  + ".s"); setAttr -l true ($right  + ".sh"); setAttr -l true ($right  + ".ra");
+	setAttr -l true ($bottom + ".t"); setAttr -l true ($bottom + ".r"); setAttr -l true ($bottom + ".s"); setAttr -l true ($bottom + ".sh"); setAttr -l true ($bottom + ".ra");
+	setAttr -l true ($parent + ".t"); setAttr -l true ($parent + ".r"); setAttr -l true ($parent + ".s"); setAttr -l true ($parent + ".sh"); setAttr -l true ($parent + ".ra");
+
+	//	Get the shape nodes of the created faces.
+	string $temp[];
+	$temp = `listRelatives -s $top`; 	string $topShape 	= $temp[0];
+	$temp = `listRelatives -s $left`; 	string $leftShape 	= $temp[0];
+	$temp = `listRelatives -s $right`; 	string $rightShape 	= $temp[0];
+	$temp = `listRelatives -s $bottom`; string $bottomShape = $temp[0];
+	                            
+	//	Close the curves
+	closeCurve -ch 0 -ps 1 -rpo 1 -bb 0.5 -bki 0 -p 0.1 $top;
+	closeCurve -ch 0 -ps 1 -rpo 1 -bb 0.5 -bki 0 -p 0.1 $left;
+	closeCurve -ch 0 -ps 1 -rpo 1 -bb 0.5 -bki 0 -p 0.1 $right;
+	closeCurve -ch 0 -ps 1 -rpo 1 -bb 0.5 -bki 0 -p 0.1 $bottom;   
+	
+	//	Parent the frustum to the camera.
+	parent -r $top    $parent;
+	parent -r $left   $parent;        
+	parent -r $right  $parent;
+	parent -r $bottom $parent;
+
+	//	Add a control for the frustum onto the camera master node
+	if (!`attributeExists "CameraFrustum" $camera`) addAttr -ln "CameraFrustum" -at bool $camera;
+	setAttr ($camera + ".CameraFrustum") true;
+	connectAttr ($camera + ".CameraFrustum") ($parent + ".visibility");
+
+	//	Set the color of the curves we just created   
+	int $color = `displayColor -q headsUpDisplayLabels`;
+	setAttr ($parent + ".overrideEnabled") true;    
+	setAttr ($parent + ".overrideColor") $color; 
+	setAttr ($parent + ".template") true;   
+	
+	//	Build the expression that will control the 4 sides of the camera frustum
+	string $exp;
+	$exp += "////////////////////////////////////////////////////////////////////////////////\r";
+	$exp += "//\r";
+	$exp += "//	 This expression is machince generated. Do not manually edit this expression.\r";
+	$exp += "//\r";  
+	$exp += "////////////////////////////////////////////////////////////////////////////////\r";
+	$exp += "float $hfov = (" + $cameraShape + ".horizontalFilmAperture * 0.5 ) / (" + $cameraShape + ".focalLength  *  0.03937 ) * " + $cameraShape + ".lensSqueezeRatio;\r";
+	$exp += "float $vfov = (" + $cameraShape + ".verticalFilmAperture * 0.5 ) / (" + $cameraShape + ".focalLength * 0.03937 );\r";	
+	$exp += "float $near = " + $cameraShape + ".nearClipPlane;\r";
+	$exp += "float $far  = " + $cameraShape + ".farClipPlane;\r";
+
+	$exp += "//	Adjust the top side of the camera frustum\r";
+	$exp += $topShape + ".controlPoints[0].xValue = -$near * $hfov;\r";
+	$exp += $topShape + ".controlPoints[0].yValue =  $near * $vfov;\r";
+	$exp += $topShape + ".controlPoints[0].zValue = -$near;\r";
+
+	$exp += $topShape + ".controlPoints[1].xValue =  $near * $hfov;\r";
+	$exp += $topShape + ".controlPoints[1].yValue =  $near * $vfov;\r";
+	$exp += $topShape + ".controlPoints[1].zValue = -$near;\r";
+
+	$exp += $topShape + ".controlPoints[2].xValue =  $far * $hfov;\r";
+	$exp += $topShape + ".controlPoints[2].yValue =  $far * $vfov;\r";
+	$exp += $topShape + ".controlPoints[2].zValue = -$far;\r";
+
+	$exp += $topShape + ".controlPoints[3].xValue = -$far * $hfov;\r";
+	$exp += $topShape + ".controlPoints[3].yValue =  $far * $vfov;\r";
+	$exp += $topShape + ".controlPoints[3].zValue = -$far;\r";
+
+	$exp += "// 	Adjust the left side of the camera frustum\r";
+	$exp += $leftShape + ".controlPoints[0].xValue = -$near * $hfov;\r";
+	$exp += $leftShape + ".controlPoints[0].yValue =  $near * $vfov;\r";
+	$exp += $leftShape + ".controlPoints[0].zValue = -$near;\r";
+
+	$exp += $leftShape + ".controlPoints[1].xValue = -$near * $hfov;\r";
+	$exp += $leftShape + ".controlPoints[1].yValue = -$near * $vfov;\r";
+	$exp += $leftShape + ".controlPoints[1].zValue = -$near;\r";
+                    
+	$exp += $leftShape + ".controlPoints[2].xValue = -$far * $hfov;\r";
+	$exp += $leftShape + ".controlPoints[2].yValue = -$far * $vfov;\r";
+	$exp += $leftShape + ".controlPoints[2].zValue = -$far;\r";
+                       
+	$exp += $leftShape + ".controlPoints[3].xValue = -$far * $hfov;\r";
+	$exp += $leftShape + ".controlPoints[3].yValue =  $far * $vfov;\r";
+	$exp += $leftShape + ".controlPoints[3].zValue = -$far;\r";
+
+	$exp += "// 	Adjust the right side of the camera frustum\r";
+	$exp += $rightShape + ".controlPoints[0].xValue =  $near * $hfov;\r";
+	$exp += $rightShape + ".controlPoints[0].yValue =  $near * $vfov;\r";
+	$exp += $rightShape + ".controlPoints[0].zValue = -$near;\r";
+           
+	$exp += $rightShape + ".controlPoints[1].xValue =  $near * $hfov;\r";
+	$exp += $rightShape + ".controlPoints[1].yValue = -$near * $vfov;\r";
+	$exp += $rightShape + ".controlPoints[1].zValue = -$near;\r";
+            
+	$exp += $rightShape + ".controlPoints[2].xValue =  $far * $hfov;\r";
+	$exp += $rightShape + ".controlPoints[2].yValue = -$far * $vfov;\r";
+	$exp += $rightShape + ".controlPoints[2].zValue = -$far;\r";
+            
+	$exp += $rightShape + ".controlPoints[3].xValue =  $far * $hfov;\r";
+	$exp += $rightShape + ".controlPoints[3].yValue =  $far * $vfov;\r";
+	$exp += $rightShape + ".controlPoints[3].zValue = -$far;\r";
+
+	$exp += "// 	Adjust the bottom side of the camera frustum\r";
+	$exp += $bottomShape + ".controlPoints[0].xValue = -$near * $hfov;\r";
+	$exp += $bottomShape + ".controlPoints[0].yValue = -$near * $vfov;\r";
+	$exp += $bottomShape + ".controlPoints[0].zValue = -$near;\r";
+                                              
+	$exp += $bottomShape + ".controlPoints[1].xValue =  $near * $hfov;\r";
+	$exp += $bottomShape + ".controlPoints[1].yValue = -$near * $vfov;\r";
+	$exp += $bottomShape + ".controlPoints[1].zValue = -$near;\r";
+                        
+	$exp += $bottomShape + ".controlPoints[2].xValue =  $far * $hfov;\r";
+	$exp += $bottomShape + ".controlPoints[2].yValue = -$far * $vfov;\r";
+	$exp += $bottomShape + ".controlPoints[2].zValue = -$far;\r";
+                         
+	$exp += $bottomShape + ".controlPoints[3].xValue = -$far * $hfov;\r";
+	$exp += $bottomShape + ".controlPoints[3].yValue = -$far * $vfov;\r";
+	$exp += $bottomShape + ".controlPoints[3].zValue = -$far;\r";
+	
+	expression -n "cameraFrustum" -alwaysEvaluate false -unitConversion false -s $exp;
+	
+	select -cl;
+}                                             
+
+

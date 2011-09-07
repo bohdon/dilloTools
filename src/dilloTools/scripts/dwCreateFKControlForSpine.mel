@@ -1,0 +1,119 @@
+//Title:	dwCreateFKControlForSpine.mel
+//Author:	David Walden 
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+////Updated 	June 18, 2004: Only set control obj´s rotateOrder to 5 if joints are being controlled by orientConstraints.
+//				If they are being controlled by direct connections, the rotateOrder needs to initially match that
+//				of the joint (default XYZ, or 0). Then we can connect the control´s .ro to the joint´s .ro
+//				so that we only then need to update the control´s .ro and the joint will update automatically.
+//
+//Updated:	June 2, 2004: User can now choose to control joint orientations either by orient constraints
+//				or by direct connections (".rotate" attr). Note that for dwCreateIKSplineSpine.mel,
+//				joints are controlled by orient constraints only.
+//
+//Updated:	May 5 2004: We still need to orient the control obj to the joint. Spine joints are not always created straight
+//				up along the Y axis. Spines chain often can be bent forward depending on the character.
+//
+//
+//Procedure creates a control obj for the spine. Spine joints require an fk control obj setup different from
+//other body parts (like arms, legs). Returns the ($control + "_OrientGRP") name - not the actual control obj, 
+//because this is what will be later parented during clean-up.
+
+global proc string dwCreateFKControlForSpine (string $joint, 
+						int $stretchCheck,
+						string $childJointForStretch,
+						string $controlType, 
+						float $size, 
+						string $name, 
+						int $orientAxis,
+						int $defaultManipulator,
+						int $orientJointsType)
+{
+//Create the control obj.
+string $controlObj = dwCreateControlObject($controlType, $size, $name, $orientAxis, $defaultManipulator);
+//Updated May 5 2004: Now that the control obj is oriented to the joint, we need to change the rotateOrder acordingly (was 2).
+//Updated June 18, 2004: Only set rotateOrder to 5 if joints are being controlled by orientConstraints.
+if ($orientJointsType == 1)
+	setAttr ($controlObj + ".rotateOrder") 5;
+else if ($orientJointsType == 2)
+	{
+	//First set the control obj´s rotate order the joint´s rotateOrder.
+	setAttr ($controlObj + ".rotateOrder") `getAttr ($joint + ".rotateOrder")`;
+	//Now connect the control´s rotateOrder to the joint´s rotateOrder. Now we can change the rotateOrder
+	//on the control, and the joint will update correctly.
+	connectAttr -f ($controlObj + ".rotateOrder") ($joint + ".rotateOrder");
+	}
+
+//Move the control obj to the joint position.
+float $jointPosition[3] = `xform -q -ws -rp $joint`;
+move -a -wd $jointPosition[0] $jointPosition[1] $jointPosition[2] $controlObj;
+makeIdentity -apply true -t 1 $controlObj;
+
+//Updated May 5 2004: Orient the control obj initially to the joint it controls.
+string $orientConstraint[] = `orientConstraint $joint $controlObj`;
+delete $orientConstraint;
+
+//OLD: we created a group node under the control obj, and oriented the joint to that.
+//Now that we´ve oriented the control obj to the joint, we can orient constrain the joint 
+//directly to the control obj itself.
+//string $jointOrientGrp = `group -em -n ($controlObj + "_OrientGrp")`;
+//move -a $jointPosition[0] $jointPosition[1] $jointPosition[2] $jointOrientGrp;
+//$orientConstraint = `orientConstraint $joint $jointOrientGrp`;
+//delete $orientConstraint;
+//$orientConstraint = `orientConstraint $jointOrientGrp $joint`;
+//parent $jointOrientGrp $controlObj;
+
+//Create orientGrp, which will be the parent of the $controlObj.
+string $orientGrp = `group -em -n ($controlObj + "_OrientGRP")`;
+move -a $jointPosition[0] $jointPosition[1] $jointPosition[2] $orientGrp;
+makeIdentity -apply true -t 1 $orientGrp;
+//Point constrain the orientGrp to the joint.
+pointConstraint $joint $orientGrp;
+
+//Updated May 5 2004: Orient the $orientGrp to the joint.
+$orientConstraint = `orientConstraint $joint $orientGrp`;
+delete $orientConstraint;
+//Now parent the control obj to the orientGrp. Now the control obj´s rotation should be zero.
+parent $controlObj $orientGrp;
+
+//Now either orient constrain rotations or connect them directly.
+if ($orientJointsType == 1)
+	$orientConstraint = `orientConstraint $controlObj $joint`;
+else if ($orientJointsType == 2)
+	connectAttr -f ($controlObj + ".rotate") ($joint + ".rotate");
+
+
+//Lock and hide translation, scale and visibility.
+dwLockHideAttributes (0, 0, $controlObj, "tx ty tz sx sy sz v");
+
+
+//If user wants stretchy joints...
+if ($stretchCheck)
+	{
+	//By scale: Doesn´t work so well.
+	/*
+	addAttr -ln "Stretch" -defaultValue 1 -at double -k true $controlObj;
+	connectAttr ($controlObj + ".Stretch") ($joint + ".sx");
+	string $divideNode = `shadingNode -asUtility -n ($joint + "_Stretch_Divide") multiplyDivide`;
+	setAttr ($divideNode + ".operation") 2;
+	setAttr ($divideNode + ".input1X") 1;
+	connectAttr ($controlObj + ".Stretch") ($divideNode + ".input2X");
+	connectAttr ($divideNode + ".outputX") ($joint + ".sy");
+	connectAttr ($divideNode + ".outputX") ($joint + ".sz");
+	*/
+	
+	//By translation: But only stretch if we have a valid $childJointForStretch joint given.
+	if ((`size $childJointForStretch`) && (`nodeType $childJointForStretch` == "joint"))
+		{
+		addAttr -ln "Stretch" -defaultValue 1 -at double -k true $controlObj;
+		string $multiplyLengthNode = `shadingNode -asUtility -n ($joint + "_Stretch_Multiply") multiplyDivide`;
+			setAttr ($multiplyLengthNode + ".operation") 1;
+		connectAttr ($controlObj + ".Stretch") ($multiplyLengthNode + ".input1X");
+		setAttr ($multiplyLengthNode + ".input2X") `getAttr ($childJointForStretch + ".tx")`;
+		connectAttr ($multiplyLengthNode + ".outputX") ($childJointForStretch + ".tx");
+		}
+	}
+
+return $orientGrp;
+}

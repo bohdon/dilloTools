@@ -1,0 +1,414 @@
+//Title:	dwCreateBipedSkeleton.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Description: Creates a standard biped joint skeleton, with proper naming and joint orientation.
+
+global proc dwCreateBipedSkeleton(string $prefix)
+{
+//Report errors if skeleton already exists.
+if (`objExists ($prefix + "Skeleton_J_Grp")`)
+	error "A biped skeleton with this name already exists in the scene. Try again.";
+createNode transform -n ($prefix + "Skeleton_J_Grp");
+	setAttr ".ove" yes;
+	
+if (`objExists ($prefix + "Root_J")`)
+	error "A biped skeleton with this name already exists in the scene. Try again.";
+	
+createNode joint -n ($prefix + "Root_J") -p ($prefix + "Skeleton_J_Grp");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0 29.249580047368486 0 ;
+createNode joint -n ($prefix + "LowerTorso_J") -p ($prefix + "Root_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" -5.8625957542657916e-016 1.9438896730284583 
+		-3.7396305183539804e-031 ;
+	setAttr ".jo" -type "double3" 89.999999999999986 0 89.999999999999986 ;
+createNode joint -n ($prefix + "UpperTorso_J") -p ($prefix + "LowerTorso_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 7.5733779536985502 7.8263700685434632e-015 
+		-1.6558381657331411e-015 ;
+
+createNode joint -n ($prefix + "Neck_J") -p ($prefix + "UpperTorso_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 6.9425673648854129 1.1820190765305625e-029 
+		-1.432403179006393e-015 ;
+createNode joint -n ($prefix + "Head_J") -p ($prefix + "Neck_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 4.2694027252671916 7.3271171001101393e-030 
+		-1.0812771884804141e-015 ;
+createNode joint -n ($prefix + "HeadTop_J") -p ($prefix + "Head_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 4.4630513949760058 -3.5292044943585848e-030 
+		-8.4546561574339876e-016 ;
+	setAttr ".jo" -type "double3" -89.999999999999986 -89.999999999999986 0 ;
+createNode joint -n ($prefix + "Jaw_J") -p ($prefix + "Head_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" -0.014600188613052012 1.5019989693767339 8.9680557656168238e-017 ;
+	setAttr ".mnrl" -type "double3" -360 -360 -360 ;
+	setAttr ".mxrl" -type "double3" 360 360 360 ;
+	setAttr ".jo" -type "double3" -1.1663750468348212e-029 -9.1539260425200796e-030 
+		103.7490489834194 ;
+createNode joint -n ($prefix + "Jaw_End_J") -p ($prefix + "Jaw_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 4.9375972978246274 3.5142532104873051e-031 
+		-3.1554436208840472e-030 ;
+	setAttr ".mnrl" -type "double3" -360 -360 -360 ;
+	setAttr ".mxrl" -type "double3" 360 360 360 ;
+	setAttr ".jo" -type "double3" 166.25095101658059 -89.999999999999986 0 ;
+	
+createNode joint -n ($prefix + "R_Clavicle_J") -p ($prefix + "UpperTorso_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 4.4953498854434946 -4.7335200277948139e-015 
+		-2.4632033150764405 ;
+	setAttr ".jo" -type "double3" 4.1803875800241188e-014 72.282075307800582 
+		3.9820964109543091e-014 ;
+createNode joint -n ($prefix + "R_Shoulder_J") -p ($prefix + "R_Clavicle_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 4.1738367376454297 2.2290385406398189e-015 
+		1.3322676295501878e-014 ;
+	setAttr ".jo" -type "double3" 8.3838219775835512 25.558970139722529 18.860024564780652 ;
+createNode joint -n ($prefix + "R_Elbow_J") -p ($prefix + "R_Shoulder_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 6.3021710509430662 -1.3322676295501878e-015 
+		-1.7541523789077473e-014 ;
+	setAttr ".jo" -type "double3" -0.17554721403859502 -0.23681615759034008 
+		19.593786539638817 ;
+createNode joint -n ($prefix + "R_Wrist_J") -p ($prefix + "R_Elbow_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 5.4259984842619104 5.3290705182007514e-015 
+		-8.8817841970012523e-015 ;
+	setAttr ".jo" -type "double3" -89.99329010855368 0.0090526990158886281 -0.0026533942754026311 ;
+createNode joint -n ($prefix + "R_Hand_J") -p ($prefix + "R_Wrist_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.69941599064617677 -4.929390229335695e-014 
+		-1.900701818158268e-013 ;
+	setAttr ".jo" -type "double3" -1.2295222116914761 -13.174149517817463 -1.3353413874994382 ;
+createNode joint -n ($prefix + "R_Middle1_J") -p ($prefix + "R_Hand_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 2.6061583498276306 -1.5543122344752192e-014 
+		3.5527136788005009e-015 ;
+	setAttr ".ra" -type "double3" 14.3698138949048 0 0 ;
+	setAttr ".jo" -type "double3" 4.7489674297099675 10.317882639177796 20.327352187084827 ;
+createNode joint -n ($prefix + "R_Middle2_J") -p ($prefix + "R_Middle1_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.4599279731787416 -1.7763568394002505e-014 
+		-3.5527136788005009e-015 ;
+	setAttr ".ra" -type "double3" 26.525150077419621 0 0 ;
+	setAttr ".jo" -type "double3" -15.154735730502978 5.3154036898784636 17.059710645711572 ;
+createNode joint -n ($prefix + "R_Middle3_J") -p ($prefix + "R_Middle2_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.0854483799996366 1.7763568394002505e-014 
+		-1.7763568394002505e-015 ;
+	setAttr ".ra" -type "double3" 32.916184713403524 0 0 ;
+	setAttr ".jo" -type "double3" -27.026963089606284 6.3288740847894998 11.31481006386619 ;
+createNode joint -n ($prefix + "R_Middle4_J") -p ($prefix + "R_Middle3_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.0500830749439718 1.0658141036401503e-014 
+		3.1086244689504383e-015 ;
+	setAttr ".jo" -type "double3" -160.05780431504181 -9.6737353017474419 114.85038942363248 ;
+createNode joint -n ($prefix + "R_Index1_J") -p ($prefix + "R_Hand_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 2.7225119702289469 0.20263002287248577 0.8595039514424041 ;
+	setAttr ".ra" -type "double3" 20.91205159486729 0 0 ;
+	setAttr ".jo" -type "double3" -1.4114433659747676 9.4495713659506198 20.52612096644566 ;
+createNode joint -n ($prefix + "R_Index2_J") -p ($prefix + "R_Index1_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.4556262223961216 -7.1054273576010019e-015 
+		0 ;
+	setAttr ".ra" -type "double3" 31.185987355687669 0 0 ;
+	setAttr ".jo" -type "double3" -19.294209310870336 6.5168869633134276 17.630256293317863 ;
+createNode joint -n ($prefix + "R_Index3_J") -p ($prefix + "R_Index2_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.95694835224109553 5.3290705182007514e-015 
+		2.6645352591003757e-015 ;
+	setAttr ".ra" -type "double3" 34.732953910048316 0 0 ;
+	setAttr ".jo" -type "double3" -29.072045179433797 6.7754175112056583 11.155438436909161 ;
+createNode joint -n ($prefix + "R_Index4_J") -p ($prefix + "R_Index3_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.0256351691107994 3.5527136788005009e-015 
+		-2.2204460492503131e-015 ;
+	setAttr ".jo" -type "double3" -160.84992865060934 -8.9862824254511118 114.21827323572897 ;
+createNode joint -n ($prefix + "R_Ring1_J") -p ($prefix + "R_Hand_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 2.3152610371401074 0.029138318371691785 -0.75273463941918273 ;
+	setAttr ".ra" -type "double3" 17.759349424628638 0 0 ;
+	setAttr ".jo" -type "double3" 2.5076326399386941 14.769256227895669 22.919735666076562 ;
+createNode joint -n ($prefix + "R_Ring2_J") -p ($prefix + "R_Ring1_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.5062645946888971 1.7763568394002505e-015 
+		-1.7763568394002505e-015 ;
+	setAttr ".ra" -type "double3" 28.857609737493227 0 0 ;
+	setAttr ".jo" -type "double3" -17.749380413171629 0.32647056294484117 19.167422145267867 ;
+createNode joint -n ($prefix + "R_Ring3_J") -p ($prefix + "R_Ring2_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.95303125759897611 7.1054273576010019e-015 
+		4.4408920985006262e-015 ;
+	setAttr ".ra" -type "double3" 27.685149961815959 0 0 ;
+	setAttr ".jo" -type "double3" -22.362284574660872 9.6503636139444406 10.530455396023342 ;
+createNode joint -n ($prefix + "R_Ring4_J") -p ($prefix + "R_Ring3_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.0567602725892424 -2.8421709430404007e-014 
+		8.8817841970012523e-016 ;
+	setAttr ".jo" -type "double3" -162.91776173825238 -7.519979292614023 113.06796623383894 ;
+createNode joint -n ($prefix + "R_PinkyCup_J") -p ($prefix + "R_Hand_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.39503046881163861 0.11647163130728133 -0.81740289690347367 ;
+	setAttr ".ra" -type "double3" 9.1881443289562714 0 0 ;
+	setAttr ".jo" -type "double3" -2.1392602809869046 21.877629373074683 8.2152694617114115 ;
+createNode joint -n ($prefix + "R_Pinky1_J") -p ($prefix + "R_PinkyCup_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.5464573089833102 -9.7699626167013776e-015 
+		0 ;
+	setAttr ".ra" -type "double3" 14.35825280348006 0 0 ;
+	setAttr ".jo" -type "double3" -6.1422122592920356 -1.9933264366439647 15.904979971109528 ;
+createNode joint -n ($prefix + "R_Pinky2_J") -p ($prefix + "R_Pinky1_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.1924967534163642 -3.5527136788005009e-015 
+		-3.5527136788005009e-015 ;
+	setAttr ".ra" -type "double3" 22.90275698614732 0 0 ;
+	setAttr ".jo" -type "double3" -11.295543801324786 4.9277769350471612 23.440595826344602 ;
+createNode joint -n ($prefix + "R_Pinky3_J") -p ($prefix + "R_Pinky2_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.81840553658238235 -1.0658141036401503e-014 
+		3.5527136788005009e-015 ;
+	setAttr ".ra" -type "double3" 25.882611328761971 0 0 ;
+	setAttr ".jo" -type "double3" -21.092661084271203 4.3940883233098846 13.024345405559211 ;
+createNode joint -n ($prefix + "R_Pinky4_J") -p ($prefix + "R_Pinky3_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.99742288578797123 0 -2.2204460492503131e-015 ;
+	setAttr ".jo" -type "double3" -162.92635024007262 -9.5633321156298496 105.78158988524028 ;
+createNode joint -n ($prefix + "R_Thumb1_J") -p ($prefix + "R_Hand_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.46045921565980485 0.1096743929889028 0.81216374971848815 ;
+	setAttr ".ra" -type "double3" 26.921255794497519 0 0 ;
+	setAttr ".jo" -type "double3" -30.556698629204437 -40.631998787146486 16.011843570591353 ;
+createNode joint -n ($prefix + "R_Thumb2_J") -p ($prefix + "R_Thumb1_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.2357065347188831 -2.1760371282653068e-014 
+		-7.1054273576010019e-015 ;
+	setAttr ".ra" -type "double3" 24.791341620623399 0 0 ;
+	setAttr ".jo" -type "double3" -31.656430194177819 5.2632072463086077 25.134309395815446 ;
+createNode joint -n ($prefix + "R_Thumb3_J") -p ($prefix + "R_Thumb2_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.1839605950676186 1.3322676295501878e-015 
+		3.5527136788005009e-015 ;
+	setAttr ".ra" -type "double3" 38.557642276377024 0 0 ;
+	setAttr ".jo" -type "double3" -37.963921098065008 -0.91611387247586007 19.430884154989513 ;
+createNode joint -n ($prefix + "R_Thumb4_J") -p ($prefix + "R_Thumb3_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.0293136384606876 1.1102230246251565e-014 
+		0 ;
+	setAttr ".jo" -type "double3" 4.4148460836512005 -64.565451153138056 -39.57296651050823 ;
+createNode joint -n ($prefix + "L_Clavicle_J") -p ($prefix + "UpperTorso_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 4.4953199956605596 -5.8274032023745181e-015 
+		2.4632023896913133 ;
+	setAttr ".jo" -type "double3" 2.6128660586050509e-014 -72.28294276917245 
+		-3.9823043894024037e-014 ;
+createNode joint -n ($prefix + "L_Shoulder_J") -p ($prefix + "L_Clavicle_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 4.173822675667707 4.6338740352289572e-016 -4.2188474935755949e-015 ;
+	setAttr ".jo" -type "double3" -8.3832904565235093 -25.557542673038771 18.859810429470244 ;
+createNode joint -n ($prefix + "L_Elbow_J") -p ($prefix + "L_Shoulder_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 6.3021613370906637 4.4408920985006262e-016 
+		1.021405182655144e-014 ;
+	setAttr ".jo" -type "double3" 0.17545332326472673 0.23668952081887526 19.593766640828314 ;
+createNode joint -n ($prefix + "L_Wrist_J") -p ($prefix + "L_Elbow_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 5.426002868272545 0 8.8817841970012523e-016 ;
+	setAttr ".jo" -type "double3" 90.000000000004803 0 0 ;
+createNode joint -n ($prefix + "L_Hand_J") -p ($prefix + "L_Wrist_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.69938219656637557 1.7763568394002505e-014 
+		0 ;
+	setAttr ".jo" -type "double3" 1.2230746047008494 13.171001398718756 -1.3282653080382598 ;
+createNode joint -n ($prefix + "L_Middle1_J") -p ($prefix + "L_Hand_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 2.606181348357671 -2.6645352591003757e-015 
+		5.3290705182007514e-015 ;
+	setAttr ".ra" -type "double3" -22.783150043052977 0 0 ;
+	setAttr ".jo" -type "double3" 3.6625989390244107 -10.316717367491483 20.329312609352751 ;
+createNode joint -n ($prefix + "L_Middle2_J") -p ($prefix + "L_Middle1_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.4599068375363871 -5.3290705182007514e-015 
+		-5.3290705182007514e-015 ;
+	setAttr ".ra" -type "double3" -34.076380229799277 0 0 ;
+	setAttr ".jo" -type "double3" 22.70080629207224 -5.3194939962625938 17.068470163738624 ;
+createNode joint -n ($prefix + "L_Middle3_J") -p ($prefix + "L_Middle2_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.085655517088993 1.7763568394002505e-014 -8.8817841970012523e-016 ;
+	setAttr ".ra" -type "double3" -39.2332411682181 0 0 ;
+	setAttr ".jo" -type "double3" 33.354081254539665 -6.3202885754232385 11.296910245821957 ;
+createNode joint -n ($prefix + "L_Middle4_J") -p ($prefix + "L_Middle3_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.0498575577216052 -7.1054273576010019e-015 
+		6.6613381477509392e-015 ;
+	setAttr ".jo" -type "double3" -160.05461087658105 -9.6786029284614123 -65.142521222945106 ;
+createNode joint -n ($prefix + "L_Index1_J") -p ($prefix + "L_Hand_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 2.7225278415590708 0.20291604875727653 -0.85949859040811027 ;
+	setAttr ".ra" -type "double3" -22.8280993769284 0 0 ;
+	setAttr ".jo" -type "double3" 3.3319972611368027 -9.4491171220468715 20.520961633524099 ;
+createNode joint -n ($prefix + "L_Index2_J") -p ($prefix + "L_Index1_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.4555627816756544 3.5527136788005009e-015 
+		-1.2434497875801753e-014 ;
+	setAttr ".ra" -type "double3" -34.721971416701265 0 0 ;
+	setAttr ".jo" -type "double3" 22.826944315853083 -6.517436740128475 17.634332318496693 ;
+createNode joint -n ($prefix + "L_Index3_J") -p ($prefix + "L_Index2_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.95692776250060874 -1.4210854715202004e-014 
+		9.7699626167013776e-015 ;
+	setAttr ".ra" -type "double3" -36.746477220578889 0 0 ;
+	setAttr ".jo" -type "double3" 31.082605022385426 -6.7765481153067526 11.161318794005604 ;
+createNode joint -n ($prefix + "L_Index4_J") -p ($prefix + "L_Index3_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.0257167348021863 1.7763568394002505e-014 
+		4.4408920985006262e-016 ;
+	setAttr ".jo" -type "double3" -160.85062978966792 -8.9844600459534387 -65.785191787241573 ;
+createNode joint -n ($prefix + "L_Ring1_J") -p ($prefix + "L_Hand_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 2.3152586886427287 0.029286548323178785 0.75273605165107504 ;
+	setAttr ".ra" -type "double3" -14.376712597267913 0 0 ;
+	setAttr ".jo" -type "double3" -5.8905958508530905 -14.769167625441533 22.920345454516532 ;
+createNode joint -n ($prefix + "L_Ring2_J") -p ($prefix + "L_Ring1_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.5062803737281936 1.7763568394002505e-015 
+		-1.7763568394002505e-015 ;
+	setAttr ".ra" -type "double3" -29.698370435705847 0 0 ;
+	setAttr ".jo" -type "double3" 18.586941125154642 -0.32820738813877681 19.173983352058933 ;
+createNode joint -n ($prefix + "L_Ring3_J") -p ($prefix + "L_Ring2_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.9531575385662574 -7.1054273576010019e-015 
+		-9.7699626167013776e-015 ;
+	setAttr ".ra" -type "double3" -30.770614720781555 0 0 ;
+	setAttr ".jo" -type "double3" 25.453172292859279 -9.6447936164277053 10.520581039895621 ;
+createNode joint -n ($prefix + "L_Ring4_J") -p ($prefix + "L_Ring3_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.0566384406842957 1.0658141036401503e-014 
+		2.6645352591003757e-015 ;
+	setAttr ".jo" -type "double3" -162.91529697424397 -7.5222490307724623 -66.929000474540686 ;
+createNode joint -n ($prefix + "L_PinkyCup_J") -p ($prefix + "L_Hand_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.39506590317989954 0.11671787538368816 0.81742856823819388 ;
+	setAttr ".ra" -type "double3" -4.960980377984324 0 0 ;
+	setAttr ".jo" -type "double3" -2.0841901139762542 -21.87748738024883 8.2109550232066422 ;
+createNode joint -n ($prefix + "L_Pinky1_J") -p ($prefix + "L_PinkyCup_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.5464047655518929 6.2172489379008766e-015 
+		-7.1054273576010019e-015 ;
+	setAttr ".ra" -type "double3" -14.536851315345126 0 0 ;
+	setAttr ".jo" -type "double3" 6.3177405674312572 1.9931137687597433 15.911003804075758 ;
+createNode joint -n ($prefix + "L_Pinky2_J") -p ($prefix + "L_Pinky1_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.1925076154747458 5.3290705182007514e-015 
+		7.1054273576010019e-015 ;
+	setAttr ".ra" -type "double3" -22.128581942957034 0 0 ;
+	setAttr ".jo" -type "double3" 10.523957544429935 -4.9250070520536546 23.435272081139765 ;
+createNode joint -n ($prefix + "L_Pinky3_J") -p ($prefix + "L_Pinky2_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.81834857703945119 0 -3.1086244689504383e-015 ;
+	setAttr ".ra" -type "double3" -30.120284078801355 0 0 ;
+	setAttr ".jo" -type "double3" 25.328591260746379 -4.3975442178140991 13.027348859229392 ;
+createNode joint -n ($prefix + "L_Pinky4_J") -p ($prefix + "L_Pinky3_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.99739753793981833 1.0658141036401503e-014 
+		2.2204460492503131e-015 ;
+	setAttr ".jo" -type "double3" -162.92712272826375 -9.5633725353270993 -74.217419784755251 ;
+createNode joint -n ($prefix + "L_Thumb1_J") -p ($prefix + "L_Hand_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 0.46046120576829352 0.10988705261506082 -0.81212234342839018 ;
+	setAttr ".ra" -type "double3" -32.544442270873724 0 0 ;
+	setAttr ".jo" -type "double3" 36.157267283248792 40.636041078413314 15.998889165302062 ;
+createNode joint -n ($prefix + "L_Thumb2_J") -p ($prefix + "L_Thumb1_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.2356719152220688 4.4408920985006262e-015 
+		3.5527136788005009e-015 ;
+	setAttr ".ra" -type "double3" -30.838381316062392 0 0 ;
+	setAttr ".jo" -type "double3" 37.714333711403526 -5.2723931822976207 25.148350606357056 ;
+createNode joint -n ($prefix + "L_Thumb3_J") -p ($prefix + "L_Thumb2_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.1840518423544619 -4.6629367034256575e-015 
+		0 ;
+	setAttr ".ra" -type "double3" -38.265089426768455 -0.46008716210059497 -0.69045679403778359 ;
+	setAttr ".jo" -type "double3" 37.686953786116838 0.85830657788194642 20.256191911136725 ;
+createNode joint -n ($prefix + "L_Thumb4_J") -p ($prefix + "L_Thumb3_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 1.0293762316303359 9.2148511043887993e-015 
+		-3.5527136788005009e-015 ;
+	setAttr ".jo" -type "double3" 4.41619943356456 -64.565634219210054 140.42329129009067 ;
+
+createNode joint -n ($prefix + "L_Femur_J") -p ($prefix + "Root_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 2.9421281022114805 -1.6887676937105951 3.7546215725088113e-031 ;
+	setAttr ".jo" -type "double3" -90 -2.5586496880354312 -90.000000000000071 ;
+createNode joint -n ($prefix + "L_Knee_J") -p ($prefix + "L_Femur_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 12.653907058009013 -3.605731437157013e-016 
+		6.8253469229086336e-015 ;
+	setAttr ".jo" -type "double3" 0 0 5.0865607363222258 ;
+createNode joint -n ($prefix + "L_Ankle_J") -p ($prefix + "L_Knee_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 12.917415571303643 9.7125389838254256e-015 
+		8.7629514141351109e-016 ;
+	setAttr ".jo" -type "double3" 0 0 -74.783127168948937 ;
+createNode joint -n ($prefix + "L_Ball_J") -p ($prefix + "L_Ankle_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 6.0214694212259605 -2.0766109642982627e-016 
+		2.0567473622405711e-016 ;
+	setAttr ".jo" -type "double3" -5.8284015181588897e-015 3.979721253104579e-014 
+		-16.663758244102077 ;
+createNode joint -n ($prefix + "L_Toe_J") -p ($prefix + "L_Ball_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 3.4928697955467807 -6.330960718046549e-017 
+		-2.3713180329266258e-015 ;
+	setAttr ".jo" -type "double3" 178.91897436476424 -89.999999999999943 0 ;
+createNode joint -n ($prefix + "R_Femur_J") -p ($prefix + "Root_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" -2.9421281022114805 -1.6887791166264918 3.7546215725088113e-031 ;
+	setAttr ".jo" -type "double3" -90 -2.5586579445069786 -89.999999999999943 ;
+createNode joint -n ($prefix + "R_Knee_J") -p ($prefix + "R_Femur_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 12.653899516616425 3.3364366212399849e-016 
+		5.4425800566448383e-016 ;
+	setAttr ".jo" -type "double3" 1.5071240710656741e-015 3.3930534350767915e-014 
+		5.086576317982848 ;
+createNode joint -n ($prefix + "R_Ankle_J") -p ($prefix + "R_Knee_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 12.917411832867071 4.9676723677776164e-016 
+		-8.4014811746050678e-015 ;
+	setAttr ".jo" -type "double3" -1.9641829409990555e-014 2.5698280405341488e-014 
+		-74.783142786029444 ;
+createNode joint -n ($prefix + "R_Ball_J") -p ($prefix + "R_Ankle_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 6.0214738452716041 4.311190113154137e-017 -2.5030725343279096e-015 ;
+	setAttr ".jo" -type "double3" -3.8788962355365e-016 2.6485735454106902e-015 
+		-16.663732396199723 ;
+createNode joint -n ($prefix + "R_Toe_J") -p ($prefix + "R_Ball_J");
+	setAttr ".ove" yes;
+	setAttr ".t" -type "double3" 3.4928736240587237 -5.9559621897653417e-016 
+		5.4626386124287858e-016 ;
+	setAttr ".jo" -type "double3" -1.0810431912472367 -89.999999999999943 0 ;
+	
+
+
+//Connect "scale" attr of each joint to "inverseScale" attr of each of its children joints.
+select -r ($prefix + "Root_J");
+string $joints[] = `ls -sl -dag`;
+for ($j in $joints)
+	{
+	string $children[] = `listRelatives -c -pa -type joint $j`;
+	for ($c in $children)
+		{
+		if (!`isConnected ($j + ".scale") ($c + ".inverseScale")`)
+			{connectAttr -f ($j + ".scale") ($c + ".inverseScale");}
+		}
+	};
+
+
+
+select -r ($prefix + "Skeleton_J_Grp");
+
+} // end of script.

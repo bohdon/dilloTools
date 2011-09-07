@@ -1,0 +1,557 @@
+/*
+    Blend Taper
+    5.0
+    
+    Written by Harry Michalakeas in 2003, Reel FX Creative Studios
+    
+    version 2.0.2   9/28/2003 by Jason Osipa
+    version 3.0     7/12/2004 by Mark Behm
+    version 4.3     12/12/2008 by Andreas Theodorou, Chris Hendryx, and Bohdon Sayre
+    version 5.0     1/17/2009 by Bohdon Sayre
+
+    Description:
+        Allows you to turn a single blendshape into multiple tapered blendshapes whose sums
+        are equal to the original blend.  This, for example, would allow you to control
+        multiple points of an "eyebrow_up" shape, rather than the entire brow at once.
+
+    Instructions:
+        Put blendTaper5.mel in your scripts folder and source it.  Then run blendTaper;
+
+    Version 5.0 Features:
+        > Division planes will stay with their target shapes, so targets can be rearranged even
+            after division planes are created.
+        > If multiple shapes have division planes and are ready to be built, the selected shape
+            will be built first. If none are selected, shapes are built alphabetically.
+        > Select multiple shapes for quick creation of division planes.
+        > Build All function for building all shapes at once.
+        > Edit > Cleanup function for deleting division planes that you no longer want.
+        > Help videos for getting started and common functions.
+        > Custom number of divisions.
+        > Several speed and efficiency improvements.
+        > Enhanced error checking for much higher stability.
+        
+
+
+*/
+
+//Build the blend taper UI
+//=========================================================================================
+global proc blendTaper() {
+    //window name
+    $win = "blendTaperWin";
+    
+    //check for pre-existing window
+    if (`window -ex $win`) deleteUI -wnd $win;
+    
+    //create window
+    window -w 326 -rtf 1 -mb 1 -mxb 0 -t "Blend Taper 5.0" -mnc ("window -e -t \"Blend Taper 5.0\" "+$win+";") $win;
+    
+    //menu
+    menu -l "Edit";
+        menuItem -l "Build All"
+            -c "btBuildAll";
+        menuItem -d 1;
+        menuItem -l "Cleanup/Delete division planes"
+            -c "if (size(`ls \"*btDivPlane*\"`) != 0) delete `ls \"*btDivPlane*\"`; progressBar -e -pr 0 btProgressBar;";
+    menu -l "Help";
+        menuItem -l "Basic Help Video"
+            -c ("showHelp -absolute (\"http://www.ringling.edu/~bsayre/scripts/videos/blendTaperBasicHelp.mov\");");
+        menuItem -l "4-Divisions Help Video"
+            -c ("showHelp -absolute (\"http://www.ringling.edu/~bsayre/scripts/videos/blendTaper4Divisions.mov\");");
+    
+    //main layout
+    frameLayout -lv 0 -bs "etchedIn" blendTaperFrameMain;
+        columnLayout -adj 1;
+                separator -h 6 -st none;
+                textFieldButtonGrp -l "Choose Base Shape:" -bl " <<< " -ed 0
+                            -cw3 120 162 40 -cl3 "right" "center" "center"
+                            -ann "Choose selected object as base"
+                            -bc ("string $selList[] = `ls -sl`; if (size($selList) > 0) {textFieldButtonGrp -e -tx ($selList[0]) blendTaperBaseField;} else {textFieldButtonGrp -e -tx \"\" blendTaperBaseField;}")
+                            blendTaperBaseField;
+                separator -h 10;
+                intSliderGrp -l "Divisions:" -f 1 -v 2 -min 2 -max 20 -s 1 -cw3 120 40 140 -cl3 "right" "left" "center" blendTaperDivSlider;
+                separator -h 10;
+                frameLayout -lv 0 -bv 0 -mw 5 -mh 1;
+                    rowLayout -nc 4 -cw4 40 140 40 140 -cl4 "center" "center" "center" "center";
+                        symbolButton -i `dillo_getImage("blendTaper/btDivPlanesIcon.bmp")`
+                            -ann "Select a target to be tapered, then click Make Division Planes"
+                            -c "blendTaperDivPlanes"
+                            blendTaperDivPlanesBtn;
+                        text -l "1. Make Division Planes";
+                        symbolButton -i `dillo_getImage("blendTaper/btBuildIcon.bmp")`
+                            -ann "After adjusting division planes, click Build Shapes"
+                            -c "blendTaperBuild"
+                            blendTaperBuildBtn;
+                        text -l "2. Build Shapes";
+                        setParent ..;
+                    setParent ..;
+                separator -h 10;
+                frameLayout -lv 0 -bv 0 -mw 5 -mh 3;
+                    progressBar -h 14 btProgressBar;
+    
+    window -e -w 332 -h 198 $win;
+    showWindow $win;
+}
+
+
+
+
+
+
+// Div Plane and Build Procs
+//=========================================================================================
+global proc blendTaperDivPlanes()
+{
+    vector $baseVerts[];
+    vector $targetVerts[];
+    vector $basePos, $targetPos;
+    float $bBox[];
+    
+    int $numDiv;
+    
+    string $baseShape = "";
+    string $targetShape = "";
+    
+    string $selList[]=`ls -sl`;
+    if (!size($selList)) {
+        error ("no target was selected");
+        return ;
+    }
+    
+    //get base shape
+    $baseShape = `textFieldButtonGrp -q -tx blendTaperBaseField`;
+    if ($baseShape == "") {
+        error ("no base object was specified");
+        return ;
+    }
+    
+    //get number of divisions
+    $numDiv = `intSliderGrp -q -v blendTaperDivSlider`;
+    
+    //no target can be the base shape
+    for ($obj in $selList) {
+        if ($obj == $baseShape)
+        error ("a target cannot be the base shape");
+    }
+    
+    //catches any errors and prints them all at the end
+    string $errors[];
+	string $divPlanesGrp;
+    
+    //only need to get baseVerts once
+    $baseVerts = btGetVerts($baseShape, 0);
+    //* 2 because both btGetVerts and btGetBoundingBox increases progress
+    progressBar -e -max (size($baseVerts) * size($selList) * 2) btProgressBar;
+    progressBar -e -pr 0 btProgressBar;
+    
+    for ($targetShape in $selList) {
+        //check for existing division planes and delete
+        if (size(`ls ($targetShape+"_btDivPlane*")`) != 0)
+            delete `ls ($targetShape+"_btDivPlane*")`;
+        $targetVerts = btGetVerts($targetShape, 1);
+        $basePos = btGetPos($baseShape);
+        $targetPos = btGetPos($targetShape);
+        $bBox = btGetBoundingBox($baseVerts,$targetVerts,$basePos,$targetPos, 1);
+        
+        //diff is a boolean for if there's a difference or not
+        int $diff = 0;
+        for ($val in $bBox) {
+            if (`abs $val` != 999999)
+                $diff = 1;
+        }
+        if (!$diff) {
+            $errors[size($errors)] = ("// Error: there is no difference between "+$targetShape+" and base shape: "+$baseShape+"\n");
+            continue;
+        }
+        //need to send baseShape so divPlanes can embed the info, see proc for explanation
+        btMakeDivPlanes($bBox,$basePos,$targetPos,$targetShape, $baseShape, $numDiv);
+		$divPlanesGrp = ($targetShape+"_btDivPlanesGRP");
+    }
+    progressBar -e -pr 0 btProgressBar;
+    
+    //check for error printing
+    if (size($errors) > 0) {
+        for ($str in $errors)
+            print $str;
+        warning ("some of the shapes were not different than the base. see script editor for details.");
+    } else {
+        print ("//division planes created succesfully");
+    }
+    
+	if (`objExists $divPlanesGrp`)
+		select $divPlanesGrp;
+	else
+		select $selList;
+}
+//=========================================================================================
+global proc blendTaperBuild()
+{
+    vector $baseVerts[];
+    vector $targetVerts[];
+    vector $blendedVerts[];
+    vector $basePos, $targetPos;
+    float $bBox[];
+    string $divPlaneList[];
+    
+    string $baseShape="";
+    string $targetShape="";
+    int $numDiv;
+    string $selList[] = `ls -sl`;
+        
+    //get all div planes
+    $divPlaneList = `ls -tr "*_btDivPlane_*"`;
+    if (!size($divPlaneList)) {
+        error "no division planes exist";
+        return ;
+    }
+    
+    //get target shape (prefix of div planes) or (first selected object)
+    if (size($selList) > 0) {
+        if (size(`ls ($selList[0]+"_btDivPlane_*")`) > 0) {
+            $targetShape = $selList[0];
+        } else {
+            $targetShape = `substitute "_btDivPlane_.*" $divPlaneList[0] ""`;
+        }
+    } else {
+        $targetShape = `substitute "_btDivPlane_.*" $divPlaneList[0] ""`;
+    }
+    
+    $targetShapeShape = `listRelatives -s $targetShape`;
+    //this time, base shape is taken from the first div plane
+    $baseShape = `getAttr ($targetShape+"_btDivPlane_1.baseShape")`;
+    //get all div planes with the same prefix (target shape)
+    $divPlaneList = `ls -tr ($targetShape+"_btDivPlane_*")`;
+    $numDiv = size($divPlaneList);
+    
+    $baseVerts = btGetVerts($baseShape, 0);
+    $targetVerts = btGetVerts($targetShape, 0);
+    $basePos = btGetPos($baseShape);
+    $targetPos = btGetPos($targetShape);
+    $bBox = btGetBoundingBox($baseVerts,$targetVerts,$basePos,$targetPos, 0);
+    
+    progressBar -e -pr 0 btProgressBar;
+    progressBar -e -max (size($baseVerts) * $numDiv) btProgressBar;
+    
+    string $newShapes[];
+    string $lastShape = $targetShape;
+    for ($curDiv = 0; $curDiv < $numDiv; $curDiv++) {
+        $blendedVerts = btCalculateBlend($baseVerts, $targetVerts, $basePos, $targetPos, $bBox, $numDiv, $curDiv, $divPlaneList);
+        //send last shape for getting the new Y position
+        $newShapes[size($newShapes)] = newBlend($blendedVerts, $baseShape, $targetShape, $numDiv, $curDiv, $lastShape);
+        $lastShape = $newShapes[size($newShapes)-1];
+    }
+    parent $newShapes $targetShape;
+    clear $newShapes;
+    delete `ls ($targetShape+"_btDivPlane*")`;
+    
+    progressBar -e -pr 0 btProgressBar;
+    print ("//blend taper was successful for "+$targetShape+"\n");
+}
+
+global proc btBuildAll() {
+    //until there are no btDivPlane objects left
+    while(size(`ls "*_btDivPlane_*"`) != 0) {
+        blendTaperBuild;
+    }
+    
+}
+
+
+
+
+
+
+// "Get" Helper Procs
+//=========================================================================================
+global proc string [] btMakeDivPlanes( float $values[], vector $baseCtr, vector $targetCtr, string $targetShapeName, string $baseShapeName, int $numDiv ) {
+    string $returnList[];
+    vector $offset;
+    
+    // get offset
+    $offset = $targetCtr - $baseCtr;
+    // work out dimensions
+    $width = $values[1]-$values[0];
+    $height = $values[3]-$values[2];
+    $depth = $values[5]-$values[4];
+    $y_pos = (($values[2]+$values[3])/2.0)+$offset.y;
+    $z_pos = (($values[4]+$values[5])/2.0)+$offset.z;
+    
+    
+    string $divPlanesGrp = ($targetShapeName+"_btDivPlanesGRP");
+    group -em -n $divPlanesGrp;
+    
+    for ($i = 0; $i < $numDiv; $i++) {
+        // get name for planes
+        $name = ($targetShapeName+"_btDivPlane_"+($i+1));
+        
+        //make the plane
+        string $planeResult[] = `polyPlane -ax 1 0 0 -w ($depth*1.1) -h ($height*1.1) -sx 1 -sy 1 -ch 0 -n $name`;
+        $name = $planeResult[0];
+        
+        //use width to get x_pos
+        $x_off = (($values[0]+$values[1])/2.0)+$offset.x;
+        $x_pos = ($i == 0 ? 0 : ((($width)/($numDiv-1))*$i))+ $x_off - (.5*$width);
+        
+        move -r ($x_pos) ($y_pos) ($z_pos) $name;
+        
+        // lock and hide unwanted attributes
+        setAttr -l true ($name+".r");
+        setAttr -l true ($name+".v");
+        setAttr -k false ($name+".tz");
+        setAttr -l true -k false ($name+".ty");
+        setAttr -l true -k false ($name+".tz");
+        setAttr -k false ($name+".rx");
+        setAttr -k false ($name+".ry");
+        setAttr -k false ($name+".rz");
+        setAttr -k false ($name+".v");
+        // add base shape attribute if it's the first plane
+        // this allows you to create the taper later if the base shape is deselected in the gui
+        if ($i == 0) {
+            addAttr -ln "baseShape" -dt "string"  $name;
+            setAttr -type "string" ($name+".baseShape") $baseShapeName;
+        }
+        
+        $returnList[size($returnList)] = $name;
+        
+        //put into grp
+        parent $name $divPlanesGrp;
+    }
+    //center pivots
+    xform -cp $divPlanesGrp;
+    //parent to target shape
+    parent $divPlanesGrp $targetShapeName;
+    
+    return $returnList;
+}
+//=========================================================================================
+global proc vector[] btGetVerts(string $shape, int $useProg) 
+{
+    int $intList[];
+    float $floatList[];
+    int $nVerts;
+    vector $verts[];
+    
+    
+    $intList = `polyEvaluate -v $shape`;
+    $nVerts = $intList[0];
+    
+    
+    for ($i=0;$i<$nVerts;$i++) {
+        $vert = $shape+".vtx["+$i+"]";
+        $floatList = `xform -q -ws -t $vert`;
+        $verts[$i] = <<$floatList[0],$floatList[1],$floatList[2]>>;
+        if ($useProg)
+            progressBar -e -s 1 btProgressBar;
+    }
+    return $verts;
+}
+//=========================================================================================
+global proc vector btGetPos(string $shape) {
+    float $floatList[];
+    
+    $floatList = `xform -q -ws -t $shape`;
+    return (<<$floatList[0],$floatList[1],$floatList[2]>>);
+        
+}
+//=========================================================================================
+global proc float[] btGetBoundingBox(vector $baseVerts[],vector $targetVerts[],vector $baseCtr,vector $targetCtr, int $useProg) {
+    float $bb[];
+    //set to opposite extremes because each different vert encroaches on these values
+    float $xMin=999999, $xMax=-999999, $yMin=999999, $yMax=-999999, $zMin=999999, $zMax=-999999;
+    vector $adjustedVert;
+    vector $baseVert;
+    
+    $offset = $targetCtr - $baseCtr;	
+    for ($i = 0; $i < size($baseVerts); $i++) {
+        // move target vert into the same space as base vert
+        $adjustedVert = $targetVerts[$i]-$offset;
+        // find out if target vert is different to base vert
+        $tolerance = 0.001;
+        $baseVert = $baseVerts[$i];
+        $x_diff = ($adjustedVert.x < ($baseVert.x - $tolerance) || $adjustedVert.x > ($baseVert.x + $tolerance));
+        $y_diff = ($adjustedVert.y < ($baseVert.y - $tolerance) || $adjustedVert.y > ($baseVert.y + $tolerance));
+        $z_diff = ($adjustedVert.z < ($baseVert.z - $tolerance) || $adjustedVert.z > ($baseVert.z + $tolerance));
+        $diff = ($x_diff || $y_diff || $z_diff);
+        
+        if ($diff) {
+            //$v = $targetShape+".vtx["+$i+"]";
+            //select -add $v;
+            if ($adjustedVert.x < $xMin) {
+                $xMin = $adjustedVert.x;	
+            }
+            if ($adjustedVert.x > $xMax) {
+                $xMax = $adjustedVert.x;	
+            }	
+            if ($adjustedVert.y < $yMin) {
+                $yMin = $adjustedVert.y;	
+            }
+            if ($adjustedVert.y > $yMax) {
+                $yMax = $adjustedVert.y;	
+            }
+            if ($adjustedVert.z < $zMin) {
+                $zMin = $adjustedVert.z;	
+            }
+            if ($adjustedVert.z > $zMax) {
+                $zMax = $adjustedVert.z;	
+            }
+        }
+        
+        if ($useProg)
+            progressBar -e -s 1 btProgressBar;
+    }
+    $bb[0] = $xMin;
+    $bb[1] = $xMax;
+    $bb[2] = $yMin;
+    $bb[3] = $yMax;
+    $bb[4] = $zMin;
+    $bb[5] = $zMax;
+    
+    return $bb;
+}
+
+
+
+
+// "Build" Helper Procs
+//=========================================================================================
+global proc vector[] btCalculateBlend(vector $baseVerts[], vector $targetVerts[], vector $baseCtr, vector $targetCtr, float $bb[], int $numDiv, int $curDiv, string $divPlaneList[]) {
+    vector $blendedVerts[];
+    float $per;
+    float $x;
+    vector $planeVector;
+    float $planeXMin;
+    float $planeXMid;
+    float $planeXMax;
+    float $xMinV, $xMidV, $xMaxV;
+    vector $offset;
+    
+    // load bounding box into separate vars to make it more understandable
+    $xMin = $bb[0];
+    $xMax = $bb[1];
+    $yMin = $bb[2];
+    $yMax = $bb[3];
+    $zMin = $bb[4];
+    $zMax = $bb[5];
+    
+    $offset = $targetCtr - $baseCtr;
+    
+    $planeVector = btGetPos($divPlaneList[$curDiv]);
+    
+    $planeXMid = $planeVector.x;
+    if ($curDiv == 0) {
+            $planeXMin = $planeXMid; //$xMin;
+    } else {
+        $planeVector = btGetPos($divPlaneList[$curDiv-1]);
+        $planeXMin = $planeVector.x;
+    }
+    if ($curDiv == $numDiv - 1) {
+            $planeXMax = $planeXMid; //$xMax;
+    } else {
+        $planeVector = btGetPos($divPlaneList[$curDiv+1]);
+        $planeXMax = $planeVector.x;
+    }
+    $planeXMin -= $offset.x;
+    $planeXMid -= $offset.x;
+    $planeXMax -= $offset.x;
+    
+    
+    
+    //print ("Division: "+$curDiv+"\n");
+    for ($i=0;$i<size($baseVerts);$i++) {
+        $blendedVerts[$i] = $baseVerts[$i];
+        // move target vert into base space
+        $adjustedVert = $targetVerts[$i]-$offset;
+        // clamp to bounding box
+        $x = clamp($xMin,$xMax,$adjustedVert.x);
+    
+            $dif = ($xMax - $xMin);
+            // figure out their position on the gradient
+            $xMinV = ($planeXMin);
+            $xMidV = ($planeXMid);
+            $xMaxV = ($planeXMax);
+            
+            //if creating the middle shape, sets the smoothstep variable to calculate on a cosine curve
+            if ($x > $xMinV && $x <= $xMidV) {
+                $per = smoothstep ($xMinV, $xMidV, $x);
+                $per = 1.0 - $per;
+            } else if ($x >= $xMidV && $x < $xMaxV) {
+                $per = smoothstep ($xMidV, $xMaxV, $x);
+            } else {
+                if ($curDiv == 0) {
+                    if ($x < $xMinV) {
+                        $per = 0;
+                    } else {
+                        $per = 1;
+                    }
+                } else if ($curDiv == $numDiv -1) {
+                    if ($x > $xMaxV) {
+                        $per = 0;
+                    } else {
+                        $per = 1;
+                    }
+                } else {
+                    $per = 1;
+                }
+            }
+            $blendedVerts[$i]=($baseVerts[$i]*$per)+($adjustedVert*(1.0-$per));	
+        
+    }
+    return $blendedVerts;
+}
+
+//=========================================================================================
+global proc string newBlend( vector $verts[], string $baseShape, string $targetShape, int $numDiv, int $curDiv, string $lastShape)
+{
+    //duplicate and rename
+    string $newShape;
+    int $i = 1;
+    while (size(`ls ($targetShape+"_"+($curDiv+$i))`) > 0) {
+        $i++;
+    }
+	if ($numDiv == 2) {
+		if ($curDiv == 0)
+			$newShape = ("right_"+$targetShape);
+		else if ($curDiv =1)
+			$newShape = ("left_"+$targetShape);
+	} else {
+		$newShape = ($targetShape+"_"+($curDiv+$i));
+	}
+    duplicate -n $newShape $baseShape;
+    
+    //move verts
+    for ($i=0;$i<size($verts);$i++) {
+        $vert = $newShape+".vtx["+$i+"]";
+        $vertPos = $verts[$i];
+        xform -ws -t ($vertPos.x) ($vertPos.y) ($vertPos.z) $vert;
+        
+        //increase progress by 1
+        progressBar -e -s 1 btProgressBar;
+    }
+    
+    //use lastShape to get new Y
+    vector $lastCtr = btGetPos($lastShape);
+    string $lastShapeShape[] = `listRelatives -s $lastShape`;
+    float $lastY = `getAttr ($lastShapeShape[0]+".boundingBoxMaxY")` + $lastCtr.y;
+    float $shapeMinY = `getAttr ($newShape+".boundingBoxMinY")`;
+    float $offset = `getAttr ($newShape+".boundingBoxSizeY")` * .3; //adds 30% of the new shapes height for space
+    float $newY = ($lastY + $offset - $shapeMinY);
+    xform -ws -t ($lastCtr.x) ($newY) ($lastCtr.z) $newShape;
+    
+    //parent new shape
+    return $newShape;
+}
+
+
+//=========================================================================================
+//proc for getting the local MAYA\2008\scripts path
+global proc string btGetScriptsPath() {
+    string $paths = `getenv MAYA_SCRIPT_PATH`;
+    string $pathsList[] = stringToStringArray($paths, ";");
+    for ($str in $pathsList) {
+        if (`gmatch $str "*/MAYA/2008/scripts"`) {
+            return $str;
+        }
+    }
+}
+
+

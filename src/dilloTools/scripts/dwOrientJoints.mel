@@ -1,0 +1,102 @@
+//Title:	dwOrientJoints.mel
+//AUTHOR:	DAVID WALDEN
+//		www.davidwalden.com
+//		DWALDEN74@HOTMAIL.COM
+//DATE: JAN. 2003
+//DESCRIPTION: ORIENTS JOINTS ALONG ANY AXIS, INSPIRED BY JASON SCHLEIFER´S JSORIENTJOINTUI.MEL SCRIPT.
+//
+//Updated Nov. 27 2003 - Reset rotateAxis and scale attrs on joints before orienting. Cleaned up some syntax.
+//
+global proc dwOrientJoints (string $jointList[], int $aimAxisInt, int $sideAxisInt, int $directionInt)
+{
+//REPORT ERROR IF NO JOINTS ARE IN LIST.
+if (! `size($jointList)`)
+	error "No joints in list.";
+
+//REPORT ERROR IF OBJECTS IN LIST ARE NOT JOINTS. DOESN´T REALLY MATTER NOW AS USER CAN ADD ONLY JOINTS TO LIST.
+for ($joint in $jointList)
+	{
+	if (! `objectType -isType joint $jointList[0]`)
+		{error "Objects selected are not joints.";}
+	}
+
+//GET INITIAL SELECTION.
+string $initialSelection[] = `ls -sl -ap`;
+
+string $jointChildren[];
+for ($joint in $jointList)
+	{
+	//GET JOINT´S CHILDREN AND UNPARENT THEM.
+	$jointChildren = `listRelatives -c -pa -type transform $joint`;
+	if (! `size($jointChildren)`)
+		continue;
+	
+	select -r $jointChildren;
+	
+	parent -w $jointChildren;
+	
+	$jointChildren = `ls -sl -ap`;
+	
+	//RESET ALL ROTATIONS, SCALE, JOINTORIENT AND ROTATEAXIS ATTRS.
+	setAttr ($joint + ".r") 0 0 0;
+	setAttr ($joint + ".s") 1 1 1;
+	setAttr ($joint + ".jo") 0 0 0;
+	setAttr ($joint + ".ra") 0 0 0;
+	
+	
+	//GET POSITION OF JOINT AND CREATE LOCATOR.
+	float $jointPos[] = `xform -q -ws -t $joint`;
+	string $loc[] = `spaceLocator`;
+	
+	//PLACE LOCATOR AT JOINT´S POSITION. MOVE ACCORDINGLY.
+	move -a $jointPos[0] $jointPos[1] $jointPos[2] $loc[0];
+	if ($directionInt == 1)
+		move -r 0 0 -10;
+	else if ($directionInt == 2)
+		move -r 0 0 10;
+	
+	
+	//AIM CONSTRAINT.
+	string $aim[];
+	//DEFINE FLOAT ARRAY FOR UPVECTOR VALUE.
+	int $upVector[3];
+	if ($sideAxisInt == 1)
+		$upVector = {1, 0, 0};
+	else if ($sideAxisInt == 2)
+		$upVector = {0, 1, 0};
+	else if ($sideAxisInt == 3)
+		$upVector = {0, 0, 1};
+	
+	int $aimVector[3];
+	if ($aimAxisInt == 1)
+		$aimVector = {1, 0, 0};
+	else if ($aimAxisInt == 2)
+		$aimVector = {0, 1, 0};
+	else if ($aimAxisInt == 3)
+		$aimVector = {0, 0, 1};
+	
+	 
+	$aim = `aimConstraint -weight 1 
+		-aimVector $aimVector[0] $aimVector[1] $aimVector[2] 
+		-upVector $upVector[0] $upVector[1] $upVector[2] 
+		-worldUpType "object" 
+		-worldUpObject $loc[0] ($jointChildren[0]) $joint`;
+	
+		
+	//DELETE CONSTRAINT AND LOCATOR.
+	delete $aim;
+	delete $loc;
+	
+	//GET ROTATION OF JOINT. SET JOINTORIENT TO ROTATION VALUES. SET ROTATIONS TO ZERO.
+	float $jointRotation[] = `getAttr ($joint + ".r")`;
+	
+	setAttr ($joint + ".jo") $jointRotation[0] $jointRotation[1] $jointRotation[2];
+	setAttr ($joint + ".r") 0 0 0;
+	
+	//parent ("|" + $childNameBuffer[$tokens - 1]) $joint;
+	parent $jointChildren $joint;
+	}
+
+//RESELECT INITIAL SELECTION.
+select -r $initialSelection;
+}

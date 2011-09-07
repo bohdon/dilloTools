@@ -1,0 +1,81 @@
+//Title:	dwCreateCharacterSet.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date:		May 7, 2004
+//
+//Updated:	June 2, 2004: User can now either control joint orientations either by orient constraints or by connecting ".rotate" attr directly.
+//			This feature is accessible only through the main dwRiggingTools UI; for dwCreateIKSplineSpine.mel, joints are
+//			controlled via orient constraints only.
+//
+//Description:	Creates an FK control rig on a given list of joints. Joints must be specified in
+//		correct hierarchical order. User has the option of creating separate control objects,
+//		or parenting control obj shapes to the joints themselves.
+
+global proc dwRTCreateFKControlRig(string $joints[], 			//list of joints to control (in hierarchical order).
+					int $stretchCheck, 		//Stretchy joints?
+					int $controlType, 		//Type of control obj (bounding box, circle or square)
+					int $parentControlShapeCheck,	//Parent control obj´s shape node to joint?
+					int $orientJointsType)		//How we control joint orientation: either orientConstraint or direct connections.
+{
+//Report errors.
+if (! `size $joints`)
+	error "No joints specified. Try again.";
+string $child[];
+for ($j in $joints)
+	{
+	if (`nodeType $j` != "joint")
+		error ($j + " is not a joint. Remove it from the input list and try again.");
+	
+	if (! $parentControlShapeCheck)
+		{
+		//If joint has no child joint report error.
+		$child = `listRelatives -type "joint" -c $j`;
+		if (! `size $child`)
+			error ($j + " has no children joints. Remove it from the list and try again.");
+		if (`size $child` > 1)
+			warning ($j + " has multiple child joints. This may cause undesireable orientation in the control object.");
+		}
+	}
+	
+
+for ($i = 0; $i < `size $joints`; $i++)
+	{
+	//Get the first child joint.
+		$child = `listRelatives -type joint -c $joints[$i]`;
+	//Get the length of the child for the $size variable.
+		float $childLength = `getAttr ($child[0] + ".tx")`;
+	if ($parentControlShapeCheck)
+		{
+		string $controlObj = `dwCreateControlObject $controlType $childLength ($joints[$i] + "_CONTROL") 1 2`;
+		string $shape[] = `listRelatives -s $controlObj`;
+		parent -s -r $shape[0] $joints[$i];
+		delete $controlObj;
+		}
+		
+	else if (! $parentControlShapeCheck)
+		{
+		//Build control setup.
+		string $orientGrp = `dwCreateFKControlForSpine $joints[$i] $stretchCheck $child[0] $controlType $childLength ($joints[$i] + "_CONTROL") 1 2 $orientJointsType`;
+		
+		//Create Free_Orient setup, but ONLY if user orients joints via orientConstraints ("Free_Orient" setup doesn´t really
+		//make sense if the rotations are connected directly.
+		string $freeOrientGrp;
+		if (($i) && ($orientJointsType == 1))
+			$freeOrientGrp = `dwCreateFreeOrientFKSetup $joints[$i] $joints[$i] ($joints[$i-1] + "_CONTROL") ($joints[$i] + "_CONTROL") $orientGrp`;
+		//Parent setup.
+		if ($i)
+			parent $orientGrp ($joints[$i-1] + "_CONTROL");
+		}
+	}
+
+select -cl;
+
+if ($parentControlShapeCheck)
+	print "Setup complete.\n";
+else if ((! $parentControlShapeCheck) && ($orientJointsType == 1))
+	print ("Setup complete. All \"_FreeOrientGRP\" nodes can be parented to a global group.\n");
+else if ($orientJointsType == 2)
+	print "Setup complete.\n";
+}//End of procedure.

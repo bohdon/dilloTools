@@ -1,0 +1,84 @@
+//Title:	dwHelpCreateCharacterSet.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+
+//PROCEDURE THAT CREATES CHARACTER SET HELP WINDOW.
+global proc dwHelpFingerControls()
+{
+if (`window -ex dwHelpFingerControlsUI`)
+	deleteUI dwHelpFingerControlsUI;
+
+window -t "Finger Controls Help" -wh 490 510 dwHelpFingerControlsUI;
+	string $form = `formLayout`;
+		string $scroll = `scrollLayout`;
+			columnLayout;
+				
+				rowColumnLayout -nc 2 -cw 1 100 -cw 2 200;
+					text -label " Author: " -font boldLabelFont;
+					text -label "David Walden";
+					text -label "";
+					text -label "www.davidwalden.com";
+					text -label "";
+					text -label "dwalden74@hotmail.com";
+					text -label "Created:" -font boldLabelFont;
+					text -label "Dec. 20, 2003";
+					text -label "Last update:" -font boldLabelFont;
+					text -label "March 21, 2004";
+					setParent..;
+				
+				text -label "" -h 30;
+				
+				
+				
+				text -label "   About: " -font boldLabelFont;
+				string $noteText;
+				$noteText += "  Creates either basic finger controls or complete finger controls on a specified control object. \n";
+				$noteText += "   User must specify the names of the first finger joints for each finger desired. \"First Finger \n";
+				$noteText += "   Joints\" refers to the first knuckle joint for each of the index, middle, ring and pinky fingers, \n";
+				$noteText += "   and the first joint in the thumb finger. Each undesireable finger must be deselected in the UI,\n";
+				$noteText += "   for example, if user needs no ring finger control then the ring finger must be deselected via \n";
+				$noteText += "   the appropriate checkBox in the UI. \n";
+				$noteText += "   \n";
+				$noteText += "   \"Pinky Cup Joint\" refers to a joint that can be placed between the first pinky knuckle \n";
+				$noteText += "   joint and the main hand joint, which gives finer control over how this area of the hand \n";
+				$noteText += "   deforms and moves. This must be left deselected if no pinky cup joint exists on the hand. \n";
+				$noteText += "   \n";
+				$noteText += "   User must specify the correct axis for both finger bend and finger spread. Finger bend must \n";
+				$noteText += "   be specified according to which axis bends the finger inward toward the palm of the hand. \n";
+				$noteText += "   Therefore, all finger joints in the hand must be oriented in the same way. \n";
+				$noteText += "   \n";
+				$noteText += "   All finger joints are driven via Set Driven Key. Additional functionality can be added \n";
+				$noteText += "   to the script to give the user finer control over finger movement, for example if user \n";
+				$noteText += "   needs control over each finger joint individually, or if the user needs a per-finger \n";
+				$noteText += "   \"spread\" attribute. This is simply a question of adding addition SDK code to the script.\n";
+				$noteText += "   Currently I have implemented only basic controls that I use most often. \n";
+				$noteText += "   \n";
+				$noteText += "   User must execute script separately for each hand to which he/she wishes to add finger controls.\n";
+				$noteText += "   \n";
+				text -label $noteText -align left;
+				
+				text -label "" -h 10;
+				
+				
+				 
+				
+				setParent..;
+			setParent..;
+		string $closeButton = `button -label "Close Window" -c "deleteUI dwHelpFingerControlsUI"`;
+		setParent..;
+	
+	formLayout -e
+		-attachForm $scroll left 0
+		-attachForm $scroll top 0
+		-attachForm $scroll right 0
+		-attachControl $scroll bottom 0 $closeButton
+		
+		-attachForm $closeButton left 0
+		-attachNone $closeButton top
+		-attachForm $closeButton right 0
+		-attachForm $closeButton bottom 0
+		$form;
+		
+showWindow dwHelpFingerControlsUI;
+}

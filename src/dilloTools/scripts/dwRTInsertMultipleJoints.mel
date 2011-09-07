@@ -1,0 +1,47 @@
+//Title:	dwInsertMultipleJoints.mel
+//Author:	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date: Jan. 2003
+//
+//Updated: Sept 15, 2003
+//
+//Description: Procedure inserts multiple joints on any selected joint.
+
+global proc dwRTInsertMultipleJoints(string $startJoint, int $numberOfJoints)
+{
+if (! `size $startJoint`)
+	error "No joint specified. Try again.";
+
+string $endJoint[] = `listRelatives -pa -c -type joint $startJoint`;
+
+if (! `size $endJoint`)
+	error "Joint has no child joints. Try again.";
+if (`size $endJoint` > 1)
+	error "Joint has multiple child joints. This causes unexpected results. Select a joint with one child joint and try again.";	
+
+
+float $posA[3] = `xform -q -ws -t $startJoint`;
+float $posB[3] = `xform -q -ws -t $endJoint[0]`;
+
+vector $vectorA = <<$posA[0], $posA[1], $posA[2]>>;
+vector $vectorB = <<$posB[0], $posB[1], $posB[2]>>;
+
+int $i;
+for ($i=0; $i<$numberOfJoints; $i++)
+	{
+	int $plusCalc = ($i + 1);
+	float $jointsPlusOne = ($numberOfJoints + 1);
+	float $divisionCalc = $plusCalc/$jointsPlusOne;
+	
+	vector $lengthVector = ($vectorB - $vectorA) * $divisionCalc;
+	
+	vector $startVector = $lengthVector + $vectorA;
+	
+	string $currentJoint[] = `ls -sl -type joint`;
+	string $newJoint = `insertJoint $currentJoint[0]`;
+	move -a ($startVector.x) ($startVector.y) ($startVector.z) ($newJoint + ".rotatePivot") ($newJoint + ".scalePivot");
+	}
+select -r $startJoint;
+}

@@ -1,0 +1,116 @@
+////////////////////////////////////////////////////////////////////////////////
+//
+//  $RCSfile$
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS FILE HERE.
+//
+//  CREATED BY
+//      Jayme Wilkinson
+//
+//  CREATTION DATE
+//      Tue Jul 03 01:44:47 EDT 2007
+//
+//  HISTORY
+//      $Log$
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  Copyright (c) 1999 - 2007 Jayme Wilkinson.
+//
+//  The software and information contained herein are proprietary to, and
+//  comprise valuable trade secrets of, Jayme Wilkinson, which intends
+//  to preserve as trade secrets such software and information. This software
+//  and information or any other copies thereof may not be provided or
+//  otherwise made available to any other person or organization.
+//
+////////////////////////////////////////////////////////////////////////////////
+global proc createCameraGoldenRatio()
+{
+	//  Get the selected camera
+	string $cameraList[] = `ls -sl`;
+	if (`size($cameraList)` != 1) error "Golen Ratio: Invalid number of items selected.";
+	string $parent = $cameraList[0];
+   
+	//  Get the child camera shape of this parent node.
+	string $childList[] = `listRelatives -s -type camera $parent`;
+	if (`size($childList)` != 1) error "Golden Ratio: Camera shape not found.";
+	string $camera = $childList[0];	                                 
+   
+	//	Create a group node for the continuum grid elements
+	$parent = `group -r -em -p $parent -n "goldenRatio#"`;
+
+   	//	Create the curve of the outside perimeter of the continuum grid
+	string $border = `curve -d 1 -p -0.5 0.5 0 -p 0.5 0.5 0 -p 0.5 -0.5 0 -p -0.5 -0.5 0 -k 0 -k 1 -k 2 -k 3 -n "border#"`;
+	closeCurve -ch 0 -ps 1 -rpo 1 -bb 0.5 -bki 0 -p 0.1 $border;
+
+	//	Get the shape node of the border
+	string $temp[] = `listRelatives -s $border`;
+	string $borderShape = $temp[0];             
+	parent -r $border $parent;
+	
+	//	Set the color of the curve we just created   
+	int $color = `displayColor -q headsUpDisplayLabels`;
+	setAttr ($borderShape + ".overrideEnabled") 1;
+	setAttr ($borderShape + ".overrideColor") $color; 
+	                               
+	string $exp;
+	$exp += "float $hfov  = (" + $camera + ".horizontalFilmAperture * 0.5 ) / (" + $camera + ".fl  *  0.03937 ) * " + $camera + ".lsr;\r";
+	$exp += "float $vfov  = (" + $camera + ".verticalFilmAperture * 0.5 ) / (" + $camera + ".fl * 0.03937 );\r";
+	$exp += "float $near  = (" + $camera + ".nearClipPlane + 0.0001);\r";
+	
+	$exp += "float $hSize = ($near * $hfov);\r";
+	$exp += "float $vSize = ($near * $vfov);\r";
+    
+	$exp += "//	Adjust the position of the corners of the golden ratio border\r";
+	$exp += $borderShape + ".cp[0].xv = -$near * $hfov;\r";
+	$exp += $borderShape + ".cp[0].yv =  $near * $vfov;\r";
+	$exp += $borderShape + ".cp[0].zv = -$near;\r";
+                            
+	$exp += $borderShape + ".cp[1].xv =  $near * $hfov;\r";
+	$exp += $borderShape + ".cp[1].yv =  $near * $vfov;\r";
+	$exp += $borderShape + ".cp[1].zv = -$near;\r";
+                                   
+	$exp += $borderShape + ".cp[2].xv =  $near * $hfov;\r";
+	$exp += $borderShape + ".cp[2].yv = -$near * $vfov;\r";
+	$exp += $borderShape + ".cp[2].zv = -$near;\r";
+                            
+	$exp += $borderShape + ".cp[3].xv = -$near * $hfov;\r";
+	$exp += $borderShape + ".cp[3].yv = -$near * $vfov;\r";
+	$exp += $borderShape + ".cp[3].zv = -$near;\r";      
+	
+	//	Create and position the vertcial lines of the Golden Ratio
+	$exp += "//	 Add the vertical bars of the continuum grid\r";
+	$exp += "float $X = (-$hSize + ((2.000 * $hSize) / 3.000));\r";
+	$exp += "float $Y = $vSize;\r";
+	$exp += "float $Z = $near;\r";
+	string $vert[2], $vertShape[2];
+	for ($a = 1; $a < 3; $a++)
+	{
+		$vert[$a] = `curve -d 1 -p 0 -0.5 0 -p 0 0.5 0 -k 0 -k 1 -n "vert#"`;
+		$temp = `listRelatives -s $vert[$a]`;
+		$vertShape[$a] = $temp[0];   
+		parent -r $vert[$a] $parent;
+
+		//	Set the color of the curve we just created
+		setAttr ($vertShape[$a] + ".overrideEnabled") true;
+		setAttr ($vertShape[$a] + ".overrideColor") $color;
+		
+		$exp += $vertShape[$a] + ".cp[0].xv =  $X;\r";
+		$exp += $vertShape[$a] + ".cp[0].yv = -$Y;\r";
+		$exp += $vertShape[$a] + ".cp[0].zv = -$Z;\r";
+		
+    	$exp += $vertShape[$a] + ".cp[1].xv =  $X;\r";
+		$exp += $vertShape[$a] + ".cp[1].yv =  $Y;\r";
+		$exp += $vertShape[$a] + ".cp[1].zv = -$Z;\r";
+		
+		$exp += "$X = $X + ((2.000 * $hSize) / 3.000);\r";
+    }
+	
+	expression -n "continuumGrid" -alwaysEvaluate false -unitConversion false -s $exp;
+	
+	select -cl;
+
+}

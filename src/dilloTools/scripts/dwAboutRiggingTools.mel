@@ -1,0 +1,308 @@
+//Title:	dwAboutRiggingTools.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+
+//Description: PROCEDURE CREATES MAIN "ABOUT DWRIGGINGTOOLS" HELP WINDOW.
+
+global proc dwAboutRiggingTools()
+{
+if (`window -ex dwAboutRiggingToolsUI`)
+	deleteUI dwAboutRiggingToolsUI;
+
+window -t "About dwRiggingTools" -wh 600 600 dwAboutRiggingToolsUI;
+	string $form = `formLayout`;
+		string $scroll = `scrollLayout`;
+			columnLayout;
+				
+				rowColumnLayout -nc 2 -cw 1 100 -cw 2 200;
+					text -label "Title:" -font boldLabelFont;
+					text -label "dwRiggingTools v. 1.8";
+					text -label "Author: " -font boldLabelFont;
+					text -label "David Walden";
+					text -label "";
+					text -label "www.davidwalden.com";
+					text -label "";
+					text -label "dwalden74@hotmail.com";
+					text -label "Creation Date: " -font boldLabelFont;
+					text -label "Nov. 1, 2002 - July 6, 2004";
+					setParent..;
+					
+				text -label "";
+				text -label "";
+				
+				text -label "  Concept: " -font boldLabelFont;
+				string $conceptText = "  To provide a fast and production-ready tool for creating squash-and-stretch character rigs in Maya, \n";
+				$conceptText += "   while giving the animator an efficient rig with maximum flexibility and control.";
+				text -label $conceptText -align left;
+				
+				text -label "";
+				
+				text -label "  Notes: " -font boldLabelFont;
+				string $notesText = "  First of all, make sure you have the latest version of dwRiggingTools before using. You can check for \n";
+				$notesText += "  updates on my website at www.davidwalden.com, under the MEL section (link accessible via the Help window). \n";
+				$notesText += "  I often make small improvements and bug fixes, so check the version number and update if you have an \n";
+				$notesText += "  older version.\n";
+				$notesText += "\n";
+				$notesText += "  After rig creation, all spline control objects can be modified by transforming their respective CV´s. \n";
+				$notesText += "  This may help fit the control objects better to the character. \n";
+				$notesText += "\n";
+				$notesText += "  The character joint hierarchy must be zeroed-out and oriented correctly before performing any setup. Make sure \n";
+				$notesText += "  you freeze all transformations on the entire joint hierarchy if necessary. If you have scaled the joint hierarchy\n";
+				$notesText += "  via a parent group node, make sure this group node also has frozen transformations before starting setup. \n";
+				$notesText += "  Additionally, if you have used Maya´s \"Mirror Joint\" feature, make sure to freeze and re-orient the resulting\n";
+				$notesText += "  joint hierarchy. This feature often produces negative joint lengths and incorrect joint orientations, both of \n";
+				$notesText += "  which are not useable with dwRiggingTools. The \"Orient Joints\" feature under the \"Tools\" tab is a fast\n";
+				$notesText += "  and highly effective way to orient joints correctly. \n";
+				$notesText += "\n";
+				$notesText += "  The user can manually add other types of spline control objects to the rig as he/she desires, after  \n";
+				$notesText += "  performing the setup.  To do this, first create the desired spline control obj. Then parent this obj´s \n";
+				$notesText += "  shape to the target control obj using the MEL command \"parent -r -s <<shapeNodeName>> <<controlObjName>>\". \n";
+				$notesText += "  The original control obj´s shape node can then be deleted, as well as the new spline control´s transform\n";
+				$notesText += "  node. The new spline shape can then be further modified by translating/scaling its CV´s. \n";
+				$notesText += "\n";
+				$notesText += "  After rig creation, user should parent all resulting control hierarchies under one \"Position\" control object. \n";
+				$notesText += "  This control should determine the initial position/orientation of the character in the scene. \n";
+				$notesText += "\n";
+				$notesText += "  \"Upper Arm Split\", and \"Forearm Split\", in the arm setup, refer to middle joints that can be added to \n";
+				$notesText += "  the skeleton between the upper arm and elbow joints, and between the elbow and wrist joints respectively. \n";
+				$notesText += "  The same for \"Femur Split\" in the leg setup. Note, however, that this type of setup does cause bad \n";
+				$notesText += "  flipping problems in Maya when the joints reach a gimbal lock situation (two axises aligning to each other). \n";
+				$notesText += "  This is a known issue in Maya, and this is a feature I use only when the character was originally binded \n";
+				$notesText += "  with this kind of joint structure. I advise not to use any split joints in your setup; good deformations \n";
+				$notesText += "  in the wrist, upper arm, and hip/femur areas of the geometry can be achieved by a proper use of influence \n";
+				$notesText += "  objects when binding the geometry. \n";
+				$notesText += "\n";
+				$notesText += "  If you find these tools useful in your own workflow I would love to hear from you via e-mail! Also, I´m always \n";
+				$notesText += "  interested in hearing both positive and negative feedback, so if you have any comments or questions don´t  \n";
+				$notesText += "  hesitate to contact me. \n";
+				$notesText += "\n";
+				text -label $notesText -align left;
+				
+				text -label "" -h 30;
+				
+				
+				text -label "  Limitations:" -font boldLabelFont -align left -w 350;
+				string $limitationsText = "  - Character must be built such that it is facing the positive Z axis. \n";
+				$limitationsText += "\n";
+				$limitationsText += "  - Character´s feet must be resting at Y = 0, and must be pointing in the positive Z axis. If the foot joints \n";
+				$limitationsText += "   are created such that they are angled outward or inward from the character´s center, the foot setup may be \n";
+				$limitationsText += "   incorrect. \n";
+				$limitationsText += "\n";
+				$limitationsText += "  - Scripts will currently only work with XYZ joint orientation; the X-axis of each joint must be pointing \n";
+				$limitationsText += "  toward the next joint down in the hierarchy. If you use other scripts to orient your character´s joints,\n";
+				$limitationsText += "  make sure the joints are oriented with the X-axis aligned correctly. \n";
+				$limitationsText += "\n";
+				$limitationsText += "  - Stretching of joints is limited to the joints´ X-axis only.\n";
+				$limitationsText += "\n";
+				$limitationsText += "  - Scaling the hierarchy after creation, for example to adjust the character´s size to fit environments \n";
+				$limitationsText += "  of different proportions, will currently not work if user has chosen to stretch joints.\n";
+				$limitationsText += "\n";
+				$limitationsText += "  - IK-Spline Spine setup uses IK Spline Handle Tool with \"Auto Simplify Curve\" option turned on. As this \n";
+				$limitationsText += "  option can change joints´ rotations after creation, the user should create spine joints in a straight \n";
+				$limitationsText += "  line (along the Y-axis).\n";
+				$limitationsText += "\n";
+				$limitationsText += "  - Scripts currently only assist in the creation of bipedal characters. However, by using the \"ID string\" \n";
+				$limitationsText += "  option in the \"Advanced\" tab,  user can rig multiple sets of legs and arms on the character by assigning \n";
+				$limitationsText += "  a unique ID string to each set. \n";
+				
+				text -label $limitationsText -align left;  
+				
+				text -label "" -h 15;
+				
+				text -label "  *See \"Create Biped Skeleton\" in the Tools section for an example of " -align left -w 400 -font boldLabelFont;
+				text -label "  how the binding skeleton should be created." -align left -w 400 -font boldLabelFont;
+				
+				text -label "" -h 50;
+				text -label " Update history: " -font boldLabelFont -w 150 -align left;
+				
+				string $historyText;
+				$historyText += "  July 6, 2004: Added a new version of the IK-Spline spine rig, which takes advantage of the advanced twist options \n";
+				$historyText += "   of Maya 5 and higher. This is a much easier and faster rig than the previous version and offers the same amount of \n";
+				$historyText += "   control, if not more.  For users of Maya 4.5, the older IK-Spline spine rig will be created instead.\n";
+				$historyText += "\n";
+				$historyText += "  June 18, 2004: Added \"Lock FK Elbow\" and \"Lock FK Knee\" options in the Advanced tabs for both arms and legs.  \n";
+				$historyText += "   When checked, this will lock the FK elbow or knee so that it can only rotate along the bend axis. Otherwise, these  \n";
+				$historyText += "   controls will have 3 degrees of rotational freedom. Adde dwRT_GetMayaVersion for returning the current Maya version.  \n";
+				$historyText += "   This eliminates the warning message that ocurred when previously querying the version. Fixed bug in FK Control Setup  \n";
+				$historyText += "   where controls´ rotateOrder wasn´t correct when choosing to connect rotations. Now when this option is selected, \n";
+				$historyText += "   a direct connection is made between the controls´ rotateOrder and the joints´ rotateOrder - user need only change \n";
+				$historyText += "   the controls´ rotateOrder and the joint will update correctly.\n";
+				$historyText += "\n";
+				$historyText += "  June 11, 2004: Fixed a small bug where control color for some control objects was incorrect. \n";
+				$historyText += "\n";
+				$historyText += "  June 2, 2004: For \"FK Control Setup\" (in the Tools section), user can now choose between controlling joints via orient \n";
+				$historyText += "   constraints or direct connections.\n";
+				$historyText += "\n";
+				$historyText += "  May 7, 2004: Added \"FK Control Setup\" in the tools section. This creates an FK control setup on the joints in the joint list. \n";
+				$historyText += "\n";
+				$historyText += "  May 5, 2004: Added \"Free_Orient\" attr to FKFemur control. Improved FK controls in spline IK spine setup to support \n";
+				$historyText += "   spine chains which are not created straight along the Y-axis. FK controls for the spline IK spine are now oriented \n";
+				$historyText += "   to the spine joints (ie, X-axis pointing up the spine).\n";
+				$historyText += "\n";
+				$historyText += "  April 1, 2004: Fix a bug in the stretchy setup (dwConnectByCondition.mel). Now works fine with skeleton´s of all\n";
+				$historyText += "   sizes.\n";
+				$historyText += "\n";
+				$historyText += "  Mar. 31, 2004: Added \"Create Stretchy Spline IK\" in the Tools tab.  This performs a stretchy IK spline setup\n";
+				$historyText += "   on any joint chain. dwRTCreateStretchySplineIK.mel was added for this.\n";
+				$historyText += "\n";
+				$historyText += "  Mar. 30, 2004: Added stretch control for each joint individually on the IK chain. Now user has a general \"IKStretch_Control\"  \n";
+				$historyText += "   attribute on the IK control obj, as well as attributes to control the stretching of each IK joint separately.\n";
+				$historyText += "   Modified dwConnectByCondition.mel to incorporate the extra stretching control.  Cleaned up some syntax. Changed  \n";
+				$historyText += "   naming of FK controls which was causing problems in the shoulder controls. Everything should now work fine with  \n";
+				$historyText += "   referenced skeletons. \n";
+				$historyText += "\n";
+				$historyText += "  Mar. 27, 2004: Modified the interface for IK spline spine setup: User now only has to specify a start and an end  \n";
+				$historyText += "   joint, instead of specifying each joint in the spine sequentially.  This should make things easier. Also added an \n";
+				$historyText += "   error check, in case user specifies the same joint for both the root and the first spine joint. Added optional \n";
+				$historyText += "   naming prefix to \"Biped Skeleton\" setup in the \"Tools\" tab. All joints will have this prefix added to their names.\n";
+				$historyText += "   Also added optional naming prefix to FK and IK spline spine rigs (under \"Advanced\" settings). \n";
+				$historyText += "\n";
+				$historyText += "  Mar. 24, 2004: Added dwRTCreateStrechyIK.mel which handles all IK stretchy calculations. This has cleaned up a bit \n";
+				$historyText += "   of code for me.  User can now create his/her own stretchy IK chain with the \"Create Stretchy IK\" feature under  \n";
+				$historyText += "   the \"Tools\" tab. This works on any existing IK chain with either an ikRPSolver or an ikSCSolver. This will work \n";
+				$historyText += "   both with multi-joint chains and single-joint chains. This feature does not support spline IK chains.\n";
+				$historyText += "\n";
+				$historyText += "\n";
+				$historyText += "  Mar. 18-22, 2004: Added dwCreateFKControlForSpine.mel and dwCreateFreeOrientFKSetup.mel, which can be used   \n";
+				$historyText += "   in the future for building the spine control objs, and for setting up a \"Free_Orient\" setup on an FK control.  \n";
+				$historyText += "   This setup allows an FK control to either be oriented freely to the world, or to follow the orientation of an object \n";
+				$historyText += "   above it in the hierarchy.  Currently works only with spine controls due their \"global\" orientation. Added neck \n";
+				$historyText += "   and head control options to IK-Spline Spine setup, and moved the pivot of the hipControl to slightly above the root. \n";
+				$historyText += "\n";
+				$historyText += "    User now has the option of creating only an IK arm, an FK arm, or an IK-FK blended arm. Each setup has its own  \n";
+				$historyText += "    global procedure and script. Note that the auto-shoulder function will only work with an IK arm setup; the option \n";
+				$historyText += "    is deactivated if user creates only an FK arm.\n";
+				$historyText += "\n";
+				$historyText += "    Added a clamp function to all IK stretching in arms and legs. This allows user to limit the amount of stretching \n";
+				$historyText += "    desired in those areas when translating IK controls past a certain distance from the body. An \"IKStretchAmount\"  \n";
+				$historyText += "    attribute has been added to the IK control obj for this.\n";
+				$historyText += "\n";
+				$historyText += "    Improved the finger control setup in the \"Tools\" tab. User now has the option of building \"simple\" finger controls,\n";
+				$historyText += "    or \"complete\" finger controls. Additionally, simple and complete setups can be combined on the same hand. To do this,\n";
+				$historyText += "    just run the procedure once with \"Simple\" selected, an once more with \"Complete\" selected. \n";
+				$historyText += "\n";
+				$historyText += "    Made improvements to \"Create Character Set\" in the \"Tools\" tab. This should no longer produce errors if executed\n";
+				$historyText += "    on an incomplete rig. Added dwRTAddObjsToCharSet.mel to assist in this and to handle errors.\n";
+				$historyText += "\n";
+				$historyText += "    Set the \".showManipDefault\" attribute on all control objects. Now, when user is in manipulator mode (\"t\" button),\n";
+				$historyText += "    objects, when selected, will automatically appear with their default manipulation tool set (rotation, for FK controls, \n";
+				$historyText += "    translation for IK controls).\n";
+				$historyText += "\n";
+				$historyText += "    Added dwRTGetLinearUnitConversion.mel to facilitate getting a unit conversion factor based on Maya´s current linear \n";
+				$historyText += "    units.\n";
+				$historyText += "\n";
+				$historyText += "    Added dwRTGetDistance.mel which returns the worldspace distance between 2 objects. This is necessary for  \n";
+				$historyText += "    stretching joints.\n";
+				$historyText += "\n";
+				$historyText += "    Added dwRTConvertFloatArrayToVector.mel and dwRTConvertVectorToFloatArray.mel.\n";
+				$historyText += "\n";
+				$historyText += "\n";
+				$historyText += "\n";
+				$historyText += "  Dec. 20, 2003: Added dwCreateFingerControls.mel, which will create basic finger controls on a specified control  \n";
+				$historyText += "  object. User can acces this feature in the \"Tools\" section. \n";
+				$historyText += "\n";
+				$historyText += "  Dec. 14, 2003: Added dwCreateCharacterSet.mel, which will create character sets for the rig created for the \n";
+				$historyText += "  standard biped skeleton. User can access this feature in the \"Tools\" section under \"Create Character Sets\". \n";
+				$historyText += "\n";
+				$historyText += "  Dec. 13, 2003: Added dwReportErrorNegativeJointLength.mel, which will report an error if the user´s joints have a  \n";
+				$historyText += "  negative length (translateX) value. This will prevent any screwed up rigs because of incorrect joint orientation. \n";
+				$historyText += "  User shoulder orient joints such that all joint lengths (translateX) have a positive value. Using Maya´s \"Mirror Joint\" \n";
+				$historyText += "  tool (Skeleton->Mirror Joint) will often cause the mirrored joints to have a negative length value. This will not \n";
+				$historyText += "  work correctly if user chooses to create a rig with stretchable joints. \n";
+				$historyText += "\n";
+				$historyText += "  Nov. 27 2003: Fixed a bug whereas \"Free_Orient\" attr on FK shoulder control obj would not work if user had chosen \n";
+				$historyText += "  \"Standard FK\" shoulder control type. Changed \"Update History\" in \"About Rigging Tools\" UI, so that most recent \n";
+				$historyText += "  updates can be viewed first. Added link to my homepage in the \"Help\" menu in the main UI. \n";
+				$historyText += "\n";
+				$historyText += "  Nov. 1-10, 2003: Removed renaming of spine, arm, and leg joints. This allows scripts to work correctly with referenced \n";
+				$historyText += "  skeletons. Added COG control option to FKSpine rig. Deactivated \"cycleCheck\" for arm and leg setups. Added standard \n";
+				$historyText += "  shoulder option for arm. This is easier and cleaner that the auto-shoulder setup (which I never used anyway). Added \n";
+				$historyText += "  interpolation types for footroll SDK's on foot control.\n";
+				$historyText += "\n";
+				$historyText += "  Oct. 23 2003: Changed back controls´\"Stretch\" attr to connect directly to joints´ scaleX (and the inverse to scaleY and Z).\n";
+				$historyText += "\n";
+				$historyText += "  Sept. 30 2003: Added \"Free_Orient\" attribute to the FK shoulder control object for the arm setup. This allows\n";
+				$historyText += "  the shoulder control orient itself to the torso rotations (value 0) or to orient itself freely (value 1). Free \n";
+				$historyText += "  orientation is the default.  Note that this is only performed when the user selects the \"Auto-Shoulder\" option.\n";
+				$historyText += "\n";
+				$historyText += "  Sept. 29 2003: Added help section for Biped Skeleton and Auto-Shoulder in the Tools section.\n";
+				$historyText += "\n";
+				$historyText += "  Sept. 13-15 2003: Major update. Removed `pickWalk` command and replaced it with `listRelatives` command,\n";
+				$historyText += "    in both arm and leg rigs.  This enables user to rig a character which might have parented geometry \n";
+				$historyText += "    under the joints. User now has the possibility to split shoulder, forearm and femur joints as many\n";
+				$historyText += "    times as desired. Currently 10 splits are supports in UI, although this can be easily expanded if\n";
+				$historyText += "    necessary.  Rotations are distributed evenly among these \"split\" joints via dwDistributeRotations.mel\n";
+				$historyText += "    script.  \"ID string\" textfield has been moved under the \"Advanced\" section for both arm and leg\n";
+				$historyText += "    This should make the layout easier to follow.  Textfield has been added for specifying the binding shoulder\n";
+				$historyText += "    and binding femur for arm and leg setups. This should make it clearer to user that he/she must specify this\n";
+				$historyText += "    joint in order for the script to work. This also would enable performing a setup procedurally, without having\n";
+				$historyText += "    the user select anything in the viewport.\n";
+				$historyText += "    \n";
+				$historyText += "    Added a help line with annotations for each control at the bottom of the UI.\n";
+				$historyText += "\n";
+				$historyText += "  Sept. 1-3 2003: Major update. Now works with Maya version 5.0. Removed \"Stretch by Scaling\" \n";
+				$historyText += "   option, as all stretching is done more \"correctly\" via translation. UI is now more user-friendly, \n";
+				$historyText += "   as many options have now been optimized. All \"Rotation Order\" checkboxes have been moved to an \n";
+				$historyText += "   \"Advanced\" tab at the bottom of the the layout. For users of Maya v5.0, all blended orient \n";
+				$historyText += "   constraints have their \"Interpolation Type\" attribute set to \"Shortest\" to take advantage of \n";
+				$historyText += "   this new feature. New \"ID string\" textField in both arm and leg setups enables user to build a rig \n";
+				$historyText += "   for characters with more the one set of arms and legs. \n";
+				$historyText += "   \n";
+				$historyText += "     Added \"dwCreateControlObject.mel\" to help in building control objects. \n";
+				$historyText += "   \n";
+				$historyText += "     Added \"dwCreateFKSpine.mel\", as I was unhappy with the IK-Spline spine setup (although it is \n";
+				$historyText += "     still implemented if user desires). This is a more straight-forward spine setup which doesn´t \n";
+				$historyText += "     burden the animator with too many controls. Also provides basic controls for the neck and head. \n";
+				$historyText += "   \n";
+				$historyText += "  Feb. 09 2003: Added \"Insert Joint\" script.\n";
+				$historyText += "\n";
+				$historyText += "  Feb. 03 2003: Added rotation order option menus for FK controls on both arm and leg setups.\n";
+				$historyText += "  Eventually these should default to correct values when the user specifies a joint orientation\n";
+				$historyText += "  (xyz, yzx, etc). This should be implemented in a future update.\n";
+				$historyText += "\n";
+				$historyText += "  Jan. 28 2003: Added dwBlend2WeightedAttr.mel, which should replace dwConnectByWeightedFactor.mel\n";
+				$historyText += "   for automating \"blending\" setups.\n";
+				$historyText += "\n";
+				$historyText += "  Jan. 18 2003: Added \"Orient Joint\" script, inspired by a similar script on the Alias Wavefront\n";
+				$historyText += "   DVD.\n";
+				$historyText += "\n";
+				$historyText += "  Jan. 16 2003: Added stretch by translation. Placed stretching into shading nodes and removed\n";
+				$historyText += "   all expressions from setup. User can now choose between stretch by scaling and stretch by\n";
+				$historyText += "   translation. Added dwConnectByCondition.mel and dwConnectByWeightedFactor.mel to facilitate\n";
+				$historyText += "   creation of stretching and blending.\n";
+				$historyText += "\n";
+				$historyText += "  Jan. 9 2003: Added spine setup. User can now choose among different control objects for\n";
+				$historyText += "   rig (bounding box, circle, square).  Added dwBlendByReverse to control blending.\n";
+				$historyText += "\n";
+				$historyText += "  Dec. 31 2002: Added auto-Shoulder feature in arm rig. User can also add an auto-shoulder\n";
+				$historyText += "   to an existing IK arm. Added color selector for user to choose controls´ override color.\n";
+				$historyText += "\n";
+				$historyText += "  Dec. 12 2002: Fixed bug in IKFKArm that screwed things up when both left and right\n";
+				$historyText += "   binding shoulder joints had same parent (shouldn´t be an issue though).\n";
+				$historyText += "\n";
+				
+				text -label $historyText -align left;
+				
+				
+				
+				setParent..;		
+			setParent..;
+		setParent..;
+	string $closeButton = `button -label "Close Window" -c "deleteUI dwAboutRiggingToolsUI"`;
+	setParent..;
+	
+	formLayout -e
+		-attachForm $scroll left 0
+		-attachForm $scroll top 0
+		-attachForm $scroll right 0
+		-attachControl $scroll bottom 0 $closeButton
+		
+		-attachForm $closeButton left 0
+		-attachNone $closeButton top
+		-attachForm $closeButton right 0
+		-attachForm $closeButton bottom 0
+		$form;
+		
+showWindow dwAboutRiggingToolsUI;
+}

@@ -1,0 +1,726 @@
+//Title:	dwCreateLegFoot.mel
+//Author:	David Walden 
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date: 	Nov. 2002 - Jan. 2003
+//
+//Updated June 18 2004: Added $legLockFKKneeCHECK for locking FK knee to bend axis only.
+//
+//Updated Sept 13-15, 2003:
+//	Removed `pickWalk` command and replaced it with `listRelatives`, for identifying joint chain members.
+//	This enables user to rig a skeleton which might have parented geometry etc under the joints. Added
+//	"dwDeleteBadChildren.mel" which deletes any extra nodes which might be parented under joints (lo-rez geometry,
+//	for example). User can now choose to have binding skeleton with as many "split" joints as desired in 
+//	femut joint (as many as 10 are supported with UI slider, although this can be easily extended if necessary. x-rotations
+//	are distributed evenly along binding femur joints using "dwDistributeRotations.mel" script. 
+//	"ID string" texfield has been placed into the "Advanced" tab at bottom of layout.
+//
+//Updated Sept 1, 2003:
+//	Remove "Stretch by scaling".
+//	Changed ball and toe ikSolver type to RPSolver (previously was SCSolver- this didn´t work with Maya 5).
+//	Inserted unitConversion node between distanceDimension node (used for stretching) and its ouput.
+//	DistanceDimension only outputs centimeters, so this must be converted to user´s current linear units.
+//
+//Updated Nov. 12 2003:
+//	Removed renaming of joints. This allows scripts to be used together with referenced skeletons.
+//	Turned off "cycleCheck" for duration of script, so user isn't bothered with extra warning messages.
+//	Added interpolation types for SDK curves on foot controls.
+//
+//Description: Procedure to create leg/foot setup.
+global proc dwCreateLegFoot(string $bindingFemur,
+				int $sideFlagInt,
+				string $namingPrefix, 
+				int $middleFemurJoints, 
+				int $IKFKCheck,
+				int $stretchCheck, 
+				int $kneeAxisInt, 
+				int $controlsColor, 
+				int $controlType,
+				string $stretchAxis, 
+				int $femurRotationOrder, 
+				int $ankleRotationOrder,
+				int $legLockFKKneeCHECK)
+{
+//Turn cycleCheck off.
+cycleCheck -e 0;
+
+//REPORT ERROR IF NO $IKFKCheck IS SELECTED.
+if (! $IKFKCheck)
+	error "\"Leg Setup\" must be selected in UI. Try again.";
+
+//Assign $prefix.
+string $prefix = dwRTAssignPrefix ($namingPrefix, $sideFlagInt);
+
+//ASSIGN $kneeAxis.
+string $kneeAxis;
+if ($kneeAxisInt == 1)
+	{$kneeAxis = "X";}
+if ($kneeAxisInt == 2)
+	{$kneeAxis = "Y";}
+if ($kneeAxisInt == 3)
+	{$kneeAxis = "Z";}
+if (! $kneeAxisInt)
+	error "No knee preferred axis selected in UI. Try again.";
+
+
+
+
+//GET CURRENT JOINT HIERARCHY.
+//Report errors if femur joint is specified incorrectly.
+if (! `objExists $bindingFemur`)
+	error ("No femur joint found with given name (\"" + $bindingFemur + "\"). Try again.");
+
+
+string $femurJoints[];			//Array which contains all binding femur joints (including first femur joint).
+string $femurJointsTemp[];		//temp array.
+$femurJoints[0] = $bindingFemur;	//Assign first member to the first femur joint.
+
+//Don´t call dwReportErrorNegativeJointLength.mel for the femur joint. This joint may normally have a negative tx value.
+//dwReportErrorNegativeJointLength ($femurJoints[0]);
+
+//Update May 5 2004: Get the root joint (parent joint of the femur)
+string $rootJoint[] = `listRelatives -pa -parent -type joint $bindingFemur`;
+
+//string $bindingMiddleFemurJoint[];
+string $bindingKneeJoint[];
+int $b;
+if ($middleFemurJoints)
+	{
+	for ($b = 0; $b < $middleFemurJoints; $b++)
+		{
+		$femurJointsTemp = `listRelatives -pa -c -type joint $femurJoints[$b]`;
+		dwReportErrorNegativeJointLength ($femurJointsTemp[0]);
+		$femurJoints[$b + 1] = $femurJointsTemp[0];
+		}
+	$bindingKneeJoint = `listRelatives -pa -c -type joint $femurJoints[$b]`;
+	dwReportErrorNegativeJointLength ($bindingKneeJoint[0]);
+	}
+else if (! $middleFemurJoints)
+	{
+	$bindingKneeJoint = `listRelatives -pa -c -type joint $femurJoints[0]`;
+	dwReportErrorNegativeJointLength ($bindingKneeJoint[0]);
+	}
+	
+string $bindingAnkleJoint[] = `listRelatives -pa -c -type joint $bindingKneeJoint[0]`;
+dwReportErrorNegativeJointLength ($bindingAnkleJoint[0]);
+
+string $bindingBallJoint[] = `listRelatives -pa -c -type joint $bindingAnkleJoint[0]`;
+dwReportErrorNegativeJointLength ($bindingBallJoint[0]);
+//If `listRelatives` command returned zero (if the chain ended prematurely), report an error.
+if (! `size($bindingBallJoint)`)
+	error "Setup does not match UI preferences. Make sure the number of joints in leg hierarchy corresponds to UI selection.";
+
+string $bindingToeJoint[] = `listRelatives -pa -c -type joint $bindingBallJoint[0]`;
+dwReportErrorNegativeJointLength ($bindingToeJoint[0]);
+//If `listRelatives` command returned zero (if the chain ended prematurely), report an error.
+if (! `size($bindingToeJoint)`)
+	error "Setup does not match UI preferences. Make sure the number of joints in leg hierarchy corresponds to UI selection.";
+
+
+
+
+//RENAME BINDING JOINTS AND ASSIGN VARIABLES TO JOINTS WITH NEW NAMES.
+//RENAME STARTING WITH TOE AND WORKING TOWARDS FEMUR (THIS AVOID NAMES CONFLICTS)
+string $bindingToe = $bindingToeJoint[0];
+string $bindingBall = $bindingBallJoint[0];
+string $bindingAnkle = $bindingAnkleJoint[0];
+string $bindingKnee = $bindingKneeJoint[0];
+
+
+//CREATE CONTROL CHAIN BY DUPLICATING CURRENT CHAIN. RENAME WITH "_ControlArm" SUFFIX.ASSIGN VARIABLES TO EACH JOINT.
+string $controlHierarchy[] = `duplicate -rc $bindingFemur`;
+string $controlFemur = $controlHierarchy[0];
+$controlFemur = `rename $controlFemur ($prefix + "Femur_ControlLeg")`;
+//$controlFemur = $prefix + "Femur_ControlLeg";
+
+//DELETE OTHER OBJECTS THAT MAY BE PARENTED TO FEMUR (FOR EXAMPLE, PROXY GEOMETRY).
+//Update May 5, 2004: Search entire control hierarchy, and delete everything that is not a joint.
+string $controlChildren[] = `listRelatives -ad -path $controlFemur`;
+for ($c in $controlChildren)
+	dwDeleteBadChildren ($c, "joint");
+
+string $controlMiddleFemurJoint[];
+string $controlKneeJoint[];
+if ($middleFemurJoints)
+	{
+	//REMOVE EACH MIDDLE FEMUR JOINT (UNNECESSARY FOR CONTROL HIERARCHY).
+	string $controlMiddleFemur[];
+	for ($b = 0; $b < $middleFemurJoints; $b++)
+		{
+		$controlMiddleFemur = `listRelatives -pa -c -type joint $controlFemur`;
+		//dwDeleteBadChildren($controlMiddleFemur[0], "joint");
+		removeJoint $controlMiddleFemur[0];
+		}
+	}
+	
+$controlKneeJoint = `listRelatives -pa -c -type joint $controlFemur`;
+
+string $controlKnee = `rename $controlKneeJoint[0] ($prefix + "Knee_ControlLeg")`;
+//string $controlKnee = $prefix + "Knee_ControlLeg";
+
+string $controlAnkleJoint[] = `listRelatives -pa -c -type joint $controlKnee`;
+
+string $controlAnkle = `rename $controlAnkleJoint[0] ($prefix + "Ankle_ControlLeg")`;
+//string $controlAnkle = $prefix + "Ankle_ControlLeg";
+
+string $controlBallJoint[] = `listRelatives -pa -c -type joint $controlAnkle`;
+
+string $controlBall = `rename $controlBallJoint[0] ($prefix + "Ball_ControlLeg")`;
+//string $controlBall = $prefix + "Ball_ControlLeg";
+
+string $controlToeJoint[] = `listRelatives -pa -c -type joint $controlBall`;
+
+string $controlToe = `rename $controlToeJoint[0] ($prefix + "Toe_ControlLeg")`;
+//string $controlToe = $prefix + "Toe_ControlLeg";
+
+//Updated May 5 2004: Delete any joints that might be parented under control toe.
+string $controlToeChildrenTemp[] = `listRelatives -pa -c $controlToe`;
+if (`size $controlToeChildrenTemp`)
+	delete $controlToeChildrenTemp;
+
+
+//IF IKFKLEG is 2 (user wants IKFKLEG), THEN CONNECT CONTROL CHAIN´S ROTATIONS TO BINDING CHAIN. LOCK UNNECESSARY ROTATIONS ON SKINNING CHAIN.
+if ($IKFKCheck == 2)
+	{
+	connectAttr -f ($controlFemur + ".ry") ($bindingFemur + ".ry");
+	connectAttr -f ($controlFemur + ".rz") ($bindingFemur + ".rz");
+	if ($middleFemurJoints)
+		{
+		//DISTRIBUTE X-ROTATION AMONG THE FEMUR JOINTS.
+		dwDistributeRotations ($controlFemur,
+				"rx",
+				$femurJoints,
+				"rx",
+				($prefix + "Femur_X_Rotation_MultiplyDivide"));
+		
+		//LOCK RY AND RZ ROTATIONS ON ALL MIDDLE FEMUR JOINTS (NOT ON FIRST FEMUR THOUGH).
+		for ($b = 1; $b < $middleFemurJoints; $b++)
+			{
+			dwLockHideAttributes(0, 1, $femurJoints[$b], "ry rz");
+			}
+		}
+
+	if (! $middleFemurJoints)
+		{connectAttr -f ($controlFemur + ".rx") ($bindingFemur + ".rx");}
+
+	connectAttr -f ($controlKnee + ".rx") ($bindingKnee + ".rx");
+	connectAttr -f ($controlKnee + ".ry") ($bindingKnee + ".ry");
+	connectAttr -f ($controlKnee + ".rz") ($bindingKnee + ".rz");	
+	
+	connectAttr -f ($controlAnkle + ".rx") ($bindingAnkle + ".rx");
+	connectAttr -f ($controlAnkle + ".ry") ($bindingAnkle + ".ry");
+	connectAttr -f ($controlAnkle + ".rz") ($bindingAnkle + ".rz");
+
+	connectAttr -f ($controlBall + ".rx") ($bindingBall + ".rx");
+	connectAttr -f ($controlBall + ".ry") ($bindingBall + ".ry");
+	connectAttr -f ($controlBall + ".rz") ($bindingBall + ".rz");
+
+	connectAttr -f ($controlToe + ".rx") ($bindingToe + ".rx");
+	connectAttr -f ($controlToe + ".ry") ($bindingToe + ".ry");
+	connectAttr -f ($controlToe + ".rz") ($bindingToe + ".rz");
+	
+	pointConstraint $controlBall $bindingBall;
+	pointConstraint $controlToe $bindingToe;
+	}
+
+
+
+//DUPLICATE CONTROL LEG AND CREATE IK LEG;
+string $IKHierarchy[] = `duplicate -rc -rr $controlFemur`;
+string $IKFemur = $IKHierarchy[0];
+rename $IKFemur ($prefix + "Femur_IKLeg");
+$IKFemur = $prefix + "Femur_IKLeg";
+
+string $IKKneeJoint[] = `listRelatives -pa -c -type joint $IKFemur`;
+rename $IKKneeJoint[0] ($prefix + "Knee_IKLeg");
+string $IKKnee = $prefix + "Knee_IKLeg";
+
+string $IKAnkleJoint[] = `listRelatives -pa -c -type joint $IKKnee`;
+rename $IKAnkleJoint[0] ($prefix + "Ankle_IKLeg");
+string $IKAnkle = $prefix + "Ankle_IKLeg";
+
+string $IKBallJoint[] = `listRelatives -pa -c -type joint $IKAnkle`;
+rename $IKBallJoint[0] ($prefix + "Ball_IKLeg");
+string $IKBall = $prefix + "Ball_IKLeg";
+
+string $IKToeJoint[] = `listRelatives -pa -c -type joint $IKBall`;
+rename $IKToeJoint[0] ($prefix + "Toe_IKLeg");
+string $IKToe = $prefix + "Toe_IKLeg";
+
+
+
+
+//If $IKFKCheck is 1, then delete control leg and connect IKLeg directly to bindingLeg.
+if ($IKFKCheck == 1)
+	{
+	delete $controlFemur;
+	connectAttr -f ($IKFemur + ".ry") ($bindingFemur + ".ry");
+	connectAttr -f ($IKFemur + ".rz") ($bindingFemur + ".rz");
+	if ($middleFemurJoints)
+		{
+		//DISTRIBUTE X-ROTATIONS AMONG FEMUR JOINTS.
+		dwDistributeRotations ($IKFemur,
+				"rx",
+				$femurJoints,
+				"rx",
+				($prefix + "Femur_X_Rotation_MultiplyDivide"));
+		
+		//LOCK RY AND RZ ROTATIONS ON ALL MIDDLE FEMUR JOINTS (NOT THE FIRST FEMUR THOUGH).
+		for ($b = 1; $b < $middleFemurJoints; $b++)
+			{
+			dwLockHideAttributes(0, 1, $femurJoints[$b], "ry rz");
+			}
+		}
+
+	if (! $middleFemurJoints)
+		{connectAttr -f ($IKFemur + ".rx") ($bindingFemur + ".rx");}
+
+	connectAttr -f ($IKKnee + ".rx") ($bindingKnee + ".rx");
+	connectAttr -f ($IKKnee + ".ry") ($bindingKnee + ".ry");
+	connectAttr -f ($IKKnee + ".rz") ($bindingKnee + ".rz");	
+	
+	connectAttr -f ($IKAnkle + ".rx") ($bindingAnkle + ".rx");
+	connectAttr -f ($IKAnkle + ".ry") ($bindingAnkle + ".ry");
+	connectAttr -f ($IKAnkle + ".rz") ($bindingAnkle + ".rz");
+
+	connectAttr -f ($IKBall + ".rx") ($bindingBall + ".rx");
+	connectAttr -f ($IKBall + ".ry") ($bindingBall + ".ry");
+	connectAttr -f ($IKBall + ".rz") ($bindingBall + ".rz");
+
+	connectAttr -f ($IKToe + ".rx") ($bindingToe + ".rx");
+	connectAttr -f ($IKToe + ".ry") ($bindingToe + ".ry");
+	connectAttr -f ($IKToe + ".rz") ($bindingToe + ".rz");
+	}
+
+
+
+//IF "IK-FK Leg" is selected in UI, duplicate IK Leg and create FK Leg.
+string $FKFemur;
+string $FKKnee;
+string $FKAnkle;
+string $FKBall;
+string $FKToe;
+if ($IKFKCheck == 2)
+	{
+	string $FKHierarchy[] = `duplicate -rc -rr $IKFemur`;
+	//$FKFemur = $FKHierarchy[0];
+	$FKFemur = `rename $FKHierarchy[0] ($prefix + "Femur_FKLeg")`;
+	//$FKFemur = $prefix + "Femur_FKLeg";
+	setAttr ($FKFemur + ".rotateOrder") $femurRotationOrder;
+	
+	string $FKKneeJoint[] = `listRelatives -pa -c -type joint $FKFemur`;
+	$FKKnee = `rename $FKKneeJoint[0] ($prefix + "Knee_FKLeg")`;
+	//$FKKnee = $prefix + "Knee_FKLeg";
+	
+	string $FKAnkleJoint[] = `listRelatives -pa -c -type joint $FKKnee`;
+	$FKAnkle = `rename $FKAnkleJoint[0] ($prefix + "Ankle_FKLeg")`;
+	//$FKAnkle = $prefix + "Ankle_FKLeg";
+	setAttr ($FKAnkle + ".rotateOrder") $ankleRotationOrder;
+	
+	string $FKBallJoint[] = `listRelatives -pa -c -type joint $FKAnkle`;
+	$FKBall = `rename $FKBallJoint[0] ($prefix + "Ball_FKLeg")`;
+	//$FKBall = $prefix + "Ball_FKLeg";
+	
+	string $FKToeJoint[] = `listRelatives -pa -c -type joint $FKBall`;
+	$FKToe = `rename $FKToeJoint[0] ($prefix + "Toe_FKLeg")`;
+	//$FKToe = $prefix + "Toe_FKLeg";
+		
+	//LOCK ROTATIONS ON FK KNEE
+	//setAttr -lock true ($FKKnee + ".rx");
+	//if ($kneeAxis == "Z")
+	//	{setAttr -lock true ($FKKnee + ".ry");}
+	//if ($kneeAxis == "Y")
+	//	{setAttr -lock true ($FKKnee + ".rz");}
+	}
+
+
+
+//ADD IK HANDLES From IKFemur->IKAnkle, IKAnkle->IKBall, IKBall->IKToe
+string $ikHandleAnkle[] = `ikHandle -n ($prefix + "AnkleIKHandle") -solver ikRPsolver -sj $IKFemur -ee $IKAnkle`;
+setAttr ($ikHandleAnkle[0] + ".visibility") 0;
+string $ikHandleBall[] = `ikHandle -n ($prefix + "BallIKHandle") -solver ikRPsolver -sj $IKAnkle -ee $IKBall`;
+setAttr ($ikHandleBall[0] + ".visibility") 0;
+string $ikHandleToe[] = `ikHandle -n ($prefix + "ToeIKHandle") -solver ikRPsolver -sj $IKBall -ee $IKToe`;
+setAttr ($ikHandleToe[0] + ".visibility") 0;
+
+
+
+//ADD GROUP NODES NECESSARY FOR FOOT ROTATIONS.
+float $anklePos[] = `xform -q -ws -t $ikHandleAnkle[0]`;
+float $ballPos[] = `xform -q -ws -t $ikHandleBall[0]`;
+float $toePos[] = `xform -q -ws -t $ikHandleToe[0]`;
+
+string $IKAnkleGroup = `group -em -n ($prefix + "AnkleIKHandle_Grp")`;
+move -a $anklePos[0] $anklePos[1] $anklePos[2] $IKAnkleGroup;
+makeIdentity -apply true -t 1 $IKAnkleGroup;
+parent $ikHandleAnkle[0] $IKAnkleGroup;
+
+string $IKBallGroup = `group -em -n ($prefix + "BallIKHandle_Grp")`;
+move -a $ballPos[0] $ballPos[1] $ballPos[2] $IKBallGroup;
+makeIdentity -apply true $IKBallGroup;
+parent $ikHandleBall[0] $IKBallGroup;
+
+string $IKToeGroup = `group -em -n ($prefix + "ToeIKHandle_Grp")`;
+move -a $toePos[0] $toePos[1] $toePos[2] $IKToeGroup;
+makeIdentity -apply true -t 1 $IKToeGroup ;
+parent $ikHandleToe[0] $IKToeGroup;
+
+string $IKBallRollGroup = `group -em -n ($prefix + "BallRoll_Grp")`;
+move -a $ballPos[0] $ballPos[1] $ballPos[2] $IKBallRollGroup;
+makeIdentity -apply true -t 1 $IKBallRollGroup;
+parent $IKBallGroup $IKAnkleGroup $IKBallRollGroup;
+
+string $IKBendToeGroup = `group -em -n ($prefix + "BendToe_Grp")`;
+move -a $ballPos[0] $ballPos[1] $ballPos[2] $IKBendToeGroup;
+makeIdentity -apply true -t 1 $IKBendToeGroup;
+parent $IKToeGroup $IKBendToeGroup;
+
+string $IKBallTwistGroup = `group -em -n ($prefix + "BallTwist_Grp")`;
+move -a $ballPos[0] $ballPos[1] $ballPos[2] $IKBallTwistGroup;
+makeIdentity -apply true -t 1 $IKBallTwistGroup;
+parent $IKBallRollGroup $IKBendToeGroup $IKBallTwistGroup;
+
+string $IKToeRollGroup = `group -em -n ($prefix + "ToeRoll_Grp")`;
+move -a $toePos[0] $toePos[1] $toePos[2] $IKToeRollGroup;
+makeIdentity -apply true -t 1 $IKToeRollGroup;
+parent $IKBallTwistGroup $IKToeRollGroup;
+
+
+string $IKHeelRollGroup = `group -em -n ($prefix + "HeelRoll_Grp")`;
+move -a $toePos[0] $toePos[1] $toePos[2] $IKHeelRollGroup;
+move -a $anklePos[0] $ballPos[1] $anklePos[2] $IKHeelRollGroup;
+makeIdentity -apply true -t 1 $IKHeelRollGroup;
+parent $IKToeRollGroup $IKHeelRollGroup;
+
+
+//ADD SPLINE CONTROL OBJECT TO IK FOOT.
+//Get the absolute value ".tx" of knee which will help us control the size of the spline controls.
+float $legLengthValue = `getAttr ($IKAnkle + ".tx")`;
+$legLengthValue = abs($legLengthValue);
+string $IKFootControl = `curve -d 1 
+	-p ($anklePos[0] + ($legLengthValue/5)) ($ballPos[1] + ($legLengthValue/5)) ($anklePos[2] - (($legLengthValue/5)/2)) 
+	-p ($anklePos[0] + ($legLengthValue/5)) $ballPos[1] ($anklePos[2] - (($legLengthValue/5)/2)) 
+	-p ($anklePos[0] + ($legLengthValue/5)) $ballPos[1] $toePos[2] 
+	-p ($anklePos[0] + ($legLengthValue/5)) ($ballPos[1] + ($legLengthValue/5)) $toePos[2]
+	-p ($anklePos[0] + ($legLengthValue/5)) ($ballPos[1] + ($legLengthValue/5)) ($anklePos[2] - (($legLengthValue/5)/2))
+	-p ($anklePos[0] - ($legLengthValue/5)) ($ballPos[1] + ($legLengthValue/5)) ($anklePos[2] - (($legLengthValue/5)/2)) 
+	-p ($anklePos[0] - ($legLengthValue/5)) $ballPos[1] ($anklePos[2] - (($legLengthValue/5)/2))
+	-p ($anklePos[0] + ($legLengthValue/5)) $ballPos[1] ($anklePos[2] - (($legLengthValue/5)/2))
+	-p ($anklePos[0] - ($legLengthValue/5)) $ballPos[1] ($anklePos[2] - (($legLengthValue/5)/2)) 
+	-p ($anklePos[0] - ($legLengthValue/5)) $ballPos[1] $toePos[2] 
+	-p ($anklePos[0] - ($legLengthValue/5)) ($ballPos[1] + ($legLengthValue/5)) $toePos[2] 
+	-p ($anklePos[0] - ($legLengthValue/5)) ($ballPos[1] + ($legLengthValue/5)) ($anklePos[2] - (($legLengthValue/5)/2))
+	-p ($anklePos[0] - ($legLengthValue/5)) ($ballPos[1] + ($legLengthValue/5)) $toePos[2] 
+	-p ($anklePos[0] + ($legLengthValue/5)) ($ballPos[1] + ($legLengthValue/5)) $toePos[2] 
+	-p ($anklePos[0] + ($legLengthValue/5)) $ballPos[1] $toePos[2] 
+	-p ($anklePos[0] - ($legLengthValue/5)) $ballPos[1] $toePos[2] 
+	-p ($anklePos[0] + ($legLengthValue/5)) $ballPos[1] $toePos[2] 
+	-p ($anklePos[0] + ($legLengthValue/5)) $ballPos[1] ($anklePos[2] - (($legLengthValue/5)/2))
+	-k -1 -k 1 -k 2 -k 3 -k 4 -k 5 -k 6 -k 7 -k 8 -k 9 -k 10 -k 11 -k 12 -k 13 -k 14 -k 15 -k 16 -k 17`;
+
+$IKFootControl = `rename ($prefix + "IKFootControl")`;
+setAttr ($IKFootControl + ".showManipDefault") 1;
+setAttr ($IKFootControl + ".rotateOrder") $ankleRotationOrder;
+move -a $anklePos[0] $ballPos[1] $anklePos[2] ($IKFootControl + ".rotatePivot") ($IKFootControl + ".scalePivot");
+parent $IKHeelRollGroup $IKFootControl;
+
+//Add override color scheme.
+if ($controlsColor > 1)
+	{
+	setAttr ($IKFootControl + ".overrideEnabled") 1;
+	setAttr ($IKFootControl + ".overrideColor") ($controlsColor - 1);
+	}
+
+//ADD FK CONTROL OBJECTS IF SELECTED IN UI; IF "STRETCH" ATTRIBUTE IS SELECTED IN UI, THEN CREATE CONTROL OBJECTS WITH X-SCALE ATTRIBUTE
+//CONNECTED TO RESPECTIVE JOINT.
+string $fkFemurOrientGrp;
+string $fkKneeOrientGrp;
+string $fkAnkleOrientGrp;
+string $fkBallOrientGrp;
+
+string $fkFemurControl;
+string $fkKneeControl;
+string $fkAnkleControl;
+string $fkBallControl;
+if ($controlType > 1)
+	{
+	//Use $stretchCheck an argument for building fk controls.
+	$fkFemurOrientGrp = dwCreateFKControl($FKFemur, $FKKnee, 1, 1, "orientConstrainRotations", 1, $stretchCheck, $controlType, ($legLengthValue/2.5), 2, $prefix, "FK_FEMUR_CONTROL");
+	$fkKneeOrientGrp = dwCreateFKControl($FKKnee, $FKAnkle, 1, 1, "orientConstrainRotations", 1, $stretchCheck, $controlType, ($legLengthValue/2.5), 2, $prefix, "FK_KNEE_CONTROL");
+	$fkAnkleOrientGrp = dwCreateFKControl($FKAnkle, $FKBall, 1, 1, "orientConstrainRotations", 1, $stretchCheck, $controlType, ($legLengthValue/2.5), 2, $prefix, "FK_ANKLE_CONTROL");
+	$fkBallOrientGrp = dwCreateFKControl($FKBall, $FKToe, 1, 1, "orientConstrainRotations", 1, $stretchCheck, $controlType, ($legLengthValue/2.5), 2, $prefix, "FK_BALL_CONTROL");
+	
+	$fkFemurControl = ($prefix + "FK_FEMUR_CONTROL");
+	$fkKneeControl = ($prefix + "FK_KNEE_CONTROL");
+	$fkAnkleControl = ($prefix + "FK_ANKLE_CONTROL");
+	$fkBallControl = ($prefix + "FK_BALL_CONTROL");
+	
+	parent $fkBallOrientGrp $fkAnkleControl;
+	parent $fkAnkleOrientGrp $fkKneeControl;
+	parent $fkKneeOrientGrp $fkFemurControl;
+	
+	
+	//Update May 5 2004: Do "Free_Orient" setup of FKFemurControl, then set attribute to 0 (default "follow")
+	dwCreateFreeOrientFKSetup ($FKFemur, ($prefix + "FKFemur"), $rootJoint[0], $fkFemurControl, $fkFemurOrientGrp);
+	setAttr ($fkFemurControl + ".Free_Orient") 0;
+	
+	//Updated June 18, 2004: Lock FK knee to bend axis only if check in UI.
+	if ($legLockFKKneeCHECK)
+		{
+		dwLockHideAttributes (0, 0, $fkKneeControl, "rx");
+		if ($kneeAxis == "Z")
+			dwLockHideAttributes (0, 0, $fkKneeControl, "ry");
+		if ($kneeAxis == "Y")
+			dwLockHideAttributes (0, 0, $fkKneeControl, "rz");
+		}
+	
+	//Add color scheme to FK control boxes.
+	if ($controlsColor > 1)
+		{
+		setAttr ($fkFemurControl + ".overrideEnabled") 1;
+		setAttr ($fkFemurControl + ".overrideColor") ($controlsColor - 1);
+		}
+	
+	setAttr ($fkFemurControl + ".rotateOrder") $femurRotationOrder;
+	setAttr ($fkFemurControl + ".rotateOrder") $ankleRotationOrder;
+	//setAttr ($prefix + "Femur_FKLeg_Control.rotateOrder") $femurRotationOrder;
+	//setAttr ($prefix + "Ankle_FKLeg_Control.rotateOrder") $ankleRotationOrder;
+	}
+
+
+
+//ADD FOOT ATTRIBUTES TO $IKFOOTCONTROL OBJECT. ADD IKFK_BLEND ATTRIBUTE TO IKFOOT_CONTROL. ADD IKLEG- AND FKLEG- VISIBILITY ATTRIBUTES.
+dwLockHideAttributes (0, 0, $IKFootControl, "sx sy sz v");
+addAttr -longName "Roll" -at double -min -5 -max 10 -defaultValue 0 -keyable 1 ($IKFootControl);
+addAttr -longName "ToeBend" -at double -defaultValue 0 -keyable 1 ($IKFootControl);
+addAttr -longName "BallTwist" -at double -defaultValue 0 -keyable 1 ($IKFootControl);
+addAttr -longName "ToeTwist" -at double -defaultValue 0 -keyable 1 ($IKFootControl);
+
+//IF IKFKLEG, THEN CREATE IKFKBLEND ATTRIBUTE AND VISIBILITY ATTRIBUTES FOR LEGS.
+string $IKFKBlendAttr;
+if ($IKFKCheck == 2)
+	{
+	addAttr -longName ("IKFK_Blend") -at double -min 0 -max 1 -defaultValue 1 -keyable 1 ($IKFootControl);
+	$IKFKBlendAttr = "IKFK_Blend";
+	}
+
+
+if ($IKFKCheck == 1)
+	{setAttr ($IKFemur + ".v") 0;}
+
+
+//CONNECT TOEBEND, TOETWIST, BALLTWIST ATTRIBUTES TO APPROPRIATE NODE ROTATIONS.
+connectAttr ($IKFootControl + ".ToeBend") ($IKBendToeGroup + ".rx");
+connectAttr ($IKFootControl + ".BallTwist") ($IKBallTwistGroup + ".ry");
+connectAttr ($IKFootControl + ".ToeTwist") ($IKToeRollGroup + ".ry");
+
+
+//SET DRIVEN KEYS FOR FOOTROLL. DRIVEN KEYS ARE PREFERRED BECAUSE THEY CAN BE EASILY MODIFIED TO FIT DIFFERENT CHARACTERS.
+setAttr ($IKFootControl + ".Roll") 0;
+setDrivenKeyframe -itt linear -ott linear -cd ($IKFootControl + ".Roll") ($prefix + "HeelRoll_Grp.rx");
+setDrivenKeyframe -itt linear -ott linear -cd ($IKFootControl + ".Roll") ($prefix + "BallRoll_Grp.rx");
+setAttr ($IKFootControl + ".Roll") -5;
+setAttr ($prefix + "HeelRoll_Grp.rx") -40;
+setDrivenKeyframe -itt linear -ott linear -cd ($IKFootControl + ".Roll") ($prefix + "HeelRoll_Grp.rx");
+setAttr ($IKFootControl + ".Roll") 5;
+setAttr ($prefix + "BallRoll_Grp.rx") 40;
+setDrivenKeyframe -itt linear -ott flat -cd ($IKFootControl + ".Roll") ($prefix + "BallRoll_Grp.rx");
+setDrivenKeyframe -itt linear -ott linear -cd ($IKFootControl + ".Roll") ($prefix + "ToeRoll_Grp.rx");
+setAttr ($IKFootControl + ".Roll") 10;
+setAttr ($prefix + "ToeRoll_Grp.rx") 80;
+setAttr ($prefix + "BallRoll_Grp.rx") 0;
+setDrivenKeyframe -itt linear -ott linear -cd ($IKFootControl + ".Roll") ($prefix + "BallRoll_Grp.rx");
+setDrivenKeyframe -itt linear -ott linear -cd ($IKFootControl + ".Roll") ($prefix + "ToeRoll_Grp.rx");
+setAttr ($IKFootControl + ".Roll") 0;
+
+
+
+
+//ADD POLE VECTOR (Implicit Sphere) TO IKLEG. PLACE IT AT KNEE POSITION. USER CAN REPOSITION THIS AFTER SETUP IS COMPLETE.
+float $IKKneePos[] = `xform -q -ws -t $IKKnee`;
+createNode implicitSphere;
+pickWalk -d up;
+string $poleVector = `rename ($prefix + "Leg_Pole_Vector")`;
+setAttr ($poleVector + ".showManipDefault") 1;
+
+addAttr -longName "Control_Radius" -at double -min 0 -max 50 -defaultValue 1 -keyable 1 $poleVector;
+connectAttr ($prefix + "Leg_Pole_Vector.Control_Radius") ($poleVector + "Shape.radius");
+setAttr ($prefix + "Leg_Pole_Vector.Control_Radius") ($legLengthValue/10);
+move -a $IKKneePos[0] $IKKneePos[1] $IKKneePos[2] $poleVector;
+
+string $poleVectorOrientGrp = `group -em -n ($prefix + "PoleVector_OffsetGrp")`;
+move -a $IKKneePos[0] $IKKneePos[1] $IKKneePos[2] $poleVectorOrientGrp;
+parent $poleVector $poleVectorOrientGrp;
+
+dwLockHideAttributes (0, 0, $poleVector, "rx ry rz sx sy sz v");
+dwLockHideAttributes (0, 0, $poleVectorOrientGrp, "rx ry rz sx sy sz v");
+
+poleVectorConstraint $poleVector $ikHandleAnkle[0];
+
+//Add override color scheme to Pole Vector.
+if ($controlsColor > 1)
+	{
+	setAttr ($prefix + "Leg_Pole_Vector.overrideEnabled") 1;
+	setAttr ($prefix + "Leg_Pole_Vector.overrideColor") ($controlsColor - 1);
+	}
+
+
+
+
+//IF "IKFKLEG", THEN ORIENT CONSTRAIN BINDING JOINTS TO BOTH IK AND FK LEGS. BLEND WEIGHTS USING IKFKBLEND ATTRIBUTE.
+//Query Maya version.
+float $mayaVersion = `dwRT_GetMayaVersion`;
+
+if ($IKFKCheck == 2)
+	{
+	//CONSTRAIN CONTROL FEMUR.
+	string $femurIKFKConstraint[] = `orientConstraint -n ("IKFKLegOrientConstrain_" + $prefix + "Femur") $IKFemur $FKFemur $controlFemur`;
+	//UPDATE FOR V. 5.0- SET "INTERPOLATION TYPE" OF ORIENT CONSTRAINT TO "SHORTEST". THIS SEEMS TO WORK WELL
+	//AS IT TRIES TO AVOID FLIPPING WHEN BLENDED ORIENTATION DIFFERENCES ARE TOO HIGH.
+	if ($mayaVersion >= 5.0)
+		setAttr ($femurIKFKConstraint[0] + ".interpType") 2;
+	
+	//CONSTRAIN CONTROL KNEE.
+	string $kneeIKFKConstraint[] = `orientConstraint -n ($prefix + "Knee" + "IKFKLegOrientConstrain") $IKKnee $FKKnee $controlKnee`;
+	if ($mayaVersion >= 5.0)
+		setAttr ($kneeIKFKConstraint[0] + ".interpType") 2;
+	
+	//CONSTRAIN CONTROL ANKLE.
+	string $ankleIKFKConstraint[] = `orientConstraint -n ($prefix + "Ankle" + "IKFKLegOrientConstrain") $IKAnkle $FKAnkle $controlAnkle`;
+	if ($mayaVersion >= 5.0)
+		setAttr ($ankleIKFKConstraint[0] + ".interpType") 2;
+		
+	//CONSTRAIN CONTROL BALL.
+	string $ballIKFKConstraint[] = `orientConstraint -n ($prefix + "Ball" + "IKFKLegOrientConstrain") $IKBall $FKBall $controlBall`;
+	if ($mayaVersion >= 5.0)
+		setAttr ($ballIKFKConstraint[0] + ".interpType") 2;
+		
+	//Create IKFK blend between each leg joint.
+	dwBlendByReverse ($IKFootControl, $IKFKBlendAttr, ($prefix + "Leg_IKFKBlend_Reverse"), ($femurIKFKConstraint[0] + "." + $IKFemur + "W0"), ($femurIKFKConstraint[0] + "." + $FKFemur + "W1"), 1);
+	dwBlendByReverse ($IKFootControl, $IKFKBlendAttr, ($prefix + "Leg_IKFKBlend_Reverse"), ($kneeIKFKConstraint[0] + "." + $IKKnee + "W0"), ($kneeIKFKConstraint[0] + "." + $FKKnee + "W1"), 1);
+	dwBlendByReverse ($IKFootControl, $IKFKBlendAttr, ($prefix + "Leg_IKFKBlend_Reverse"), ($ankleIKFKConstraint[0] + "." + $IKAnkle + "W0"), ($ankleIKFKConstraint[0] + "." + $FKAnkle + "W1"), 1);
+	dwBlendByReverse ($IKFootControl, $IKFKBlendAttr, ($prefix + "Leg_IKFKBlend_Reverse"), ($ballIKFKConstraint[0] + "." + $IKBall + "W0"), ($ballIKFKConstraint[0] + "." + $FKBall + "W1"), 1);	
+	}
+
+
+
+//IF STRETCHYLEG, THEN CREATE NECESSARY NODES FOR STRETCHING.
+string $jointStretchString;
+if ($stretchCheck)
+	{
+	float $lengthControlFemur = dwRTGetDistance ($IKKnee, $IKFemur);
+	float $lengthKnee = dwRTGetDistance ($ikHandleAnkle[0], $IKKnee);
+	
+	float $middleFemurTX[];
+	if ($middleFemurJoints)
+		{
+		for ($b = 0; $b < $middleFemurJoints; $b ++)
+			{
+			//$middleFemurTX[0] WILL ACTUALLY BE ASSIGNED TO $femurJoints[1],
+			//BECAUSE $femurJoints[0] IS THE FIRST FEMUR JOINT (WHICH WILL NOT STRETCH).
+			$middleFemurTX[$b] = `getAttr ($femurJoints[$b + 1] + ".tx")`;
+			}
+		}
+	
+	//BASICALLY HERE WE CALCULATE THE LENGTH OF THE IK LEG JOINTS, THEN BLEND BETWEEN
+	//THIS AND FK USING "dwBlendByWeightedFactor.mel" SCRIPT. NOT AS COMPLICATED AS I ORIGINALY THOUGHT...
+	//CALCULATE MIDDLE-FEMUR JOINTS TRANSLATE-X BASED ON THEIR LENGTH AS A FRACTION OF THE TOTAL FEMUR->KNEE LENGTH.
+	//MAINTAIN THIS FRACTION (PERCENTAGE) DURING STRETCHING. WITH THIS IN PLACE, WE NEED NOT CALCULATE
+	//ITS POSITION ANY MORE AS IT WILL ALWAYS REMAIN IN THE SAME POSITION WITH RESPECT TO ITS CONTROL JOINT
+	//(EITHER $IKKNEE OR $CONTROLKNEE).
+	string $middleFemurPosition_Divide;
+	if ($middleFemurJoints)
+		{
+		float $middleFemurDivideValue;		//Value calculates each joints´ tx as fraction of total femur length.
+		string $middleFemurPosition_Divide;	//multiplyDivide node.
+		for ($b = 0; $b < $middleFemurJoints; $b++)
+			{
+			//Divide factor for each joint.
+			$middleFemurDivideValue = $lengthControlFemur/$middleFemurTX[$b];
+			//Create multiplyDivide node as set operation to "Divide".
+			$middleFemurPosition_Divide = `shadingNode -asUtility -n ($prefix + "midFemurPos_" + $b + "_Divide") multiplyDivide`;
+				setAttr ($middleFemurPosition_Divide + ".operation") 2;
+			//If on IK leg, then connect $IKKnee to first divide input.
+			if ($IKFKCheck == 1)
+				{connectAttr ($IKKnee + ".tx") ($middleFemurPosition_Divide + ".input1X");}
+			//If IK-FK leg, then connect $controlKnee to first divide input.
+			else if ($IKFKCheck == 2)
+				{connectAttr ($controlKnee + ".tx") ($middleFemurPosition_Divide + ".input1X");}
+			setAttr ($middleFemurPosition_Divide + ".input2X") $middleFemurDivideValue;
+			connectAttr ($middleFemurPosition_Divide + ".outputX") ($femurJoints[$b + 1] + ".tx");
+			}
+		}	
+		
+	
+	//Do the stretchy setup on the IK.
+	dwRTCreateStretchyIK ($ikHandleAnkle[0], $IKFootControl, ($prefix + "Leg"), 2);
+	
+	
+	//IF IKLEG ONLY, THEN POINT CONSTRAIN BINDING JOINTS TO IK JOINTS.
+	if ($IKFKCheck == 1)
+		{
+		pointConstraint $IKKnee $bindingKnee;
+		pointConstraint $IKAnkle $bindingAnkle;
+		}
+		
+	//IF IKFK LEG, THEN USE dwBlend2WeightedAttr TO CONTROL TRANSLATEX OF CONTROL JOINTS.
+	if ($IKFKCheck == 2)
+		{
+		//Calculate control joints translateX based on the weighted percentage of the IK and FK joints.
+		dwBlend2WeightedAttr ($controlKnee, "tx", $IKFootControl, $IKFKBlendAttr, ($prefix + "KneeTrans_Blend2Attr"), $IKKnee, "tx", $FKKnee, "tx");
+		dwBlend2WeightedAttr ($controlAnkle, "tx", $IKFootControl, $IKFKBlendAttr, ($prefix + "AnkleTrans_Blend2Attr"), $IKAnkle, "tx", $FKAnkle, "tx");
+		dwBlend2WeightedAttr ($controlBall, "tx", $IKFootControl, $IKFKBlendAttr, ($prefix + "BallTrans_Blend2Attr"), $IKBall, "tx", $FKBall, "tx");
+		dwBlend2WeightedAttr ($controlToe, "tx", $IKFootControl, $IKFKBlendAttr, ($prefix + "ToeTrans_Blend2Attr"), $IKToe, "tx", $FKToe, "tx");
+		
+		
+		//FINALLY, POINT CONSTRAIN BINDING KNEE AND ANKLE TO CONTROL KNEE AND ANKLE.			
+		pointConstraint $controlKnee $bindingKnee;
+		pointConstraint $controlAnkle $bindingAnkle;
+		}	
+	}
+	
+
+	
+//Add visibility attr to foot control.
+if ($IKFKCheck == 2)
+	{
+	addAttr -longName ("IKLeg_Visibility") -at bool -defaultValue 1 -keyable 1 ($IKFootControl);
+	addAttr -longName ("FKLeg_Visibility") -at bool -defaultValue 1 -keyable 1 ($IKFootControl);
+	connectAttr ($IKFootControl + ".IKLeg_Visibility") ($prefix + "Femur_IKLeg.v");
+	setAttr ($IKFootControl + ".IKLeg_Visibility") 0;
+	connectAttr ($IKFootControl + ".FKLeg_Visibility") ($prefix + "Femur_FKLeg.v");
+	if ($controlType > 1)
+		connectAttr ($IKFootControl + ".FKLeg_Visibility") ($fkFemurOrientGrp + ".v");
+	}
+	
+	
+	
+
+//CLEAN UP: PARENT ALL CONTROLS TO ONE LOCKED GROUP.
+string $cleanUpGrp = `group -em -n ($prefix + "Leg_Controls")`;
+dwLockHideAttributes (0, 0, $cleanUpGrp, "tx ty tz rx ry rz sx sy sz v");
+
+parent 
+	$poleVectorOrientGrp 
+	$IKFootControl 
+	$cleanUpGrp;
+
+if (($IKFKCheck == 2) && ($controlType > 1))
+	{
+	parent $fkFemurOrientGrp $cleanUpGrp;
+	parent ($prefix + "FKFemur_FreeOrientGRP") $cleanUpGrp;
+	}
+
+select -r $IKFootControl;
+
+
+//Turn cycleCheck back on.
+cycleCheck -e 1;
+
+
+print ("\n" + 
+	"Leg setup complete. " + $poleVectorOrientGrp + " should be repositioned accordingly.\n" +
+	"Foot roll settings may be changed by modifying the Set Driven Key values output from the IK control object.\n");
+
+} //end of script.

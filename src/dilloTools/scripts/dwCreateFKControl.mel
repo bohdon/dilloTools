@@ -1,0 +1,158 @@
+//Title: 	dwCreateFKControl.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date: Nov. 2002 - Jan. 2003
+//
+//See "About dwRiggingTools in main UI "Help" menu for detailed update descriptions.
+//
+//Updated: Sept 1 2003 -
+//		Removed stretch by scaling.
+//		Changed stretch attr name to simply "Stretch". Previously was ("<<boneName>>_Stretch"). This was useless.
+//
+//Updated: March 20, 2004: Added $defaultManipulator which is passed on to dwCreateControlObject.mel.
+//
+//Description: PROCEDURE CREATES A SPLINE CONTROL OBJECT USED TO ROTATE AN FK JOINT.
+//		***RETURNS THE NAME OF THE ORIENTGRP, NOT THE CONTROL OBJ ITSELF***
+
+global proc string dwCreateFKControl (string $startJoint, 		//Name of starting joint.
+					string $endJoint, 		//Name of ending joint.
+					int $lockTranslate,  		//locks and hides translation attrs on control object.
+					int $pointConstrainOrientGrp, 	//Point constrains the OrientGrp node to the starting joint. 
+					string $constrainFlag, 		//"orientConstrainRotations" or "connectRotations"- method of controlling the joint.
+					int $lockScaleX, 		//Lock scaling on X-axis, yes or no.
+					int $stretchCheck, 		//Stretch joint true or false.
+					int $controlType,		//Type of control obj.
+					float $controlSize,		//Size of cntrl obj.
+					int $defaultManipulator,	//".showDefaultManip" type
+					string $prefix,			//naming prefix
+					string $controlName)		//Name to assign to control obj.
+{
+float $measureStartPos[] = `xform -q -ws -t $startJoint`;
+float $measureEndPos[] = `xform -q -ws -t $endJoint`;
+select -cl;
+curve -d 1 -p $measureStartPos[0] $measureStartPos[1] $measureStartPos[2] -p $measureEndPos[0] $measureEndPos[1] $measureEndPos[2] -k 0 -k 1;
+string $measureCurve[] = `ls -sl`;
+createNode curveInfo -n curveInfoMeasure;
+connectAttr ($measureCurve[0] + ".worldSpace") curveInfoMeasure.inputCurve;
+float $controlBoxLength = `getAttr curveInfoMeasure.arcLength`;
+
+
+
+//CREATE CONTROL OBJ. CONTROL TYPE IS SET TO ($controlType - 1), BECAUSE A VALUE OF 1 IS SET TO "NO CONTROL OBJECT" IN THE UI OPTION MENU.
+string $controlObject = dwCreateControlObject (($controlType - 1), 
+						$controlSize, 
+						($prefix + $controlName), 
+						1, 
+						$defaultManipulator);
+
+//IF $controlType EQUALS 2 (BOUNDING BOX METHOD), SCALE THE CONTROL OBJ, THEN FREEZE IT.
+if ($controlType == 2)
+	{	
+	scale ($controlBoxLength/$controlSize) 1 1 $controlObject;
+	makeIdentity -apply true -s 1 $controlObject;
+	}	
+
+
+//CREATE "_OrientGRP".
+string $orientGrp = `group -em -n ($prefix + $startJoint + "_OrientGRP")`;
+move -a $measureStartPos[0] $measureStartPos[1] $measureStartPos[2] $orientGrp;
+//dwLockHideAttributes (1, 1, $orientGrp, "tx ty tz rx ry rz");
+
+
+//POINT CONSTRAIN "_OrientGRP" TO $startJoint IF CALLED.
+if ($pointConstrainOrientGrp)
+	{ 
+	pointConstraint $startJoint $orientGrp;
+	}
+
+//ALIGN "_OrientGRP" TO $startJoint.
+string $orientConstraint[] = `orientConstraint $startJoint $orientGrp`;
+delete $orientConstraint;
+//Parent control obj and freeze transforms.
+parent $controlObject $orientGrp;
+if ($controlType != 5)
+	makeIdentity $controlObject;
+
+
+//WE NEED A NEW CRITERIA FOR THE "DOUBLE ARROW" SHOULDER CONTROL. IT DOESN큈 ALIGN LIKE THE OTHER TYPES.
+//IT ALSO SHOULD BE MOVED UP IN THE Y.
+else if ($controlType == 5)
+	{
+	makeIdentity -t 1 $controlObject;
+	makeIdentity -apply true -r 1 -s 1 $controlObject;
+	move -r 0 ($controlSize/2) 0 ($controlObject + ".cv[*]");
+	}
+	
+	
+if ($constrainFlag == "connectRotations")
+	{
+	//If joint큦 rotate attributes are not locked, then connect the control큦 rotations to the joint큦 rotations.
+	int $lockedX = `getAttr -lock ($startJoint + ".rx")`;
+	if (! $lockedX)
+		connectAttr ($controlObject + ".rx") ($startJoint + ".rx");
+	else if ($lockedX)
+		setAttr -lock true -keyable false ($controlObject + ".rx");
+		
+	int $lockedY = `getAttr -lock ($startJoint + ".ry")`;
+	if (! $lockedY)
+		connectAttr ($controlObject + ".ry") ($startJoint + ".ry");
+	else if ($lockedY)
+		setAttr -lock true -keyable false ($controlObject + ".ry");
+
+	int $lockedZ = `getAttr -lock ($startJoint + ".rz")`;
+	if (! $lockedZ)
+		connectAttr ($controlObject + ".rz") ($startJoint + ".rz");
+	else if ($lockedZ)
+		setAttr -lock true -keyable false ($controlObject + ".rz");
+	}
+
+
+//IF ORIENTCONSTRAIN IS CHOSEN CONNECTION TYPE, LOCK ALL TRANSLATE ATTR ON _OrientGRP node.
+if ($constrainFlag == "orientConstrainRotations")
+	{
+	orientConstraint $controlObject $startJoint;
+	setAttr -lock true ($orientGrp + ".tx");
+	setAttr -lock true ($orientGrp + ".ty");
+	setAttr -lock true ($orientGrp + ".tz");
+	}	
+
+
+//IF $LOCKTRANSLATE IS CHOSEN, LOCK AND HIDE TRANSLATIONS ON RESULTING CONTROL OBJECT.
+if ($lockTranslate)
+	{
+	dwLockHideAttributes (0, 0, $controlObject, "tx ty tz");
+	}
+
+
+//LOCK AND HIDE Y- AND Z- SCALE, AND HIDE VISIBILITY, ON RESULTING CONTROL OBJECT.
+dwLockHideAttributes (0, 0, $controlObject, "sy sz");
+setAttr -keyable false ($controlObject + ".visibility");
+
+//IF $lockScaleX IS CHOSEN, LOCK AND HIDE X-SCALE ON RESULTING CONTROL OBJECT.
+if ($lockScaleX)
+	setAttr -lock true -keyable false ($controlObject + ".sx");
+
+//IF $stretchCheck RETURNS TRUE, ADD "STRETCH" ATTRIBUTE ON CONTROL AND CONNECT WITH RESPECTIVE JOINT.
+if ($stretchCheck)
+	{
+	//Add "Stretch" attribute.
+	addAttr -ln "Stretch" -defaultValue 1 -at double -k true $controlObject;
+	
+	//Create MultiplyDivide node, and connect stretch attribute to first input, 
+	//length of joint to second input, and have this value drive the translate.
+	string $multiplyLengthNode = `shadingNode -asUtility -n ($prefix + $startJoint + "Stretch_Length_Multiply") multiplyDivide`;
+		setAttr ($multiplyLengthNode + ".operation") 1;
+	connectAttr ($controlObject + ".Stretch") ($multiplyLengthNode + ".input1X");
+	setAttr ($multiplyLengthNode + ".input2X") $controlBoxLength;
+	connectAttr ($multiplyLengthNode + ".outputX") ($endJoint + ".tx");
+	}
+
+select -cl;
+delete curveInfoMeasure;
+delete $measureCurve[0];
+
+//Return the orientGrp, NOT the control name. We need to parent in the orientgrp into our existing hierarchy.
+return $orientGrp;
+}

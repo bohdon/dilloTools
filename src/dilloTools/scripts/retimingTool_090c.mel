@@ -1,0 +1,1297 @@
+// =====================================
+// RetimingTool - by Lionel GALLAT
+// =====================================
+
+global string $retimingToolVersion = "9.0c";
+global int $retimeVerbose;
+
+// ====================================
+// Save preferences
+// ====================================
+
+global proc retimingToolSavePrefs ()
+{
+int $collapse = `frameLayout -q -collapse addBreakdownFrameLayout`;
+optionVar -intValue addBreakdownsCollapseStatus $collapse;
+
+int $collapse = `frameLayout -q -collapse tangentsAndCurvesFrameLayout`;
+optionVar -intValue tangentsAndCurvesCollapseStatus $collapse;
+
+//int $collapse = `frameLayout -q -collapse miscFrameLayout`;
+//optionVar -intValue miscCollapseStatus $collapse;
+
+int $checkTmp = `checkBox -q -v allowOvershootCB`;
+optionVar -intValue allowOvershootStatus $checkTmp;
+
+//string $checkTmp2 = `radioCollection -q -sl breakdownChoiceRB`;
+//optionVar -stringValue breakdownChoiceStatus $checkTmp2; //print ( "\n breakdownChoiceStatus = " + $checkTmp2 );
+
+int $checkTmp = `checkBox -q -v timeRangeOnlyCB`;
+optionVar -intValue timeRangeOnlyStatus $checkTmp;
+
+string $checkTmp2 = `radioCollection -q -sl tangentsChoiceRB`;
+optionVar -stringValue tangentsChoiceStatus $checkTmp2;
+
+int $checkTmp = `intField -q -v arbitraryIntField`;
+optionVar -intValue arbitraryBreakdownStatus $checkTmp;
+
+print ( "===> Your retimingTool preferences have been saved!!!" );
+}
+
+// --------------------------------------------------------------------------------------------------------------------------
+// Correct overshoot stuff
+// =============================================================
+// Peaks and plateaux
+// =============================================================
+
+global proc peaksPlateaux( string $animCurve, int $time )
+{
+keyTangent -t $time -itt flat -ott flat $animCurve; //print ( $curvesList[$j] + " -> " + $time + " is flat!\n");
+}
+
+// =============================================================
+// Slow-ins (positive)
+// =============================================================
+
+global proc slowInsPositive( string $animCurve, int $time )
+{
+keyTangent -t $time -ott linear $animCurve;
+float $linearAngleTmp[] = `keyTangent -t $time -q -outAngle $animCurve`;
+float $linearAngle = $linearAngleTmp[0]; //print ("linearAngle = " + $linearAngle + "\n");
+
+if ( ($linearAngle >= 0) && ($linearAngle < 0.5) )
+	$newAngle = 0.5;
+else if ( ($linearAngle >= 0.5) && ($linearAngle < 1) )
+	$newAngle = 2;
+else if ( ($linearAngle >= 1) && ($linearAngle < 2) )
+	$newAngle = 5;
+else if ( ($linearAngle >= 2) && ($linearAngle < 3) )
+	$newAngle = 8;
+else if ( ($linearAngle >= 3) && ($linearAngle < 4) )
+	$newAngle = 11;
+else if ( ($linearAngle >= 4) && ($linearAngle < 5) )
+	$newAngle = 16;
+else if ( ($linearAngle >= 5) && ($linearAngle < 6) )
+	$newAngle = 17;
+else if ( ($linearAngle >= 6) && ($linearAngle < 7) )
+	$newAngle = 19;
+else if ( ($linearAngle >= 7) && ($linearAngle < 10) )
+	$newAngle = 22;
+else if ( ($linearAngle >= 10) && ($linearAngle < 13) )
+	$newAngle = 32;
+else if ( ($linearAngle >= 13) && ($linearAngle < 17) )
+	$newAngle = 37;
+else if ( ($linearAngle >= 17) && ($linearAngle < 21) )
+	$newAngle = 44;
+else if ( ($linearAngle >= 21) && ($linearAngle < 25) )
+	$newAngle = 51.7;
+else if ( ($linearAngle >= 25) && ($linearAngle < 30) )
+	$newAngle = 59;
+else if ( ($linearAngle >= 30) && ($linearAngle < 40) )
+	$newAngle = 65;
+else if ( ($linearAngle >= 40) && ($linearAngle < 50) )
+	$newAngle = 72;
+else if ( ($linearAngle >= 50) && ($linearAngle < 60) )
+	$newAngle = 78;
+else if ( ($linearAngle >= 60) && ($linearAngle < 70) )
+	$newAngle = 81;
+else if ( ($linearAngle >= 70) && ($linearAngle < 80) )
+	$newAngle = 84;
+else if ( ($linearAngle >= 80) && ($linearAngle < 90) )
+	$newAngle = 87;
+	
+keyTangent -t $time -ott spline $animCurve;
+keyTangent -e -a -t $time -outAngle $newAngle -inAngle $newAngle -outWeight 1 $animCurve;
+//keyTangent -e -a -t $time -outAngle ( (2*$linearAngle) + $linearAngle ) -inAngle ( (2*$linearAngle) + $linearAngle ) -outWeight 1 $animCurve;
+}
+
+// =============================================================
+// Slow-outs (negative)
+// =============================================================
+
+global proc slowOutsNegative( string $animCurve, int $time )
+{
+keyTangent -t $time -itt linear $animCurve;
+float $linearAngleTmp[] = `keyTangent -t $time -q -inAngle $animCurve`;
+float $linearAngle = $linearAngleTmp[0]; //print ("linearAngle = " + $linearAngle + "\n");
+
+if ( ($linearAngle <= 0) && ($linearAngle > -0.5) )
+	$newAngle = -0.5;
+else if ( ($linearAngle <= -0.5) && ($linearAngle > -1) )
+	$newAngle = -2;
+else if ( ($linearAngle <= -1) && ($linearAngle > -2) )
+	$newAngle = -5;
+else if ( ($linearAngle <= -2) && ($linearAngle > -3) )
+	$newAngle = -8;
+else if ( ($linearAngle <= -3) && ($linearAngle > -4) )
+	$newAngle = -11;
+else if ( ($linearAngle <= -4) && ($linearAngle > -5) )
+	$newAngle = -16;
+else if ( ($linearAngle <= -5) && ($linearAngle > -6) )
+	$newAngle = -17;
+else if ( ($linearAngle <= -6) && ($linearAngle > -7) )
+	$newAngle = -19;
+else if ( ($linearAngle <= -7) && ($linearAngle > -10) )
+	$newAngle = -22;
+else if ( ($linearAngle <= -10) && ($linearAngle > -13) )
+	$newAngle = -32;
+else if ( ($linearAngle <= -13) && ($linearAngle > -17) )
+	$newAngle = -37;
+else if ( ($linearAngle <= -17) && ($linearAngle > -21) )
+	$newAngle = -44;
+else if ( ($linearAngle <= -21) && ($linearAngle > -25) )
+	$newAngle = -51.7;
+else if ( ($linearAngle <= -25) && ($linearAngle > -30) )
+	$newAngle = -59;
+else if ( ($linearAngle <= -30) && ($linearAngle > -40) )
+	$newAngle = -65;
+else if ( ($linearAngle <= -40) && ($linearAngle > -50) )
+	$newAngle = -72;
+else if ( ($linearAngle <= -50) && ($linearAngle > -60) )
+	$newAngle = -78;
+else if ( ($linearAngle <= -60) && ($linearAngle > -70) )
+	$newAngle = -81;
+else if ( ($linearAngle <= -70) && ($linearAngle > -80) )
+	$newAngle = -84;
+else if ( ($linearAngle <= -80) && ($linearAngle > -90) )
+	$newAngle = -87;
+
+keyTangent -t $time -itt spline $animCurve;
+keyTangent -e -a -t $time -inAngle $newAngle -outAngle $newAngle -outWeight 1 $animCurve;
+//keyTangent -e -a -t $time -outAngle ( (2*$linearAngle) + $linearAngle ) -inAngle ( (2*$linearAngle) + $linearAngle ) -outWeight 1 $animCurve;
+}
+
+// =============================================================
+// Slow-ins (negative)
+// =============================================================
+
+global proc slowInsNegative( string $animCurve, int $time )
+{
+keyTangent -t $time -ott linear $animCurve;
+float $linearAngleTmp[] = `keyTangent -t $time -q -outAngle $animCurve`;
+float $linearAngle = $linearAngleTmp[0]; //print ("linearAngle = " + $linearAngle + "\n");
+
+if ( ($linearAngle <= 0) && ($linearAngle > -0.5) )
+	$newAngle = -0.5;
+else if ( ($linearAngle <= -0.5) && ($linearAngle > -1) )
+	$newAngle = -2;
+else if ( ($linearAngle <= -1) && ($linearAngle > -2) )
+	$newAngle = -5;
+else if ( ($linearAngle <= -2) && ($linearAngle > -3) )
+	$newAngle = -8;
+else if ( ($linearAngle <= -3) && ($linearAngle > -4) )
+	$newAngle = -11;
+else if ( ($linearAngle <= -4) && ($linearAngle > -5) )
+	$newAngle = -16;
+else if ( ($linearAngle <= -5) && ($linearAngle > -6) )
+	$newAngle = -17;
+else if ( ($linearAngle <= -6) && ($linearAngle > -7) )
+	$newAngle = -19;
+else if ( ($linearAngle <= -7) && ($linearAngle > -10) )
+	$newAngle = -22;
+else if ( ($linearAngle <= -10) && ($linearAngle > -13) )
+	$newAngle = -32;
+else if ( ($linearAngle <= -13) && ($linearAngle > -17) )
+	$newAngle = -37;
+else if ( ($linearAngle <= -17) && ($linearAngle > -21) )
+	$newAngle = -44;
+else if ( ($linearAngle <= -21) && ($linearAngle > -25) )
+	$newAngle = -51.7;
+else if ( ($linearAngle <= -25) && ($linearAngle > -30) )
+	$newAngle = -59;
+else if ( ($linearAngle <= -30) && ($linearAngle > -40) )
+	$newAngle = -65;
+else if ( ($linearAngle <= -40) && ($linearAngle > -50) )
+	$newAngle = -72;
+else if ( ($linearAngle <= -50) && ($linearAngle > -60) )
+	$newAngle = -78;
+else if ( ($linearAngle <= -60) && ($linearAngle > -70) )
+	$newAngle = -81;
+else if ( ($linearAngle <= -70) && ($linearAngle > -80) )
+	$newAngle = -84;
+else if ( ($linearAngle <= -80) && ($linearAngle > -90) )
+	$newAngle = -87;
+	
+keyTangent -t $time -ott spline $animCurve;
+keyTangent -e -a -t $time -outAngle $newAngle -inAngle $newAngle -outWeight 1 $animCurve;
+//keyTangent -e -a -t $time -outAngle ( (2*$linearAngle) + $linearAngle ) -inAngle ( (2*$linearAngle) + $linearAngle ) -outWeight 1 $animCurve;
+}
+
+// =============================================================
+// Slow-outs (positive)
+// =============================================================
+
+global proc slowOutsPositive( string $animCurve, int $time )
+{
+keyTangent -t $time -itt linear $animCurve;
+float $linearAngleTmp[] = `keyTangent -t $time -q -inAngle $animCurve`;
+float $linearAngle = $linearAngleTmp[0]; //print ("linearAngle = " + $linearAngle + "\n");
+
+if ( ($linearAngle >= 0) && ($linearAngle < 0.5) )
+	$newAngle = 0.5;
+else if ( ($linearAngle >= 0.5) && ($linearAngle < 1) )
+	$newAngle = 2;
+else if ( ($linearAngle >= 1) && ($linearAngle < 2) )
+	$newAngle = 5;
+else if ( ($linearAngle >= 2) && ($linearAngle < 3) )
+	$newAngle = 8;
+else if ( ($linearAngle >= 3) && ($linearAngle < 4) )
+	$newAngle = 11;
+else if ( ($linearAngle >= 4) && ($linearAngle < 5) )
+	$newAngle = 16;
+else if ( ($linearAngle >= 5) && ($linearAngle < 6) )
+	$newAngle = 17;
+else if ( ($linearAngle >= 6) && ($linearAngle < 7) )
+	$newAngle = 19;
+else if ( ($linearAngle >= 7) && ($linearAngle < 10) )
+	$newAngle = 22;
+else if ( ($linearAngle >= 10) && ($linearAngle < 13) )
+	$newAngle = 32;
+else if ( ($linearAngle >= 13) && ($linearAngle < 17) )
+	$newAngle = 37;
+else if ( ($linearAngle >= 17) && ($linearAngle < 21) )
+	$newAngle = 44;
+else if ( ($linearAngle >= 21) && ($linearAngle < 25) )
+	$newAngle = 51.7;
+else if ( ($linearAngle >= 25) && ($linearAngle < 30) )
+	$newAngle = 59;
+else if ( ($linearAngle >= 30) && ($linearAngle < 40) )
+	$newAngle = 65;
+else if ( ($linearAngle >= 40) && ($linearAngle < 50) )
+	$newAngle = 72;
+else if ( ($linearAngle >= 50) && ($linearAngle < 60) )
+	$newAngle = 78;
+else if ( ($linearAngle >= 60) && ($linearAngle < 70) )
+	$newAngle = 81;
+else if ( ($linearAngle >= 70) && ($linearAngle < 80) )
+	$newAngle = 84;
+else if ( ($linearAngle >= 80) && ($linearAngle < 90) )
+	$newAngle = 87;
+	
+keyTangent -t $time -itt spline $animCurve;
+keyTangent -e -a -t $time -inAngle $newAngle -outAngle $newAngle -outWeight 1 $animCurve;
+//keyTangent -e -a -t $time -outAngle ( (2*$linearAngle) + $linearAngle ) -inAngle ( (2*$linearAngle) + $linearAngle ) -outWeight 1 $animCurve;
+}
+				
+// =============================================================
+// CorrectOvershoot main proc
+// =============================================================
+
+global proc correctOvershoot()
+{
+// Define all the variables.
+float $currentKeyValue;
+float $oneBeforeValue;
+float $twoBeforeValue;
+float $oneAfterValue;
+float $twoAfterValue;
+
+float $currentKeyTime;
+float $oneBeforeTime;
+float $twoBeforeTime;
+float $oneAfterTime;
+float $twoAfterTime;
+
+string $curvesList[] = `keyframe -q -name`;
+float $keysSelectedInGraphEditor[] = `keyframe -sl -q -tc`;
+
+// If no keys are selected in the graph editor, it means we can affect every curves.
+if ( `size $keysSelectedInGraphEditor` == 0 )
+	keyTangent -itt spline -ott spline;
+
+waitCursor -state on;
+$startTime = `timerX`;
+
+// Iterate through each animation curve.
+for ($j=0;$j<`size $curvesList`;$j++)
+	{
+	// Get all the keys in this curve.
+	float $keysList[];
+	$keysList = `keyframe -sl -q -tc`;
+
+	// ... They are either the currently selected keys in the graph editor...
+	if ( `size $keysList` == 0 )
+		$keysList = `keyframe -q -tc $curvesList[$j]`;
+	// ... Or every keys in the curve, in case no specific keys are selected.
+	else
+		$keysList = `keyframe -sl -q -tc $curvesList[$j]`;
+
+	// Iterate through the keys
+	for ($i=0;$i<`size $keysList`;$i++)
+		{
+		$currentKeyTime = `findKeyframe -t $keysList[$i] $curvesList[$j]`;
+		$oneBeforeTime = `findKeyframe -t $keysList[$i] -which previous $curvesList[$j]`;
+		$twoBeforeTime = `findKeyframe -t $oneBeforeTime -which previous $curvesList[$j]`;
+		$oneAfterTime = `findKeyframe -t $keysList[$i] -which next $curvesList[$j]`;
+		$twoAfterTime = `findKeyframe -t $oneAfterTime -which next $curvesList[$j]`;
+
+		// Calculate values on, and around the current key.
+		float $currentKeyValueTmp[] = `keyframe -t $keysList[$i] -q -vc $curvesList[$j]`;
+		float $oneBeforeValueTmp[] = `keyframe -t $oneBeforeTime -q -vc $curvesList[$j]`;
+		float $twoBeforeValueTmp[] = `keyframe -t $twoBeforeTime -q -vc $curvesList[$j]`;
+		float $oneAfterValueTmp[] = `keyframe -t $oneAfterTime -q -vc $curvesList[$j]`;
+		float $twoAfterValueTmp[] = `keyframe -t $twoAfterTime -q -vc $curvesList[$j]`;
+
+		$currentKeyValue = $currentKeyValueTmp[0];
+		$oneBeforeValue = $oneBeforeValueTmp[0];
+		$twoBeforeValue = $twoBeforeValueTmp[0];
+		$oneAfterValue = $oneAfterValueTmp[0];
+		$twoAfterValue = $twoAfterValueTmp[0];
+
+		// -------------------------------------------------------------
+		// Case 1 -> Peaks and plateaux (the extremes in value) -> flat.
+		// -------------------------------------------------------------
+		if ( (($oneBeforeValue <= $currentKeyValue) && ($oneAfterValue <= $currentKeyValue)) ||
+			 (($oneBeforeValue >= $currentKeyValue) && ($oneAfterValue >= $currentKeyValue)) )
+			{
+			peaksPlateaux( $curvesList[$j], $keysList[$i] ); //print ( "Peak/Plateau=" + $keysList[$i] + "\n");
+			}
+		
+		// -------------------------------------------------------------
+		// Case 2 -> Slow-ins (positive).
+		// ok -------------------------------------------------------------
+		else if ( ($oneAfterValue > $currentKeyValue) && 
+			($currentKeyValue >= ($oneAfterValue - ($oneAfterValue-$oneBeforeValue)/5) ) &&
+			($currentKeyTime-$oneBeforeTime) >= ($oneAfterTime - $currentKeyTime) )
+			{
+			slowInsPositive( $curvesList[$j], $keysList[$i] ); //print ( "Slow-in (positive)=" + $keysList[$i] + "\n");
+			}
+
+		// -------------------------------------------------------------
+		// Case 3 -> Slow-outs (negative).
+		// -------------------------------------------------------------
+		else if ( ($twoBeforeValue <= $oneBeforeValue) && ($oneBeforeValue > $currentKeyValue) &&
+			($currentKeyValue >= ($oneBeforeValue - ($oneBeforeValue-$oneAfterValue)/5) ))
+			{
+			slowOutsNegative( $curvesList[$j], $keysList[$i] ); //print ( "Slow-out (negative)=" + $keysList[$i] + "\n");
+			}
+
+		// -------------------------------------------------------------
+		// Case 4 -> Slow-ins (negative).
+		// ok -------------------------------------------------------------
+		else if ( ($oneAfterValue < $currentKeyValue) && 
+			($currentKeyValue <= (($oneBeforeValue-$oneAfterValue)/5 + $oneAfterValue)) &&
+			($currentKeyTime-$oneBeforeTime) >= ($oneAfterTime-$currentKeyTime) )
+			{
+			slowInsNegative( $curvesList[$j], $keysList[$i] ); //print ( "Slow-in (negative)=" + $keysList[$i] + "\n");
+			}
+
+		// -------------------------------------------------------------
+		// Case 5 -> Slow-outs (positive).
+		// ok -------------------------------------------------------------
+		else if ( ($twoBeforeValue >= $oneBeforeValue) && ($oneBeforeValue < $currentKeyValue) &&
+			($currentKeyValue <= (($oneAfterValue-$oneBeforeValue)/5 + $oneBeforeValue) ) )
+			{
+			slowOutsPositive( $curvesList[$j], $keysList[$i] ); //print ( "Slow-out (positive)=" + $keysList[$i] + "\n");
+			}
+
+		// -------------------------------------------------------------
+		// Case 6 -> Inbetween, so default to spline.
+		// -------------------------------------------------------------
+		else
+			keyTangent -itt spline -ott spline -t $keysList[$i] $curvesList[$j];
+		}
+	}
+
+waitCursor -state off;
+
+$totalTime = `timerX -startTime $startTime`;//print ("Total Time: " + $totalTime + "\n");
+}
+// ---------------------------------------------------------------------------------------------------------------------------------------
+// Correct overshoot end
+// ---------------------------------------------------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------------------------------------------------
+
+// ====================================
+// Add arbitrary breakdown
+// ====================================
+
+global proc int addArbitraryBreakdown ()
+{
+string $tmpName = `button -q -l arbitraryFirstButton`;
+
+string $buffer[];
+$numTokens = `tokenize $tmpName "\/" $buffer`;
+int $argument = $buffer[1];
+return $argument;
+}
+
+// ====================================
+// Click on plus
+// ====================================
+
+global proc addOneFrame ()
+{
+int $retimeFieldValue = `intField -q -v retimeField`;
+if ( ($retimeFieldValue + 1) <= 999 )
+	$retimeField = (`intField -e -minValue 1 -maxValue 999 -v ($retimeFieldValue + 1) retimeField`);
+}
+
+// ====================================
+// Click on minus
+// ====================================
+
+global proc removeOneFrame ()
+{
+int $retimeFieldValue = `intField -q -v retimeField`;
+
+if ( ($retimeFieldValue - 1) >= 1 )
+	$retimeField = (`intField -e -minValue 1 -maxValue 999 -v ($retimeFieldValue - 1) retimeField`);
+}
+
+// ====================================
+// Do retime
+// ====================================
+
+global proc doRetime ()
+{
+string $selection[] = `ls -sl`;									
+// Get what the user selected.
+string $range = `timeControl -q -rng timeControl1`;
+int $firstRange;
+int $lastRange;
+int $newRetimeValue;
+
+if ( ($selection[0]) == "" )
+	error "===> retimingTool: You must select an animated object first!!!";
+
+// Deselect any selected keys in the graph editor.
+selectKey -cl $selection;
+	
+string $buffer[];								
+$numTokens = `tokenize $range "\":" $buffer`;	 
+int $tmpBuf0 = $buffer[0];
+int $tmpBuf1 = $buffer[1];
+
+// Get what is selected in the timeline.
+if ( $tmpBuf0 > $tmpBuf1 )
+	{
+	$firstRange = $buffer[1];					 
+	$lastRange = $buffer[0];
+	}
+else
+	{	
+	$firstRange = $buffer[0];					 
+	$lastRange = $buffer[1];
+	}
+
+$newRetimeValue = `intField -q -v retimeField`; 
+retimingProcess ( $firstRange, $lastRange, $newRetimeValue );
+}
+
+// ==================================================
+// Determine user's method choice
+// ==================================================
+
+global proc int[] determineMethod ()
+{
+global string $userMethod;
+string $selection[] = `ls -sl`;									
+string $range = `timeControl -q -rng timeControl1`; 
+string $buffer[];								
+$numTokens = `tokenize $range "\":" $buffer`;	 
+int $firstRange = $buffer[0]; //print (" firstRange=" + $buffer[0]);
+int $lastRange = $buffer[1]; //print (" lastRange=" + $buffer[1]);
+int $firstKey = `findKeyframe -time ($firstRange+1) -which previous`; //print (" $firstKey=" + $firstKey);
+int $nextKey = `findKeyframe -time ($lastRange-1) -which next`; //print (" nextKey=" + $nextKey);
+
+if ( ($selection[0]) == "" )
+	error "===> retimingTool: You need to select an animated object first!!!";
+
+if ( ($firstKey == $nextKey) )
+	error "You must select a valid key : not before first or after last! Also check for unsnapped keys!";
+
+if ( ($lastRange - $firstRange) != 1 )
+	error "===> retimingTool: Do NOT select a range, please...";
+
+if ( (`currentTime -q` == $firstKey) && ( (`currentTime -q`)+2) <= $nextKey )
+	error "===> retimingTool: You must either choose an inbeetween, or a key on one!!!";
+
+if ( `findKeyframe -time $firstKey -which next` == ($firstKey+1) )
+	$userMethod = "compressed";
+else
+	$userMethod = "expanded";
+
+int $arguments[] = { $firstKey, $nextKey };
+return $arguments;
+}
+
+// =============================================
+// Add a breakdown favoring the first key
+// =============================================
+
+global proc addBreakdownFirst ( int $firstKey, int $nextKey, int $breakdown )
+{
+global int $retimeVerbose;
+$retimeVerbose = 0;
+global string $userMethod;
+string $selection[] = `ls -sl`;
+string $bdText;
+int $keyDuration;
+int $relativePosition;
+
+if ( $userMethod == "expanded" )
+	{
+	// Determine current key duration and relative position of new key compared to the first key.
+	$keyDuration = $nextKey - $firstKey; //print (" $keyDuration=" + $keyDuration);
+	$relativePosition = `currentTime -q` - $firstKey; //print (" $relativePosition=" + $relativePosition);
+	}
+
+// Space the two keys to create the new key.
+retimingProcess ( $firstKey, $nextKey, $breakdown );
+
+// If the overshoot option box is unchecked, make tangents beetween the two keys linear.
+if ( `checkBox -q -v allowOvershootCB` == 0 )
+	{
+	keyTangent -t $firstKey -ott linear $selection;
+	keyTangent -t ($firstKey + $breakdown) -itt linear $selection;
+	}
+	
+// Determine user's curves default preferences.
+string $inTangentDefault[] = `keyTangent -q -g -inTangentType`; //print (" $inTangentDefault=" + $inTangentDefault[0]);
+string $outTangentDefault[] = `keyTangent -q -g -outTangentType`; //print (" $outTangentDefault=" + $outTangentDefault[0]);
+
+// Insert a new key one frame after the first key.
+//if ( `radioCollection -q -sl breakdownChoiceRB` == "asKey" ) 
+setKeyframe -i -t ( $firstKey + 1 ) -breakdown 0 -hierarchy none -controlPoints 0 -shape 1;
+//else
+//	setKeyframe -i -t ( $firstKey + 1 ) -breakdown 1 -hierarchy none -controlPoints 0 -shape 1;
+
+// Correct the tangents on, and around the newly created key.
+keyTangent -t $firstKey -itt $inTangentDefault[0] -ott $outTangentDefault[0] $selection;
+keyTangent -t ($firstKey + 1) -itt $inTangentDefault[0] -ott $outTangentDefault[0] $selection;
+keyTangent -t ($firstKey + $breakdown) -itt $inTangentDefault[0] -ott $outTangentDefault[0] $selection;
+
+if ( $userMethod == "compressed" )
+	{
+	// Go one frame after the first key, on the newly created third, and close the space.
+	currentTime ( $firstKey + 1 ) -update no;
+	retimingProcess ( ($firstKey + 1), ($firstKey + 2), 1 );
+	}
+else
+	{
+	// Go to first key, retime according to new key position, go to new key and retime to next key.
+	retimingProcess ( $firstKey, ($firstKey + 1), $relativePosition );
+	retimingProcess ( ($firstKey+$relativePosition), (($firstKey+$relativePosition) + 1), ($keyDuration-$relativePosition) );
+	}
+
+if ( $breakdown == 2 )
+	$bdText = "Half";
+else if ( $breakdown == 3 )
+	$bdText = "Third";
+else if ( $breakdown == 5 )
+	$bdText = "Fifth";
+else if ( $breakdown == 9 )
+	$bdText = "Ninth";
+else
+	$bdText = $breakdown;
+
+global int $retimeVerbose = 1;
+print "\n"; print ("---> Ok! Added a " + $bdText + " at < " + ( `currentTime -q` ) + " > favoring key < " + $firstKey + " > <---");
+}
+
+// ===========================================
+// Add a breakdown favoring the next key
+// ===========================================
+
+global proc addBreakdownNext ( int $firstKey, int $nextKey, int $breakdown )
+{
+global int $retimeVerbose;
+$retimeVerbose = 0;
+global string $userMethod;
+string $selection[] = `ls -sl`;
+string $bdText;
+int $keyDuration;
+int $relativePosition;
+
+if ( $userMethod == "expanded" )
+	{
+	// Determine current key duration and relative position of new key compared to the first key.
+	$keyDuration = $nextKey - $firstKey; //print (" $keyDuration=" + $keyDuration);
+	$relativePosition = `currentTime -q` - $firstKey; //print (" $relativePosition=" + $relativePosition);
+	}
+
+// Space the two keys to create the new key.
+retimingProcess ( $firstKey, $nextKey, $breakdown );
+
+// If the overshoot option box is unchecked, make tangents beetween the two keys linear.
+if ( `checkBox -q -v allowOvershootCB` == 0 )
+	{
+	keyTangent -t $firstKey -ott linear $selection;
+	keyTangent -t ($firstKey + $breakdown) -itt linear $selection;
+	}
+	
+// Determine user's curves default preferences.
+string $inTangentDefault[] = `keyTangent -q -g -inTangentType`; //print (" $inTangentDefault=" + $inTangentDefault[0]);
+string $outTangentDefault[] = `keyTangent -q -g -outTangentType`; //print (" $outTangentDefault=" + $outTangentDefault[0]);
+
+// Insert a new key one frame after the first key.
+//if ( `radioCollection -q -sl breakdownChoiceRB` == "asKey" ) 
+setKeyframe -i -t ( $firstKey + ($breakdown - 1) ) -breakdown 0 -hierarchy none -controlPoints 0 -shape 1;
+//else
+//	setKeyframe -i -t ( $firstKey + ($breakdown - 1) ) -breakdown 1 -hierarchy none -controlPoints 0 -shape 1;
+
+// Correct the tangents on, and around the newly created key.
+keyTangent -t $firstKey -itt $inTangentDefault[0] -ott $outTangentDefault[0] $selection;
+keyTangent -t ( $firstKey + ($breakdown - 1) ) -itt $inTangentDefault[0] -ott $outTangentDefault[0] $selection;
+keyTangent -t ( $firstKey + $breakdown ) -itt $inTangentDefault[0] -ott $outTangentDefault[0] $selection;
+
+if ( $userMethod == "compressed" )
+	{
+	// Go one frame after the first key, on the newly created third, and close the space.
+	currentTime ( $firstKey + 1 ) -update no;
+	retimingProcess ( ($firstKey + 1), ($firstKey + 2), 1 );
+	}
+else
+	{
+	// Go to first key, retime according to new key position, go to new key and retime to next key.
+	retimingProcess ( $firstKey, ($firstKey + 1), $relativePosition );
+	retimingProcess ( ($firstKey+$relativePosition), (($firstKey+$relativePosition)+1), ($keyDuration-$relativePosition) );
+	}
+
+if ( $breakdown == 2 )
+	$bdText = "Half";
+else if ( $breakdown == 3 )
+	$bdText = "Third";
+else if ( $breakdown == 5 )
+	$bdText = "Fifth";
+else if ( $breakdown == 9 )
+	$bdText = "Ninth";
+else
+	$bdText = $breakdown;
+	
+global int $retimeVerbose = 1;
+print "\n"; print ("---> Ok! Added a " + $bdText + " at < " + ( `currentTime -q` ) + " > favoring key < " + ( $nextKey ) + " > <---");
+}
+
+// ====================================
+// Check for unsnapped keys
+// ====================================
+/*
+global proc checkForUnsnappedKeys ()
+{
+global string $gMainWindow;
+string $selection[] = `ls -sl`;	
+
+if ( $selection[0] != "" )
+	{
+	selectKey -clear;
+	
+	if (!`selectKey -uk 1`)
+		{
+		print "\n"; print ("---> There are no unsnapped keys on the selected object(s)...");
+
+		$unsnappedCD = `confirmDialog -title "Confirm" -message "There are no unsnapped keys on the selected object(s)!"
+			-button "Close" -defaultButton "Close" -parent $gMainWindow
+			-cancelButton "Close" -dismissString "Close"`;
+		}
+	else
+		{
+		$unsnappedCD = `confirmDialog -title "Confirm" -message "There are some unsnapped keys!\nThey have been selected in the Graph Editor.\n\nWhat do you want to do with them?"
+			-button "Snap Them" -button "Delete Them" -button "Do Nothing" -defaultButton "Snap Them" -parent $gMainWindow
+			-cancelButton "Do Nothing" -dismissString "Do Nothing"`;
+
+		if ( $unsnappedCD == "Delete Them" )
+			cutKey -animation keys -clear;
+
+		if ( $unsnappedCD == "Snap Them" )
+			snapKey -timeMultiple 1;
+ 		}
+	}
+else
+	warning "---> You must select an animated object first!!! <---";
+}
+*/
+// ====================================
+// Key all keys
+// ====================================
+
+global proc keyAllKeys ()
+{
+global string $gMainWindow;
+string $selection[] = `ls -sl`;	
+
+if ( ($selection[0]) == "" )
+	error "===> retimingTool: You must select an animated object first!!!";
+
+waitCursor -state on;
+
+selectKey -clear;
+
+int $firstKey;
+int $lastKey;
+string $range = `timeControl -q -rng timeControl1`; 
+string $buffer[];
+$numTokens = `tokenize $range "\":" $buffer`;	 
+int $firstRange = $buffer[0]; //print (" firstRange = " + $firstRange);				 
+int $lastRange = $buffer[1]; //print (" lastRange = " + $lastRange);
+
+if ( ($lastRange - $firstRange) > 1 )
+	{
+	if ( $lastRange > $firstRange)
+		{
+		$firstKey = (`findKeyframe -time ($firstRange - 1) -which next`); //print (" firstKey = " + $firstKey);
+		$lastKey = (`findKeyframe -time $lastRange -which previous`); //print (" lastKey = " + $lastKey);
+		}
+	else
+		{
+		$firstKey = (`findKeyframe -time ($lastRange - 1) -which next`); //print (" firstKey = " + $firstKey);
+		$lastKey = (`findKeyframe -time $firstRange -which previous`); //print (" lastKey = " + $lastKey);
+		}
+	}
+else 
+	{
+	$firstKey = (`findKeyframe -time (-9999) -which next`); //print (" firstKey = " + $firstKey);
+	$lastKey = (`findKeyframe -time 9999 -which previous`); //print (" lastKey = " + $lastKey);
+	}
+
+float $toto[] = `keyframe -t $firstKey -bd true -q`;
+
+if ( `size $toto` == 0 )
+	setKeyframe -i -breakdown 0 -hierarchy none -controlPoints 0 -t $firstKey;
+else
+	setKeyframe -i -breakdown 1 -hierarchy none -controlPoints 0 -t $firstKey;
+
+print "--> Keying all keys in progress. Please wait...";
+
+int $currentKey;
+
+if ( `checkBox -q -v timeRangeOnlyCB` == 1 )
+	{
+	$currentKey = `playbackOptions -q -min`; //print ( "$currentKey  = " + $currentKey + "\n");
+//	$lastKey = `playbackOptions -q -max`; print ( "$lastKey  = " + $lastKey + "\n");
+	}
+else
+	$currentKey = $firstKey;
+	
+int $nextKey = (`findKeyframe -time $currentKey -which next`); //print (" nextKey = " + $nextKey + "\n");
+
+while ( ($nextKey >= $firstKey) && ($nextKey <= $lastKey) )
+	{
+	$nextKey = (`findKeyframe -time $currentKey -which next`); //print (" nextKey = " + $nextKey + "\n");
+
+	if ( $nextKey == $currentKey )
+		break;
+
+	if ( (`checkBox -q -v timeRangeOnlyCB` == 1) && ( $nextKey > `playbackOptions -q -max`) )
+		break;
+
+	$currentKey = $nextKey; //print (" currentKey = " + $currentKey + "\n");
+
+	float $toto[] = `keyframe -t $nextKey -bd true -q`;
+
+	if ( `size $toto` == 0 )
+		setKeyframe -i -breakdown 0 -hierarchy none -controlPoints 0 -t $nextKey;
+	else
+		setKeyframe -i -breakdown 1 -hierarchy none -controlPoints 0 -t $nextKey;
+	}
+
+// ----------------------------
+// Ouput result window
+// ----------------------------
+
+if (`selectKey -uk 1`)
+	$addedWarning = "\nWARNING: YOU HAVE UNSNAPPED KEYS!\nKEY ALL KEYS WILL NOT WORK WITH UNSNAPPED KEYS!!!";
+else
+	$addedWarning = "";
+
+//confirmDialog -title "Confirm" -message ("Key all keys is done!" + $addedWarning)
+//	-button "Ok" -defaultButton "Ok" //-parent $gMainWindow
+//	-cancelButton "Ok" -dismissString "Ok";
+
+waitCursor -state off;
+
+print "\n===> Done!";
+}
+
+// ====================================
+// Retiming process in itself
+// ====================================
+
+global proc retimingProcess ( int $firstRange, int $lastRange, int $newValue )
+{
+global int $retimeVerbose; //print ( "retimeVerbose = " + $retimeVerbose + "\n");
+string $selection[] = `ls -sl`;									
+int $firstKey;
+int $lastKey;
+int $currentKey;
+int $whatsAfter;
+int $isItARange = 0;
+
+if ( ($selection[0]) == "" )
+	error "===> retimingTool: You must select an animated object first!!!";
+	
+selectKey -cl;
+
+$firstKey = `findKeyframe -time ($firstRange+1) -which previous`; //print (" firstKey=" + $firstKey);
+$lastKey = `findKeyframe -time ($lastRange+1) -which previous`; //print (" lastKey=" + $lastKey);
+$whatsAfter = `findKeyframe -time $lastKey -which next`; //print (" whatsAfter=" + $whatsAfter);
+
+if ( $whatsAfter == $lastKey )
+	{
+	$currentKey = `findKeyframe -time $lastKey -which previous`; //print (" 1:currentKey=" + $currentKey);
+	}
+else
+	{
+	$currentKey = `findKeyframe -time $lastRange -which previous`; //print (" 2:currentKey=" + $currentKey);
+	}
+		
+$rememberCurrent = $currentKey;
+$previousKey = `findKeyframe -time $currentKey -which previous`; //print (" previousKey=" + $previousKey);
+$nextKey = `findKeyframe -time $currentKey -which next`; //print (" nextKey=" + $nextKey);
+$keepThisOne = $nextKey;
+
+if ( ($nextKey > $currentKey) && ($nextKey > $firstKey) )
+	{
+	$currentLength = ($nextKey - $currentKey); //print (" currentLength=" + $currentLength);
+	$difference = ($currentLength -($newValue)); //print (" difference=" + $difference);
+	$afterThat = $nextKey + ":9999"; //print (" afterThat=" + $afterThat);
+
+string $typeOfRefresh = `playbackOptions -q -v`;
+playbackOptions -v "active";
+
+if ( $firstKey == $currentKey )
+		{
+		keyframe -abd false -option move -relative -time $afterThat -timeChange (-($difference));
+		$keepThisOne = $keepThisOne + (-($difference));
+
+		if ( $retimeVerbose == 1 )
+			{
+			print "\n"; print ("---> Now retiming Key < " + $currentKey + " > on " + $newValue + "(s)... <---");
+			}
+		}
+	else
+		{
+		$isItARange = 1;
+		print "\n"; print "---> Retiming in progress...";
+
+		while ( $currentKey >= $firstKey )
+			{
+			int $currentLength = $nextKey - $currentKey; //print (" currentLength=" + $currentLength);
+			int $difference = $currentLength - $newValue; //print (" difference=" + $difference);
+			$afterThat = $nextKey + ":9999"; //print (" afterThat=" + $afterThat);
+
+			if ( $difference != 0 )
+				{
+				keyframe -abd false -option move -relative -time $afterThat -timeChange (-($difference)); 
+				$keepThisOne = $keepThisOne + (-($difference));
+
+				if ( $retimeVerbose == 1 )
+					{
+					print "\n"; print ("---> Now retiming Key < " + $currentKey + " > on " + $newValue + "(s)... <---");
+					}
+				}
+
+			$oldCurrentKey = $currentKey;
+			$currentKey = `findKeyframe -time $oldCurrentKey -which previous`; //print ("*** currentKey=" + $currentKey);
+				
+			$previousKey = `findKeyframe -time $currentKey -which previous`; //print (" previousKey=" + $previousKey);
+			$oldNextKey = $nextKey;
+			$nextKey = `findKeyframe -time $currentKey -which next`; //print (" nextKey=" + $nextKey);
+				
+         		if ( ($currentKey < $firstKey) || ($nextKey >= $oldNextKey) )
+				break;
+			}
+		}
+
+playbackOptions -v $typeOfRefresh;
+
+	if ( $isItARange == 1 )
+		{
+		print "\n"; print ("---> Ok! Retimed from key < " + $firstKey + " > to key < " + $rememberCurrent + " > on " + $newValue + "(s) <---");
+		}
+	else
+    	{
+		if ( ($currentLength == $newValue) || ($difference==0) )
+        	{
+			warning ("---> The key < " + $firstKey + " > is already " + $newValue + " frame(s) long <---");
+         	}
+		else
+           	{
+			if ( $retimeVerbose == 1 )
+				{
+				print "\n"; print ("---> Ok! Retimed key < " + $firstKey + " > on " + $newValue + "(s) <---");
+				}
+			}
+		}
+	}
+else
+	{
+	error "===> retimingTool: You must select a valid key (that is NOT before the first one OR after the last) !!!";
+	}
+}
+
+// ====================================
+// Change key tangents: In
+// ====================================
+
+global proc tangentIn ()
+{
+string $sel[] = `ls -sl`;
+
+if ( $sel[0] != "" )
+	{
+	selectKey -clear;
+	int $currentPosition = ( (`currentTime -q`) + 1 );
+	int $currentKey = (`findKeyframe -time $currentPosition -which previous`); //print (" currentKey = " + $currentKey);
+
+	string $tangentsChoice = `radioCollection -q -sl tangentsChoiceRB`;
+
+	string $attrList[] = `channelBox -q -sma mainChannelBox`; //print (" attrList = " + $attrList[0] + "\n");
+
+	if ( $attrList[0] != "" )
+		{
+		string $selection[] = `ls -sl`;
+
+		for ($i=0;$i < (`size $selection`);$i++)
+			{
+			for ($j=0;$j < (`size $attrList`);$j++)
+				{
+				string $curveToChange = ( $selection[$i] + "." + $attrList[$j] );
+
+				if ( $tangentsChoice == "step" )
+					$tangentsChoice = "flat";
+
+				keyTangent -t $currentKey -itt $tangentsChoice $curveToChange;
+				}
+			}
+		}
+	else
+		{
+		if ( $tangentsChoice == "step" )
+			$tangentsChoice = "flat";
+
+		keyTangent -t $currentKey -itt $tangentsChoice; //print (" currentKey = " + $currentKey);
+		}
+	}
+}
+
+// ====================================
+// Change key tangents: Out
+// ====================================
+
+global proc tangentOut ()
+{
+string $sel[] = `ls -sl`;
+
+if ( $sel[0] != "" )
+	{
+	selectKey -clear;
+	int $currentPosition = ( (`currentTime -q`) + 1 );
+	int $currentKey = (`findKeyframe -time $currentPosition -which previous`); //print (" currentKey = " + $currentKey);
+
+	string $tangentsChoice = `radioCollection -q -sl tangentsChoiceRB`;
+
+	string $attrList[] = `channelBox -q -sma mainChannelBox`; //print (" attrList = " + $attrList[0] + "\n");
+
+	if ( $attrList[0] != "" )
+		{
+		string $selection[] = `ls -sl`;
+
+		for ($i=0;$i < (`size $selection`);$i++)
+			{
+			for ($j=0;$j < (`size $attrList`);$j++)
+				{
+				string $curveToChange = ( $selection[$i] + "." + $attrList[$j] );
+				keyTangent -t $currentKey -ott $tangentsChoice $curveToChange;
+				}
+			}
+		}
+	else
+		{
+		keyTangent -t $currentKey -ott $tangentsChoice; //print (" currentKey = " + $currentKey);
+		}
+	}
+}
+
+// ====================================
+// Change key tangents: Both
+// ====================================
+
+global proc tangentsBoth ()
+{
+string $sel[] = `ls -sl`;
+
+if ( $sel[0] != "" )
+	{
+	selectKey -clear;
+	int $currentPosition = ( (`currentTime -q`) + 1 );
+	int $currentKey = (`findKeyframe -time $currentPosition -which previous`); //print (" currentKey = " + $currentKey);
+
+	string $tangentsChoice = `radioCollection -q -sl tangentsChoiceRB`;
+
+	string $attrList[] = `channelBox -q -sma mainChannelBox`; //print (" attrList = " + $attrList[0] + "\n");
+
+	if ( $attrList[0] != "" )
+		{
+		string $selection[] = `ls -sl`;
+
+		for ($i=0;$i < (`size $selection`);$i++)
+			{
+			for ($j=0;$j < (`size $attrList`);$j++)
+				{
+				string $curveToChange = ( $selection[$i] + "." + $attrList[$j] );
+				keyTangent -t $currentKey -ott $tangentsChoice $curveToChange;
+
+				if ( $tangentsChoice == "step" )
+					$tangentsChoice = "flat";
+				
+				keyTangent -t $currentKey -itt $tangentsChoice $curveToChange;
+				}
+			}
+		}
+	else
+		{
+		keyTangent -t $currentKey -ott $tangentsChoice; //print (" currentKey = " + $currentKey);
+
+		if ( $tangentsChoice == "step" )
+			$tangentsChoice = "flat";
+
+		keyTangent -t $currentKey -itt $tangentsChoice; //print (" currentKey = " + $currentKey);
+		}
+	}
+}
+
+// ==============================================
+// Tells the length of the selected range
+// ==============================================
+
+global proc tellLength ()
+{
+string $range = `timeControl -q -rng timeControl1`;
+string $buffer[];
+$numTokens = `tokenize $range "\":" $buffer`;
+int $firstRange = $buffer[0];
+int $lastRange =  $buffer[1];
+int $firstKey = `findKeyframe -time ($firstRange + 1) -which previous`;
+int $nextKey = `findKeyframe -time ($lastRange - 1) -which next`;
+int $currentLength = $nextKey - $firstKey;
+
+if ( $currentLength < 0 )
+	{
+	print "\n"; warning "---> Select an animated object first!!! <---";    
+	}
+
+else if ( $currentLength == 0 )
+	{
+	print "\n"; print ("---> The key on < " + $firstKey + " > is " + ((`playbackOptions -q -max` - $firstKey)+1) + " frame(s) long <---");
+	text -e -l ("   " + ((`playbackOptions -q -max` - $firstKey)+1) + "  frame(s)") rtKeyLengthText;
+	}
+
+else
+	{
+	if ( $firstRange != ($lastRange -1) ) 
+		{
+		print "\n"; print ("---> The selected frame range from #" + $firstRange + " to #" + ($lastRange -1) + " is " + ((($lastRange-1) - $firstRange)+1) + " frames long <---");
+		text -e -l ("   " + ((($lastRange-1) - $firstRange)+1) + "  frame(s)") rtKeyLengthText;
+		}
+	else
+      	{
+		print "\n"; print ("---> The key on < " + $firstKey + " > is " + $currentLength + " frame(s) long <---");
+		text -e -l ("   " + $currentLength + "  frame(s)") rtKeyLengthText;
+		}
+	}
+}
+
+// =======================
+// retimingTool UI
+// =======================
+
+global proc retimingTool ()
+{	
+// ----------------
+// Build the UI
+// ----------------
+	
+global string $retimingToolVersion;
+
+if ((`window -ex retimingToolWindow`) == true) deleteUI retimingToolWindow;
+
+window -tlb false -resizeToFitChildren true -sizeable true -title ("retimingTool v" + $retimingToolVersion) retimingToolWindow;
+
+int $h = 19;	
+		
+		columnLayout -adjustableColumn false;
+
+			frameLayout -mw 2 -mh 2 -lv off -borderStyle "etchedOut" retimeFrameLayout;
+					columnLayout -adjustableColumn true;
+						rowColumnLayout -nc 7 -cw 1 30 -cw 2 30 -cw 3 30 -cw 4 35 -cw 5 30 -cw 6 30 -cw 7 30;
+								
+							button -h $h -label "\- 8" -command "for ($i=0;$i<8;$i++){removeOneFrame;} setFocus `getPanel -wf`";
+							button -h $h -label "\- 4" -command "for ($i=0;$i<4;$i++){removeOneFrame;} setFocus `getPanel -wf`";
+							button -h $h -label "\- 1" -command "removeOneFrame;setFocus `getPanel -wf`";
+						
+							intField -h $h -minValue 1 -maxValue 999 -v 2 retimeField;
+
+							button -h $h -label "\+ 1" -command "addOneFrame;setFocus `getPanel -wf`";
+							button -h $h -label "\+ 4" -command "for ($i=0;$i<4;$i++){addOneFrame;} setFocus `getPanel -wf`";
+							button -h $h -label "\+ 8" -command "for ($i=0;$i<8;$i++){addOneFrame;} setFocus `getPanel -wf`";
+
+						setParent..;
+
+//						separator -h 2 -style "none";
+	//					button -h $h -ann "Retime the selected key(s)" -label "Retime!" -command "doRetime;setFocus `getPanel -wf`";
+
+						separator -height 2 -style "none";
+
+						columnLayout -adjustableColumn true;
+							rowColumnLayout -nc 3 -cw 1 90 -cw 2 50 -cw 3 70;
+						button -h $h -ann "Retime the selected key(s)" -label "Retime!" -command "doRetime;setFocus `getPanel -wf`";
+							button -h $h -ann "What is the length of the selected key(s)?" -label "Length?" -command "tellLength;setFocus `getPanel -wf`";
+							text -l "     ---   frame(s)" rtKeyLengthText;
+						setParent..;
+
+					setParent..;
+				setParent..;
+			setParent..;
+
+			separator -height 2 -style "none";
+
+			frameLayout -mw 2 -mh 2 -bgc .75 .75 .75 -label "Keys & Breakdowns" -borderStyle etchedOut -cll true addBreakdownFrameLayout;
+				columnLayout -adjustableColumn true;
+
+					checkBox -h 20 -ann "Allow overshoot (works only with splines)" -al "left" -vis 1 -label "Allow Overshoot (when using splines)" allowOvershootCB;
+
+					rowColumnLayout -nc 3 -cw 1 80 -cw 2 55 -cw 3 80;
+
+						columnLayout -adjustableColumn true;
+				
+							button -ann "Add a third closer to the first key" -height $h -label "<- Add a 1/3" -command "int $tmp[]=\`determineMethod\`; addBreakdownFirst ( $tmp[0], $tmp[1], 3 );setFocus `getPanel -wf`";
+							separator -h 1 -style "none";
+							button -ann "Add a fifth closer to the first key" -height $h -label "<- Add a 1\/5" -command "int $tmp[]=\`determineMethod\`; addBreakdownFirst ( $tmp[0], $tmp[1], 5 );setFocus `getPanel -wf`";
+							separator -h 1 -style "none";
+							button -ann "Add an arbitrary breakdown closer to the first key" -height $h -label "<- Add a 1\/12" -command "int $intTmp[]=\`determineMethod\`; int $tmp2=\`addArbitraryBreakdown\`; addBreakdownFirst ( $intTmp[0], $intTmp[1], $tmp2 )" arbitraryFirstButton;
+						setParent..;
+							
+						columnLayout -adjustableColumn true;
+							button -ann "Add a half between the first key and the next key" -height (58-$h) -w 75 -label "Add 1\/2" -command "int $tmp[]=\`determineMethod\`; addBreakdownNext ( $tmp[0], $tmp[1], 2 ); setFocus `getPanel -wf`";
+							intField -minValue 2 -maxValue 24 -v 12 -h 22 -enterCommand "int $tmp3 = `intField -q -v arbitraryIntField`; button -e -l (\"<- Add a 1\/\" + $tmp3) arbitraryFirstButton; button -e -l (\"Add a 1\/\" + $tmp3 + \" ->\") arbitraryNextButton;" arbitraryIntField;
+						setParent..;
+
+						columnLayout -adjustableColumn true;
+							button -ann "Add a third closer to the next key" -height $h -label "Add a 1\/3 ->" -command "int $tmp[]=\`determineMethod\`; addBreakdownNext ( $tmp[0], $tmp[1], 3 );setFocus `getPanel -wf`";
+							separator -h 1 -style "none";
+							button -ann "Add a fifth closer to the next key" -height $h -label "Add a 1\/5 ->" -command "int $tmp[]=\`determineMethod\`; addBreakdownNext ( $tmp[0], $tmp[1], 5 );setFocus `getPanel -wf`";
+							separator -h 1 -style "none";
+							button -ann "Add an arbitrary breakdown closer to the next key" -height $h -label "Add a 1\/12 ->" -command "int $intTmp[]=\`determineMethod\`; int $tmp2=\`addArbitraryBreakdown\`; addBreakdownNext ( $intTmp[0], $intTmp[1], $tmp2 )" arbitraryNextButton;
+						setParent..;
+					setParent..;
+
+				separator -height 2 -style "none";
+
+//				columnLayout -adjustableColumn true;
+//					rowColumnLayout -numberOfColumns 2 -cw 1 85 -cw 2 120;
+//						radioCollection breakdownChoiceRB;
+//						radioButton -ann "1/3, 1/5 or 1/2 will appear red in the Timeline" -label "As a Key" asKey;
+//						radioButton -ann "1/3, 1/5 or 1/2 will appear green in the Timeline" -label "As a Breakdown" asBkd;
+//						radioCollection -e -sl asKey breakdownChoiceRB;
+//					setParent..;
+//				setParent..;
+
+				separator -height 3 -w 20 -style "out";
+				separator -height 4 -w 20 -style "none";
+
+				columnLayout -adjustableColumn true;
+
+					rowColumnLayout -numberOfColumns 3 -co 2 "left" 2 -cw 1 110 -cw 2 6 -cw 3 100;
+						button -h ($h+2) -ann "Make sure everything is keyed" -label "Key All KEYS!!!" -command "keyAllKeys;setFocus `getPanel -wf`";
+						separator -style "none";
+						checkBox -ann "Key All Keys for the selected TimeRange only" -al "left" -vis 1 -label "Timerange Only" timeRangeOnlyCB;				
+					setParent..;
+
+				separator -height 2 -w 20 -style "none";
+				setParent..;
+			setParent..;
+		setParent..;
+
+			separator -height 2 -style "none";
+
+			frameLayout -mw 2 -mh 2 -bgc .75 .75 .75 -label "Tangents & Curves" -borderStyle etchedOut -cll true tangentsAndCurvesFrameLayout;
+					columnLayout -adjustableColumn true;
+						rowColumnLayout -numberOfColumns 4 -cw 1 58 -cw 2 58 -cw 3 50 -cw 4 50;
+							radioCollection tangentsChoiceRB;
+							radioButton -label "Spline" spline;
+							radioButton -label "Linear" linear;
+							radioButton -label "Step" step;
+							radioButton -label "Clamp" clamped;
+							radioCollection -e -sl spline tangentsChoiceRB;
+						setParent..;
+
+						rowColumnLayout -numberOfColumns 3 -cw 1 55 -cw 2 55 -cw 3 105;
+							button -height $h -label "--> In" -ann "Change the In Tangent of the current key" -command "tangentIn;setFocus `getPanel -wf`";
+							button -height $h -label "Out -->" -ann "Change the Out Tangent of the current key" -command "tangentOut;setFocus `getPanel -wf`";
+							button -height $h -label "--> Both -->" -ann "Change the In and Out Tangents of the current key" -command "tangentsBoth;setFocus `getPanel -wf`";
+						setParent..;
+
+						separator -height 2 -style "none";
+
+						rowColumnLayout -numberOfColumns 3 -cw 1 105 -cw 2 2 -cw 3 108;
+
+							button -height 21 -label "\"Step\" Selection" -ann "Step all selected keys" -command "keyTangent -ott step;setFocus `getPanel -wf`";
+							separator -height 3 -style "none";
+							button -height 21 -label "\"Spline\" Selection" -ann "Spline all selected keys" -command "keyTangent -itt spline -ott spline;setFocus `getPanel -wf`";
+						setParent..;
+						separator -height 3 -style "none";
+						button -height $h -label "Correct Overshoot" -ann "Fix curve's overshoot" -command "correctOvershoot";
+
+				separator -height 2 -style "none";
+				setParent..;
+			setParent..;
+
+			separator -height 4 -style "none";
+
+			button -height 21 -w 224 -label "Save Preferences" -ann "Save all your current choices" -command retimingToolSavePrefs;
+		setParent..;
+	setParent..;
+
+// ---------------------
+// Recall preferences
+// ---------------------
+
+if ( `optionVar -exists addBreakdownsCollapseStatus` )
+	{
+	int $collapseTmp = `optionVar -q addBreakdownsCollapseStatus`;
+	catchQuiet (`frameLayout -e -collapse $collapseTmp addBreakdownFrameLayout`);
+	}
+	
+if ( `optionVar -exists tangentsAndCurvesCollapseStatus` )
+	{
+	int $collapseTmp = `optionVar -q tangentsAndCurvesCollapseStatus`;
+	catchQuiet (`frameLayout -e -collapse $collapseTmp tangentsAndCurvesFrameLayout`);
+	}
+	
+if ( `optionVar -exists allowOvershootStatus` )
+	{
+	int $checkTmp = `optionVar -q allowOvershootStatus`;
+	catchQuiet (`checkBox -e -v $checkTmp allowOvershootCB`);
+	}
+
+//if ( `optionVar -exists breakdownChoiceStatus` )
+//	{
+//	string $checkStringTmp = `optionVar -q breakdownChoiceStatus`;
+//	catchQuiet (`radioCollection -e -sl $checkStringTmp breakdownChoiceRB`);
+//	}
+
+if ( `optionVar -exists timeRangeOnlyStatus` )
+	{
+	int $checkTmp = `optionVar -q timeRangeOnlyStatus`;
+	catchQuiet (`checkBox -e -v $checkTmp timeRangeOnlyCB`);
+	}
+	
+if ( `optionVar -exists tangentsChoiceStatus` )
+	{
+	string $checkStringTmp = `optionVar -q tangentsChoiceStatus`;
+	catchQuiet (`radioCollection -e -sl $checkStringTmp tangentsChoiceRB`);
+	}
+
+if ( `optionVar -exists arbitraryBreakdownStatus` )
+	{
+	int $checkTmp = `optionVar -q arbitraryBreakdownStatus`;
+	intField -e -v $checkTmp arbitraryIntField;
+	button -e -l ("<- Add a 1\/" + $checkTmp) arbitraryFirstButton;
+	button -e -l ("Add a 1\/" + $checkTmp + " ->") arbitraryNextButton;
+	}
+
+//window -e -tlc 860 1598 retimingToolWindow;
+showWindow retimingToolWindow;
+}

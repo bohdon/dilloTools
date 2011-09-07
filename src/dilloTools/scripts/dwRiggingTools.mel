@@ -1,0 +1,2311 @@
+//Title:	dwRiggingTools.mel
+//Author: 	David Walden 
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Dates: 	Nov. 2002 - June 2, 2004.
+//
+//DESCRIPTION:  MAIN DWRIGGINGTOOLS UI.
+//
+//***SEE "About dwRiggingTools" IN THE HELP MENU FOR DETAILED UPDATE DESCRIPTIONS.
+//
+//PROCEDURE CREATES MAIN RIGGING TOOLS UI WINDOW.
+
+//Update 2010 08 22
+//  Removed all -la flags as they are deprecated
+//Bohdon Sayre
+
+global proc dwRiggingTools()
+{
+if (`window -ex dwRiggingToolsUI`)
+	deleteUI dwRiggingToolsUI;
+		
+window 
+	-rtf false 
+	-t "dwRiggingTools v. 1.8   -   www.davidwalden.com" 
+	-menuBar true 
+	-wh 460 550
+	dwRiggingToolsUI;
+	
+menu -label "Help" -tearOff true dwRiggingToolsHelpMenu;
+	menuItem -l "About dwRiggingTools" -c "dwAboutRiggingTools";
+	menuItem -divider true;
+	menuItem -l "Arm/Shoulder Help" -c "dwHelpIKFKArm";
+	menuItem -l "Leg/Foot Help" -c "dwHelpLegFoot";
+	menuItem -l "Spine Help" -subMenu 1;
+		menuItem -l "FK Spine Help" -c "dwHelpFKSpine";
+		menuItem -l "IK-Spline Spine Help" -c "dwHelpIKSpine";
+		setParent..;
+	menuItem -label "Tools Help" -subMenu 1 -p dwRiggingToolsHelpMenu;
+		menuItem -l "Biped Skeleton Help" -c "dwHelpCreateBipedSkeleton";
+		menuItem -l "Orient Joints Help" -c "dwHelpOrientJoints";
+		menuItem -l "Insert Joints Help" -c "dwHelpInsertJoints";
+		menuItem -l "Stretchy IK Help" -c "dwHelpCreateStretchyIK";
+		menuItem -l "Stretchy Spline IK Help" -c "dwHelpCreateStretchySplineIK";
+		menuItem -l "FK Control Rig Help" -c "dwHelpFKControlRig";
+		menuItem -l "Finger Controls Help" -c "dwHelpFingerControls";
+		menuItem -l "Create Character Sets Help" -c "dwHelpCreateCharacterSet";
+		setParent..;
+	menuItem -divider true -p dwRiggingToolsHelpMenu;
+	menuItem -label "Visit Website" -c "showHelp -a \"http://www.davidwalden.com\";" -p dwRiggingToolsHelpMenu;
+
+string $formMain = `formLayout`;
+string $tabMain = `tabLayout riggingToolsMainTabLayout`;
+	
+	string $form1 = `formLayout "Arm/Shoulder"`;
+		string $scroll1 = `scrollLayout armShoulderScrollLayout`;
+		columnLayout;
+			frameLayout 
+				-marginWidth 1 
+				-borderStyle "etchedIn"
+				-cl 0 
+				-cll 0 
+				-l "Arm/Shoulder Rig:";
+				
+				columnLayout -adj true;
+					text -label "" -h 25;
+					
+					rowColumnLayout -nc 2 -cw 2 225;
+						text -label "Arm Rig Type:" 
+							-align left
+							-ann "Choose the type of arm rig.";
+						
+						
+						radioButtonGrp
+							-nrb 3
+							-labelArray3 "IK Arm" "FK Arm" "IK-FK Arm"
+							-cw 1 75
+							-cw 2 75
+							-cw 2 75
+							-on1 "optionMenu -e -en 0 armFKControlTypeOM; optionMenu -e -sl 1 armFKControlTypeOM; radioButtonGrp -e -en2 1 armShoulderTypeRBG; checkBox -e -en 0 -v 0 dwRT_Arm_LockFKElbowCHECK;"
+							-on2 "optionMenu -e -en 1 armFKControlTypeOM; optionMenu -e -sl 2 armFKControlTypeOM; radioButtonGrp -e -en2 0 armShoulderTypeRBG; checkBox -e -en 1 dwRT_Arm_LockFKElbowCHECK;"
+							-on3 "optionMenu -e -en 1 armFKControlTypeOM; optionMenu -e -sl 2 armFKControlTypeOM; radioButtonGrp -e -en2 1 armShoulderTypeRBG; checkBox -e -en 1 dwRT_Arm_LockFKElbowCHECK;"
+							-ann "Choose the type of arm rig."
+							armTypeRadioButtonGrp;
+						setParent..;
+					
+					text -label "" -h 10;
+					separator -w 350;
+					text -label "" -h 10;
+					
+					rowColumnLayout -nc 2 -cw 2 150;
+						text -label "Side of body:" 
+							-align left
+							-ann "Choose side of body for arm rig.";
+						
+						
+						radioButtonGrp
+							-nrb 2
+							-labelArray2 "Left" "Right"
+							-cw 1 75
+							-cw 2 75
+							-ann "Choose side of body for arm rig."
+							armSideRadioButtonGrp;
+						setParent..;
+					
+					text -label "" -h 10;
+					separator -w 350;
+					text -label "" -h 10;
+					
+					
+					rowColumnLayout -nc 3 -cw 1 120 -cw 3 50;
+						text -l "First Arm Joint:" -ann "Insert the name of the first binding shoulder joint.";
+						textField -ann "Insert the name of the first upper arm joint." bindingShoulderTXF;
+						button
+							-l "Get" 
+							-c "textField -e -tx `ls -sl -type joint` bindingShoulderTXF;"
+							-ann "Inserts the name of the current selection into the textfield.";
+						setParent..;
+					
+					text -label "" -h 10;
+					separator -w 350;
+					text -label "" -h 10;
+					
+					rowColumnLayout -nc 3 -cw 1 100 -cw 2 150 -cw 3 25;
+						text 
+							-l "Upper Arm Split:" 
+							-ann "Choose the number of middle upper arm joints on the binding arm.";
+						intSlider 
+							-min 0 
+							-max 10 
+							-v 0 
+							-dc "intField -e -v `intSlider -q -v shoulderSplitSlider` shoulderSplitIntField;"
+							-ann "Choose the number of middle upper arm joints on the binding arm."
+							shoulderSplitSlider;
+						intField 
+							-v 0 
+							-ed 1
+							-min 0
+							-max 10
+							-step 1
+							-ec "intSlider -e -v `intField -q -v shoulderSplitIntField` shoulderSplitSlider;"
+							-ann "Choose the number of middle shoulder joints on the binding arm."
+							shoulderSplitIntField;
+						
+						text 
+							-l "Forearm Split:"
+							-ann "Choose the number of middle forearm joints on the binding arm.";
+						intSlider 
+							-min 0 
+							-max 10 
+							-v 0 
+							-dc "intField -e -v `intSlider -q -v forearmSplitSlider` forearmSplitIntField;"
+							-ann "Choose the number of middle forearm joints on the binding arm."
+							forearmSplitSlider;
+						intField 
+							-v 0 
+							-ed 1
+							-min 0
+							-max 10
+							-step 1
+							-ec "intSlider -e -v `intField -q -v forearmSplitIntField` forearmSplitSlider;"
+							-ann "Choose the number of middle forearm joints on the binding arm."
+							forearmSplitIntField;
+						setParent..;
+						
+					text -label "" -h 10;
+					separator -w 350;
+					text -label "" -h 10;
+					
+					rowColumnLayout -nc 2 -cw 1 100;
+						text 
+							-label "Stretch Joints:"
+							-ann "Stretch Joints: Select checkbox if you want stretchable arm joints.";
+						checkBox 
+							-v 0 
+							-en 1 
+							-label "" 
+							-onc ""
+							-ofc ""
+							-ann "Stretch Joints: Select checkbox if you want stretchable arm joints."
+							armStretchJointsOnOffCheckbox;				
+						setParent..;
+					
+					//THE FOLLOWING FEATURE IS NOT IMPLEMENTED AND THEREFORE HIDDEN IN THE UI.
+					columnLayout -vis 0 armStretchColumnLayout;
+						text -l "" -h 4;
+						rowColumnLayout -nc 3 -cw 1 100 -cw 2 40;
+							text -label "  Stretch along" -align "left";
+							optionMenu -en 0 armStretchAxisOptionMenu;
+								menuItem -label "X";
+								menuItem -label "Y" -en 0;
+								menuItem -label "Z" -en 0;
+							text -label "-axis." -align "left";			
+							setParent..;
+						text -label "" -h 15;
+						setParent..;
+					
+					text -label "" -h 10;
+					separator -w 350;
+					text -label "" -h 10;
+					
+					
+					rowColumnLayout -nc 2 -cw 1 100 -cw 2 225;
+						text 
+							-label "Elbow Bend Axis:"
+							-ann "Select the axis around which the elbow should rotate.";
+						radioButtonGrp
+							-nrb 3
+							-labelArray3 "X" "Y" "Z"
+							-cw3 75 75 75
+							-en1 0
+							-ann "Select the axis around which the elbow should rotate."
+							elbowAxisRadioButtonGrp;
+						setParent..;
+					
+					text -label "" -h 10;
+					separator -w 350;
+					text -label "" -h 10;
+					
+					columnLayout -vis 1 armFKControlsColumnLayout;
+						text -label "" -h 5;
+						rowColumnLayout -nc 2 -cw 1 100 -cw 2 100;
+							text 
+								-label "FK Control Type:" 
+								-align "left"
+								-ann "Select the type of control objects for the FK rig.";
+							optionMenu 
+								-en 0
+								-cc "" 
+								-ann "Select the type of control objects for the FK rig."
+								armFKControlTypeOM;
+								
+								menuItem -label "None";
+								menuItem -label "Bounding Box";
+								menuItem -label "Circle";
+								menuItem -label "Square";
+								setParent..;
+								
+							text -label "" -h 10;
+						setParent..;
+					
+					text -label "" -h 10;
+					separator -w 350;
+					text -label "" -h 10;
+					
+					rowColumnLayout -nc 2 -cw 1 110 -cw 2 270; 
+						text -label "Shoulder Setup:" -font boldLabelFont;
+						radioButtonGrp 
+							-nrb 3
+							-cw 1 90
+							-cw 2 90
+							-cw 3 90
+							-ann "Choose between a standard shoulder, an auto-shoulder, or no shoulder control."
+							-l1 "Standard FK" 
+							-l2 "AutoShoulder" 
+							-l3 "None"
+							-on1 "columnLayout -e -vis 1 ArmStandardShoulderColumnLayout;"
+							-on2 "columnLayout -e -vis 0 ArmStandardShoulderColumnLayout;"
+							-on3 "columnLayout -e -vis 0 ArmStandardShoulderColumnLayout;"
+							armShoulderTypeRBG; 
+						setParent..;
+					
+					
+					columnLayout -vis 0 ArmStandardShoulderColumnLayout;
+						text -label "" -h 10;
+						rowColumnLayout -nc 2 -cw 1 110;
+							text
+								-align "right"
+								-label "Control Type:     "
+								-ann "Select type of control object for shoulder.";
+							
+							optionMenu 
+								-en 1
+								-cc "" 
+								-ann "Select type of control object for shoulder."
+								ArmStandardShoulderControlTypeOM;
+								
+								menuItem -label "None" -en 0;
+								menuItem -label "Bounding Box";
+								menuItem -label "Circle";
+								menuItem -label "Square";
+								menuItem -label "Double Arrow";
+							
+							optionMenu -e -sl 5 ArmStandardShoulderControlTypeOM;
+							
+							setParent..;
+							text -label "" -h 10;
+						setParent..;
+						
+					text -label "" -h 10;
+					separator -w 350;
+					text -label "" -h 4;
+					
+					colorIndexSliderGrp
+						-w 350
+						-cal 1 "left"
+						-cw 1 75
+						-cw 2 75
+						-cw 3 200
+						-label "Control Color" 
+						-min 1 
+						-max 31 
+						-value 1
+						-ann "Choose a color for the control objects. Default (grey) is Maya큦 default color."
+						armControlsColorSliderGrp;
+
+					
+					text -label "" -h 4;
+					separator -w 350;
+					
+					frameLayout 
+						-w 350 
+						-marginWidth 1 
+						-borderStyle "etchedIn" 
+						-labelVisible 1 
+						-l "Advanced:"
+						-ann "Advanced options."
+						-cll true
+						-cl true;
+						
+						columnLayout;
+						text -label "" -h 4;
+						
+						rowColumnLayout -nc 2 -cw 1 90 -cw 2 120;
+							text 
+								-l "  Naming prefix:"
+								-ann "Choose a unique naming prefix for the rig. This is necessary for characters with multiple arms.";
+							textField 
+								-ann "Choose a unique naming prefix for the rig. This is necessary for characters with multiple arms."
+								armIdentityTF;
+							setParent..;
+						//Create "Clear Field" popup.
+						dwRTClearTextFieldPOPUP armIdentityTF;
+						
+						text -label "" -h 10;
+						separator -w 400;
+						text -label "" -h 10;
+						
+						rowColumnLayout -nc 2 -cw 1 190 -cw 2 20;
+							text -l "  Lock FK elbow to bend axis only:";
+							checkBox -l "" -en 0 dwRT_Arm_LockFKElbowCHECK;
+						setParent..;
+						
+						text -label "" -h 10;
+						separator -w 400;
+						text -label "" -h 10;
+						
+						rowColumnLayout -nc 2 -cw 1 160 -cw 2 50;
+							text 
+								-l "  FK Shoulder rotation order: " 
+								-align "left"
+								-ann "Choose a rotation order for the FK shoulder.";
+							optionMenu 
+								-ann "Choose a rotation order for the FK shoulder."
+								armFKShldrRotateOrderOptionMenu;
+								menuItem -label "xyz";
+								menuItem -label "yzx";
+								menuItem -label "zxy";
+								menuItem -label "xzy";
+								menuItem -label "yxz";
+								menuItem -label "zyx";
+							optionMenu -e -sl 4 armFKShldrRotateOrderOptionMenu;	
+							setParent..;
+						
+						rowColumnLayout -nc 2 -cw 1 160 -cw 2 50;
+							text 
+								-l "  Wrist control rotation order: " 
+								-align "left"
+								-ann "Choose a rotation order for the wrist control.";
+							optionMenu 
+								-en 1 
+								-ann "Choose a rotation order for the wrist control."
+								armWristCntrlRotateOrderOptionMenu;
+								menuItem -label "xyz";
+								menuItem -label "yzx";
+								menuItem -label "zxy";
+								menuItem -label "xzy";
+								menuItem -label "yxz";
+								menuItem -label "zyx";
+							optionMenu -e -sl 2 armWristCntrlRotateOrderOptionMenu;	
+							setParent..;
+							
+						text -label "" -h 10;
+				
+						setParent..;
+					setParent..;
+					
+				setParent..;
+			setParent..;
+		setParent..;
+	setParent..;
+		
+	string $applyButton1 = `button -h 30 -label "Create Arm/Shoulder Rig" -c "{string $bindingShoulder = `textField -q -tx bindingShoulderTXF`; \
+								  int $armType = `radioButtonGrp -q -sl armTypeRadioButtonGrp`; \
+								  int $middleShoulderJoints = `intField -q -v shoulderSplitIntField`; \
+								  int $armSideFlagInt = `radioButtonGrp -q -sl armSideRadioButtonGrp`; \
+								  int $forearmSplitJoints = `intField -q -v forearmSplitIntField`; \
+								  int $stretchJointsOnOff = `checkBox -q -v armStretchJointsOnOffCheckbox`; \
+								  int $armStretchAxis = `optionMenu -q -sl armStretchAxisOptionMenu`; \
+								  int $controlsColor = `colorIndexSliderGrp -q -v armControlsColorSliderGrp`; \
+								  int $shoulderTypeCheck = `radioButtonGrp -q -sl armShoulderTypeRBG`; \
+								  int $armStandardShoulderControlType = `optionMenu -q -sl ArmStandardShoulderControlTypeOM`; \
+								  int $FKArmControlType = `optionMenu -q -sl armFKControlTypeOM`; \
+								  int $elbowAxisInt = `radioButtonGrp -q -sl elbowAxisRadioButtonGrp`; \
+								  int $fkShoulderRotateOrder = `optionMenu -q -sl armFKShldrRotateOrderOptionMenu`; \
+								  int $wristCntrlRotateOrder = `optionMenu -q -sl armWristCntrlRotateOrderOptionMenu`; \
+								  string $armPrefix = `textField -q -tx armIdentityTF`; \
+								  int $lockFKElbowCHECK = `checkBox -q -v dwRT_Arm_LockFKElbowCHECK`; \
+								  dwCreateArmType($armType, $bindingShoulder, $middleShoulderJoints, $forearmSplitJoints, $armSideFlagInt, $elbowAxisInt, $stretchJointsOnOff, $controlsColor, $shoulderTypeCheck, $armStandardShoulderControlType, $FKArmControlType, $armStretchAxis, ($fkShoulderRotateOrder - 1), ($wristCntrlRotateOrder - 1), $armPrefix, $lockFKElbowCHECK);}"
+								  -ann "Click to create arm rig."
+								  createArmButton`;
+	string $closeButton1 = `button 
+					-h 30 
+					-label "Close Window" 
+					-c "deleteUI dwRiggingToolsUI"
+					-ann "Close UI window."`;
+
+	
+	formLayout -e
+		-attachForm $scroll1 left 0
+		-attachForm $scroll1 top 0
+		-attachForm $scroll1 right 0
+		-attachControl $scroll1 bottom 0 $applyButton1
+		
+		-attachForm $applyButton1 left 0
+		-attachNone $applyButton1 top
+		-attachPosition $applyButton1 right 0 50
+		-attachForm $applyButton1 bottom 0
+
+		-attachControl $closeButton1 left 0 $applyButton1
+		-attachNone $closeButton1 top
+		-attachForm $closeButton1 right 0
+		-attachForm $closeButton1 bottom 0
+		$form1;
+	setParent..;
+
+
+
+
+	string $form2 = `formLayout "Leg/Foot"`;
+		string $scroll2 = `scrollLayout`;
+			frameLayout
+				-w 375
+				-marginWidth 1 
+				-borderStyle "etchedIn"
+				-labelVisible 1 
+				-label "Leg/Foot Rig:";
+				
+				columnLayout -adj true;
+					text -label "" -h 25;
+					
+					rowColumnLayout -nc 2 -cw 1 90 -cw 2 300 -vis 0;
+						text 
+							-label "Character Type:" 
+							-align left
+							-ann "Choose whether you want an IK leg rig, or a blended IK-FK leg rig.";
+								
+						radioButtonGrp
+							-nrb 3
+							-cw 1 55
+							-cw 2 110
+							-cw 3 100
+							-labelArray3 "Biped" "Quadraped Front" "Quadraped Back"
+							-ann "Choose whether the character is a biped or a quadraped."
+							-on1 ""
+							-on2 ""
+							-on3 ""
+							-sl 1
+							RT_LegFootCharacterTypeRBG;
+						setParent..;	
+							
+					text -label "" -h 10 -vis 0;
+					separator -w 350 -vis 0;
+					text -label "" -h 10 -vis 0;
+					
+					rowColumnLayout -nc 2 -cw 1 90 -cw 2 200;
+						text 
+							-label "Leg Rig Type:" 
+							-align left
+							-ann "Choose whether you want an IK leg rig, or a blended IK-FK leg rig.";
+								
+						radioButtonGrp
+							-nrb 2
+							-cw 1 75
+							-cw 2 75
+							-labelArray2 "IK Leg" "IK-FK Leg"
+							-ann "Choose whether you want an IK leg rig, or a blended IK-FK leg rig."
+							-on1 "optionMenu -e -sl 1 legFKControlTypeOptionMenu; \
+								optionMenu -e -en 0 legFKControlTypeOptionMenu;\
+								optionMenu -e -en 0 legFemurRotateOrderOptionMenu;\
+								checkBox -e -en 0 -v 0 dwRT_Leg_LockFKFemurCHECK;"
+							-on2 "optionMenu -e -en 1 legFemurRotateOrderOptionMenu;\
+								optionMenu -e -sl 2 legFKControlTypeOptionMenu; \
+								optionMenu -e -en 1 legFKControlTypeOptionMenu; \
+								checkBox -e -en 1 dwRT_Leg_LockFKFemurCHECK;"
+							FKLegCheckRadioButttonGrp;
+						setParent..;	
+							
+					text -label "" -h 10;
+					separator -w 350;
+					text -label "" -h 10;
+					
+					
+					rowColumnLayout -nc 2 -cw 1 90 -cw 2 200;
+						text 
+							-label "Side of Body:" 
+							-align left
+							-ann "Choose side of body for leg rig.";
+						
+						radioButtonGrp
+							-nrb 2
+							-labelArray2 "Left" "Right"
+							-cw 1 75
+							-cw 2 75
+							-ann "Choose side of body for leg rig."
+							legFootSideRadioButtonGrp;
+						setParent..;
+					
+					text -label "" -h 10;
+					separator;
+					text -label "" -h 10;
+					
+					
+					rowColumnLayout -nc 3 -cw 1 90 -cw 3 50;
+						text 
+							-l "First Femur Joint:"
+							-ann "Insert the name of the first binding femur joint into the textfield.";
+						textField 
+							-ann "Insert the name of the first binding femur joint into the textfield."
+							bindingFemurTXF;
+						button
+							-l "Get" 
+							-c "textField -e -tx `ls -sl -type joint` bindingFemurTXF;"
+							-ann "Inserts the current selection into the textfield.";
+						setParent..;
+					
+					
+					text -label "" -h 10;
+					separator;
+					text -label "" -h 10;
+					
+					rowColumnLayout -nc 3 -cw 1 90 -cw 2 150 -cw 3 25;
+						text 
+							-l "Femur Split:"
+							-ann "Choose number of middle \"split\" joints in the binding femur.";
+						intSlider 
+							-min 0 
+							-max 10 
+							-v 0 
+							-dc "intField -e -v `intSlider -q -v femurSplitSlider` femurSplitIntField;"
+							-ann "Choose number of middle \"split\" joints in the binding femur."
+							femurSplitSlider;
+						intField 
+							-v 0 
+							-ed 1
+							-min 0
+							-max 10
+							-step 1
+							-ec "intSlider -e -v `intField -q -v femurSplitIntField` femurSplitSlider;"
+							-ann "Choose number of middle \"split\" joints in the binding femur."
+							femurSplitIntField;
+						setParent..;
+					
+					
+					
+					text -label "" -h 10;
+					separator;
+					text -label "" -h 10;
+					
+					
+										
+					rowColumnLayout -nc 2 -cw 1 90;
+						text 
+							-label "Stretch Joints:"
+							-ann "Select this checkbox if you wanted stretchable leg joints.";
+						checkBox 
+							-v 0 
+							-en 1
+							-label ""
+							-ann "Select this checkbox if you wanted stretchable leg joints."
+							StretchyLegCheckbox;					
+						setParent..;
+					
+					
+					//CURRENTLY THIS OPTION IS NOT IMPLEMENTED, THEREFORE HIDDEN IN THE UI.
+					columnLayout -vis 0 legStretchColumnLayout;
+						text -l "" -h 4;
+						rowColumnLayout -nc 3 -cw 1 100 -cw 2 40 -cw 2 40;
+							text -label "  Stretch along" -align "left";
+							optionMenu -en 0 legStretchAxisOptionMenu;
+								menuItem -label "X";
+								menuItem -label "Y" -en 0;
+								menuItem -label "Z" -en 0;
+							text -label "-axis." -align "left";			
+							setParent..;
+							
+						text -label "" -h 15;
+						setParent..;
+					
+					text -label "" -h 10;
+					separator;
+					text -label "" -h 10;
+					
+					
+					rowColumnLayout -nc 2 -cw 1 90 -cw 2 225;
+						text 
+							-label "Knee Bend Axis:"
+							-ann "Select the axis around which the knee should bend.";
+						radioButtonGrp
+							-nrb 3
+							-cw3 75 75 75
+							-en1 0
+							-labelArray3 "X" "Y" "Z"
+							-ann "Select the axis around which the knee should bend."
+							kneeAxisRadioButtonGrp;
+					setParent..;
+					
+					text -label "" -h 10;
+					separator;
+					text -label "" -h 10;
+					
+					columnLayout -vis 1 legFKControlsColumnLayout;
+						text -l "" -h 6;
+						rowColumnLayout -nc 2 -cw 1 90;
+							text 
+								-label " FK Control Type:" 
+								-align "left"
+								-ann "Select a type of spline control object for the leg controls.";
+							optionMenu 
+								-en 0
+								-ann "Select a type of spline control object for the leg controls."
+								legFKControlTypeOptionMenu;
+								
+								menuItem -label "None";
+								menuItem -label "Bounding Box";
+								menuItem -label "Circle";
+								menuItem -label "Square";				
+							setParent..;
+					
+							text -label "" -h 10;
+						setParent..;
+							
+					text -label "" -h 10;
+					separator;
+					text -label "" -h 10;
+					
+					colorIndexSliderGrp
+						-w 350
+						-cal 1 "left"
+						-cw 1 75
+						-cw 2 75
+						-cw 3 200
+						-label "Control Color" 
+						-min 1 
+						-max 31 
+						-value 1
+						-ann "Select a color for the control objects. Default (grey) is Maya큦 default color."
+						legControlsColorSliderGrp;
+
+					text -label "" -h 4;
+					separator -w 350;
+					
+					frameLayout 
+						-w 375 
+						-marginWidth 1 
+						-borderStyle "etchedIn"
+						-labelVisible 1 
+						-l "Advanced:"
+						-ann "Advanced options."
+						-cll true
+						-cl true;
+						
+						columnLayout;
+						
+						text -label "" -h 5;
+						rowColumnLayout -nc 2 -cw 1 100;
+							text 
+								-l "  Naming prefix:"
+								-ann "Choose a unique naming prefix for the rig. This is necessary for characters with multiple legs.";
+							textField 
+								-ann "Choose a unique naming prefix for the rig. This is necessary for characters with multiple legs."
+								legFootIdentityTF;
+							setParent..;
+						
+						dwRTClearTextFieldPOPUP legFootIdentityTF;
+						
+						text -label "" -h 10;
+						separator -w 400;
+						text -label "" -h 10;
+						
+						rowColumnLayout -nc 2 -cw 1 190 -cw 2 20;
+							text -l "  Lock FK knee to bend axis only:";
+							checkBox -l "" -en 0 dwRT_Leg_LockFKFemurCHECK;
+						setParent..;
+						
+						text -label "" -h 10;
+						separator -w 400;
+						text -label "" -h 10;
+						
+						
+						rowColumnLayout -nc 2 -cw 1 160 -cw 2 50;
+							text 
+								-label " FK Femur rotation order: " 
+								-ann "Choose a rotation order for the FK femur joint."
+								-align "left";
+							optionMenu 
+								-en 1 
+								-ann "Choose a rotation order for the FK femur joint."
+								legFemurRotateOrderOptionMenu;
+								menuItem -label "xyz";
+								menuItem -label "yzx";
+								menuItem -label "zxy";
+								menuItem -label "xzy";
+								menuItem -label "yxz";
+								menuItem -label "zyx";
+							optionMenu -e -sl 2 legFemurRotateOrderOptionMenu;	
+							setParent..;
+							
+						rowColumnLayout -nc 2 -cw 1 160 -cw 2 50;
+							text 
+								-label " Ankle control rotation order: " 
+								-ann "Choose a rotation order for the ankle (foot) control."
+								-align "left";
+							optionMenu 
+								-ann "Choose a rotation order for the ankle (foot) control."
+								legAnkleRotateOrderOptionMenu;
+								menuItem -label "xyz";
+								menuItem -label "yzx";
+								menuItem -label "zxy";
+								menuItem -label "xzy";
+								menuItem -label "yxz";
+								menuItem -label "zyx";
+							optionMenu -e -sl 3 legAnkleRotateOrderOptionMenu;	
+							setParent..;
+							
+							text -label "" -h 10;
+						
+						setParent..;
+					setParent..;
+					
+				setParent..;
+			setParent..;
+		setParent..;
+	string $applyButton2 = `button -h 30 -label "Create Leg/Foot Rig" -c "{string $bindingFemur = `textField -q -tx bindingFemurTXF`;\
+									int $kneeAxisInt = `radioButtonGrp -q -sl kneeAxisRadioButtonGrp`;\
+									int $sideFlagInt = `radioButtonGrp -q -sl legFootSideRadioButtonGrp`;\
+									string $legPrefix = `textField -q -tx legFootIdentityTF`; \
+									int $FKLegCheck = `radioButtonGrp -q -sl FKLegCheckRadioButttonGrp`;\
+									int $stretchyLegOnOff = `checkBox -q -v StretchyLegCheckbox`;\
+									int $femurSplitJoints = `intField -q -v femurSplitIntField`;\
+									int $controlsColor = `colorIndexSliderGrp -q -v legControlsColorSliderGrp`;\
+									int $legControlType = `optionMenu -q -sl legFKControlTypeOptionMenu`;\
+									string $legStretchAxis = `optionMenu -q -v legStretchAxisOptionMenu`;\
+									int $legFemurRotateOrder = `optionMenu -q -sl legFemurRotateOrderOptionMenu`;\
+									int $legAnkleRotateOrder = `optionMenu -q -sl legAnkleRotateOrderOptionMenu`;\
+									int $legLockFKKneeCHECK = `checkBox -q -v dwRT_Leg_LockFKFemurCHECK`; \
+									dwCreateLegFoot($bindingFemur, $sideFlagInt, $legPrefix, $femurSplitJoints, $FKLegCheck, $stretchyLegOnOff, $kneeAxisInt, $controlsColor, $legControlType, $legStretchAxis, ($legFemurRotateOrder - 1), ($legAnkleRotateOrder - 1), $legLockFKKneeCHECK);}"
+									-ann "Create leg rig."
+									legFootApplyButton`;
+									
+	string $closeButton2 = `button -h 30 -label "Close Window" -c "deleteUI dwRiggingToolsUI" -ann "Close UI window."`;
+	
+
+	formLayout -e
+		-attachForm $scroll2 left 0
+		-attachForm $scroll2 top 0
+		-attachForm $scroll2 right 0
+		-attachControl $scroll2 bottom 0 $applyButton2
+		
+		-attachForm $applyButton2 left 0
+		-attachNone $applyButton2 top
+		-attachPosition $applyButton2 right 0 50
+		-attachForm $applyButton2 bottom 0
+		
+		-attachControl $closeButton2 left 0 $applyButton2
+		-attachNone $closeButton2 top
+		-attachForm $closeButton2 right 0
+		-attachForm $closeButton2 bottom 0
+		$form2;
+	setParent..;
+
+
+
+
+
+	string $form3 = `formLayout "Spine"`;
+		string $scroll3 = `scrollLayout`;
+			columnLayout;
+			
+				tabLayout 
+					-cc "{int $FKSpineTabIndex = `tabLayout -q -sti spineTabLayout`; \
+						string $FKSpineApplyButtonString; \
+						if ($FKSpineTabIndex == 2) \
+						{ \
+						$FKSpineApplyButtonString = \"{string $ikSpineStartJoint = `textField -q -tx ikSpineStartJointTXTFLD`; \
+						string $ikSpineEndJoint = `textField -q -tx ikSpineEndJointTXTFLD`; \
+						int $spineStretchJointsCheck = `checkBox -q -v ikSpineStretchCHCKBX`; \
+						string $spineStretchAxisString = `optionMenu -q -v ikSpineStretchAxisOM`; \
+						int $spineFKControlType = `optionMenu -q -sl ikSpineFKControlTypeOM`; \
+						int $spineControlsColor = `colorIndexSliderGrp -q -v ikSpineControlCSG`; \
+						string $spineRootJoint = `textField -q -text ikSpineRootJointTXTFLD`; \
+						int $neckHeadCheck = `checkBox -q -v ikSpineNeckHeadCHCKBX`; \
+						int $neckCheck = `checkBox -q -v ikSpineNeckCB`; \
+						string $neckJoint = `textField -q -tx ikSpineNeckTF`; \
+						int $headCheck = `checkBox -q -v ikSpineHeadCB`; \
+						string $headJoint = `textField -q -tx ikSpineHeadTF`; \
+						string $IKSpineID = `textField -q -tx ikSpineNamePrefixTF`; \
+						int $ikSpineForcePreviousVersion = `checkBox -q -v dwRTForcePreviousIKSpineCHECK`; \
+						dwRT_CreateIKSplineSpine_Version($ikSpineStartJoint, $ikSpineEndJoint, $spineStretchJointsCheck, $spineStretchAxisString, $spineFKControlType, $spineControlsColor, $spineRootJoint, $neckHeadCheck, $neckCheck, $neckJoint, $headCheck, $headJoint, $IKSpineID, $ikSpineForcePreviousVersion);}\"; \
+						button -e -l \"Create IK-Spline Spine\" -ann \"Create IK-Spline spine rig.\" applyButtonSpine; \
+						} \
+						else if ($FKSpineTabIndex == 1) \
+						{ \
+						$FKSpineApplyButtonString = \"{string $FKSpineRoot = `textField -q -tx FKSpineRootTF`; \
+						string $FKSpineLowerTorso = `textField -q -tx FKSpineLowerTorsoTF`; \
+						string $FKSpineUpperTorso = `textField -q -tx FKSpineUpperTorsoTF`; \
+						string $FKSpineNeck = `textField -q -tx FKSpineNeckTF`; \
+						string $FKSpineHead = `textField -q -tx FKSpineHeadTF`; \
+						int $FKSpineStretchOnOff = `checkBox -q -v FKSpineStretchCheck`; \
+						int $FKSpineControlColor = `colorIndexSliderGrp -q -v FKSpineColorSlider`; \
+						int $FKSpineControlType = `optionMenu -q -sl FKSpineControlTypeOM`; \
+						int $FKSpineCOGCheck = `checkBox -q -v FKSpineCOGCheck`;\
+						int $FKSpineNeckCheck = `checkBox -q -v fkSpineNeckCheck`; \
+						int $FKSpineHeadCheck = `checkBox -q -v fkSpineHeadCheck`; \
+						string $FKSpineID = `textField -q -tx fkSpinePrefixTF`; \
+						dwCreateFKSpine($FKSpineRoot, $FKSpineLowerTorso, $FKSpineUpperTorso, $FKSpineNeckCheck, $FKSpineNeck, $FKSpineHeadCheck, $FKSpineHead, $FKSpineStretchOnOff, $FKSpineControlType, $FKSpineControlColor, $FKSpineCOGCheck, $FKSpineID);}\"; \
+						button -e -l \"Create FK Spine\" -ann \"Create FK spine rig.\" applyButtonSpine; \
+						} \
+						button -e -c $FKSpineApplyButtonString applyButtonSpine;}" //End tabLayout -cc command.
+						spineTabLayout;
+					
+					
+					
+					
+					columnLayout 
+						"FK Spine";
+					frameLayout 
+						-w 375 
+						-marginWidth 1 
+						-borderStyle "etchedIn"
+						-labelVisible 1 
+						-l "2-Bone FK Spine Rig:"
+						FKSpineFrameLayout;
+						
+						columnLayout;
+						text -l "" -h 20;
+							rowColumnLayout -nc 4 -cw 1 20 -cw 2 90 -cw 4 50;
+							checkBox -l "" -v 1 -en 0;
+							text 
+								-l "Root Joint"
+								-ann "Insert the name of the root joint into the textfield.";
+							textField 
+								-ann "Insert the name of the root joint into the textfield."
+								FKSpineRootTF;
+							button 
+								-l "Get" 
+								-ann "Button inserts the name of the current selection into the textfield."
+								-c "textField -e -tx `ls -sl -type joint` FKSpineRootTF;";
+							
+							checkBox -l "" -v 1 -en 0;
+							text 
+								-l "Lower Torso Joint"
+								-ann "Insert the name of the lower torso joint into the textfield.";
+							textField 
+								-ann "Insert the name of the lower torso joint into the textfield."
+								FKSpineLowerTorsoTF;
+							button 
+								-l "Get" 
+								-ann "Button inserts the name of the current selection into the textfield."
+								-c "textField -e -tx `ls -sl -type joint` FKSpineLowerTorsoTF;";
+							
+							checkBox -l "" -v 1 -en 0;
+							text 
+								-l "Upper Torso Joint"
+								-ann "Insert the name of the upper torso joint into the textfield.";
+							textField 
+								-ann "Insert the name of the upper torso joint into the textfield."
+								FKSpineUpperTorsoTF;
+							button 
+								-l "Get" 
+								-ann "Button inserts the name of the current selection into the textfield."
+								-c "textField -e -tx `ls -sl -type joint` FKSpineUpperTorsoTF;";
+							
+							checkBox 
+								-l "" 
+								-v 1 
+								-onc "button -e -en 1 fkSpineGetNeckButton; textField -e -en 1 FKSpineNeckTF;" 
+								-ofc "button -e -en 0 fkSpineGetNeckButton; textField -e -en 0 -tx \"\" FKSpineNeckTF;"
+								-ann "Check if you want a neck control."
+								fkSpineNeckCheck;
+							text 
+								-l "Neck Joint"
+								-ann "Insert the name of the neck joint into the textfield.";
+							textField 
+								-ann "Insert the name of the neck joint into the textfield."
+								FKSpineNeckTF;
+							button 
+								-l "Get" 
+								-ann "Button inserts the name of the current selection into the textfield."
+								-c "textField -e -tx `ls -sl -type joint` FKSpineNeckTF;"
+								fkSpineGetNeckButton;
+							
+							checkBox 
+								-l "" 
+								-v 1 
+								-onc "button -e -en 1 fkSpineGetHeadButton; textField -e -en 1 FKSpineHeadTF;" 
+								-ofc "button -e -en 0 fkSpineGetHeadButton; textField -e -en 0 -tx \"\" FKSpineHeadTF;"
+								-ann "Check if you want a head control."
+								fkSpineHeadCheck;
+							text 
+								-l "Head Joint"
+								-ann "Insert the name of the head joint into the textfield.";
+							textField 
+								-ann "Insert the name of the head joint into the textfield."
+								FKSpineHeadTF;
+							button 
+								-l "Get" 
+								-ann "Button inserts the name of the current selection into the textfield."
+								-c "textField -e -tx `ls -sl -type joint` FKSpineHeadTF;"
+								fkSpineGetHeadButton;
+										
+							setParent..;
+							
+							text -l "" -h 20;
+							
+							rowColumnLayout -nc 2 -cw 1 110;
+							text 
+								-l "COG Control:"
+								-ann "Select checkbox if you want a COG controller at the hips.";
+							checkBox 
+								-l "" 
+								-ann "Select checkbox if you want a COG controller at the hips."
+								FKSpineCOGCheck;
+							
+							text -l "";
+							text -l "";
+							
+							
+							text 
+								-l "Stretch Joints:"
+								-ann "Select checkbox if you want stretchable spine joints.";
+							checkBox 
+								-l "" 
+								-ann "Select checkbox if you want stretchable spine joints."
+								FKSpineStretchCheck;
+								
+							
+							text -l "";
+							text -l "";
+							
+							text 
+								-l "Control Type"
+								-ann "Select the type of spline control object for the spine rig.";
+							optionMenu 
+								-ann "Select the type of spline control object for the spine rig."
+								FKSpineControlTypeOM;
+								menuItem -l "Bounding Box";
+								menuItem -l "Circle";
+								menuItem -l "Square";
+							
+								setParent..;
+							
+							
+							text -label "" -h 10;
+							separator -w 400;
+							text -label "" -h 4;
+							
+							colorIndexSliderGrp
+								-w 400
+								-cal 1 "left"
+								-cw 1 75
+								-cw 2 75
+								-cw 3 200
+								-label "Control Color" 
+								-min 1 
+								-max 31 
+								-value 1
+								-ann "Select a color for the control objects. Default (grey) is Maya큦 default color."
+								FKSpineColorSlider;
+							
+							text -l "" -h 6;
+						
+						setParent..;
+					setParent..;
+					
+					frameLayout 
+						-cll 1
+						-cl 1
+						-bs "etchedIn" 
+						-w 375
+						-l "Advanced:";
+					
+						columnLayout;
+							
+							text -l "";
+							
+							rowColumnLayout -nc 2 -cw 1 110 -cw 2 110;
+								text 
+									-l "  Naming prefix:"
+									-ann "Provide a unique naming prefix to add to all FK spine rig names.";
+								textField 
+									-ann "Provide a unique naming prefix to add to all FK spine rig names."
+									fkSpinePrefixTF;
+								setParent..;
+							
+							dwRTClearTextFieldPOPUP fkSpinePrefixTF;
+							
+							text -l "";
+							
+							setParent..;
+					setParent..;
+				
+				setParent..;
+			
+			
+				columnLayout "IK-Spline Spine";
+				frameLayout 
+					-w 375
+					-marginWidth 1 
+					-borderStyle "etchedIn"
+					-labelVisible 1 
+					-l "IK-Spline Spine Rig:"
+					ikSpineFrameLayout;
+					
+					columnLayout;
+						
+						text -l "" -h 20;
+						
+						string $spineRootSelTemp[];
+						rowColumnLayout -nc 3 -cw 1 110 -cw 2 100 -cw 3 50;
+							text 
+								-l "Root Joint:"
+								-align left
+								-ann "Insert the name of the root joint into the textfield.";
+							textField
+								-en 1
+								-ann "Insert the name of the root joint into the textfield."
+								ikSpineRootJointTXTFLD;
+							button 
+								-l "Get" 
+								-ann "Button inserts the name of the current selection into the textfield."
+								-c "textField -e -text `ls -sl -type joint` ikSpineRootJointTXTFLD;";
+							
+							text -l "" -h 10;
+							text -l "" -h 10;
+							text -l "" -h 10;
+							
+							text 
+								-l "Spine Start Joint:"
+								-align left
+								-ann "Insert the name of the first spine joint into the textfield.";
+							textField
+								-en 1
+								-ann "Insert the name of the first spine joint into the textfield."
+								ikSpineStartJointTXTFLD;
+							button 
+								-l "Get" 
+								-ann "Button inserts the name of the current selection into the textfield."
+								-c "textField -e -text `ls -sl -type joint` ikSpineStartJointTXTFLD;";
+							
+							text 
+								-l "Spine End Joint:"
+								-align left
+								-ann "Insert the name of the last spine joint into the textfield.";
+							textField
+								-en 1
+								-ann "Insert the name of the last spine joint into the textfield."
+								ikSpineEndJointTXTFLD;
+							button 
+								-l "Get" 
+								-ann "Button inserts the name of the current selection into the textfield."
+								-c "textField -e -text `ls -sl -type joint` ikSpineEndJointTXTFLD;";
+							setParent..;
+						
+						
+						text -l "" -h 15;
+						
+						rowColumnLayout -nc 2 -cw 1 110;
+							text 
+								-l "Stretch Joints:"
+								-ann "Select this checkbox if you want stretchable spine joints.";
+							checkBox 
+								-v 0
+								-en 1
+								-ann "Select this checkbox if you want stretchable spine joints."
+								-onc "optionMenu -e -en 1 ikSpineStretchAxisOM;" //columnLayout -e -vis 1 spineStretchColumnLayout;"
+								-ofc "optionMenu -e -en 0 ikSpineStretchAxisOM;" //columnLayout -e -vis 0 spineStretchColumnLayout;"
+								-l ""
+								ikSpineStretchCHCKBX;
+							setParent..;
+						
+						//Currently this option is not available, therefore hidden.
+						columnLayout -vis 0 spineStretchColumnLayout;
+							text -l "" -h 4;
+							rowColumnLayout -nc 3 -cw 1 110 -cw 2 38 -cw 3 40;
+								text -l "  Stretch along ";
+								optionMenu -en 0 ikSpineStretchAxisOM;
+									menuItem -label "X";
+									menuItem -label "Y" -en 0;
+									menuItem -label "Z" -en 0;
+								text -l "-Axis";
+								setParent..;
+							text -l "" -h 10;
+							setParent..;
+						
+						text -l "" -h 20;
+						
+						rowColumnLayout -nc 2 -cw 1 110;
+							text 
+								-l "Neck/Head Controls:"
+								-ann "Select if you want to build controls for the neck and head.";
+							checkBox 
+								-l "" 
+								-onc "rowColumnLayout -e -vis 1 neckHeadRCL;"
+								-ofc "rowColumnLayout -e -vis 0 neckHeadRCL; textField -e -tx \"\" ikSpineNeckTF; textField -e -tx \"\" ikSpineHeadTF;"
+								-ann "Select if you want to build controls for the neck and head."
+								ikSpineNeckHeadCHCKBX;
+							setParent..;
+						
+						text -l "" -h 4;
+						
+						rowColumnLayout -nc 5 -cw 1 5 -cw 2 20 -cw 3 85 -cw 4 100 -cw 5 50 -vis 0 neckHeadRCL;
+							text -l "";
+							checkBox 
+								-l "" 
+								-v 1
+								-ann "Select if you want to build a neck control."
+								-onc "textField -e -en 1 ikSpineNeckTF; button -e -en 1 ikSpineNeckGetBTN;"
+								-ofc "textField -e -en 0 ikSpineNeckTF; textField -e -tx \"\" ikSpineNeckTF; button -e -en 0 ikSpineNeckGetBTN;"
+								ikSpineNeckCB;
+							text -l "Neck Joint" -ann "Insert the name of the neck joint into the text field.";
+							textField 
+								-ann "Insert the name of the neck joint into the text field." 
+								ikSpineNeckTF;
+							button 
+								-l "Get" 
+								-ann "Inserts the name of the current joint selection into the text field."
+								-c "textField -e -tx (`ls -sl -type joint`) ikSpineNeckTF" 
+								ikSpineNeckGetBTN;
+							
+							text -l "";
+							checkBox 
+								-l "" 
+								-v 1
+								-ann "Select if you want to build a head control."
+								-onc "textField -e -en 1 ikSpineHeadTF; button -e -en 1 ikSpineHeadGetBTN;"
+								-ofc "textField -e -en 0 ikSpineHeadTF; textField -e -tx \"\" ikSpineHeadTF; button -e -en 0 ikSpineHeadGetBTN;"
+								ikSpineHeadCB;
+							text -l "Head Joint" -ann "Insert the name of the head joint into the text field.";
+							textField 
+								-ann "Insert the name of the head joint into the text field." 
+								ikSpineHeadTF;
+							button 
+								-l "Get"
+								-ann "Inserts the name of the current joint selection into the text field."
+								-c "textField -e -tx (`ls -sl -type joint`) ikSpineHeadTF"
+								ikSpineHeadGetBTN;
+							setParent..;
+						
+						text -l "" -h 20;
+						
+						rowColumnLayout -nc 2 -cw 1 110 -cw 2 100;
+							text 
+								-label "Control Type:"
+								-ann "Select the type of control objects for the spine rig.";
+							
+							optionMenu 
+								-en 1 
+								-ann "Select the type of control objects for the spine rig."
+								ikSpineFKControlTypeOM;
+								
+								menuItem -label "None" -en 0;
+								menuItem -label "BoundingBox";
+								menuItem -label "Circle";
+								menuItem -label "Square";
+							setParent..;	
+							optionMenu -e -sl 2 ikSpineFKControlTypeOM;
+						
+						text -l "" -h 10;
+						separator -w 375;
+						text -l "" -h 6;
+						
+						colorIndexSliderGrp
+							-w 375
+							-cal 1 "left"
+							-cw 1 75
+							-cw 2 75
+							-cw 3 200
+							-label "Control Color" 
+							-min 1 
+							-max 31 
+							-value 1
+							-ann "Select a color for the control objects. Default (grey) is Maya큦 default color."
+							ikSpineControlCSG;
+						
+						text -l "" -h 10;
+						
+						setParent..;
+					setParent..;
+					
+					frameLayout 
+						-cll 1
+						-cl 1
+						-bs "etchedIn" 
+						-w 375
+						-l "Advanced:";
+					
+						columnLayout;
+							
+							text -l "";
+							
+							rowColumnLayout -nc 2 -cw 1 110 -cw 2 110;
+								text -l "  Force v4.5 spine:";
+								checkBox -l "" -v 0 dwRTForcePreviousIKSpineCHECK;
+								
+								text -l ""; text -l "";
+								
+								text 
+									-l "  Naming prefix:"
+									-ann "Provide a unique naming prefix to add to all IK spline spine rig names.";
+								textField 
+									-ann "Provide a unique naming prefix to add to all IK spline spine rig names."
+									ikSpineNamePrefixTF;
+								setParent..;
+								
+							dwRTClearTextFieldPOPUP ikSpineNamePrefixTF;
+							
+							text -l "";
+							
+							setParent..;
+					setParent..;
+					
+				setParent..;
+			setParent..;
+		setParent..;
+	setParent..;
+	string $applyButton3 = `button -h 30 -label "Create FK Spine" -c "{string $FKSpineRoot = `textField -q -tx FKSpineRootTF`; \
+									string $FKSpineLowerTorso = `textField -q -tx FKSpineLowerTorsoTF`; \
+									string $FKSpineUpperTorso = `textField -q -tx FKSpineUpperTorsoTF`; \
+									string $FKSpineNeck = `textField -q -tx FKSpineNeckTF`; \
+									string $FKSpineHead = `textField -q -tx FKSpineHeadTF`; \
+									int $FKSpineStretchOnOff = `checkBox -q -v FKSpineStretchCheck`; \
+									int $FKSpineControlColor = `colorIndexSliderGrp -q -v FKSpineColorSlider`; \
+									int $FKSpineControlType = `optionMenu -q -sl FKSpineControlTypeOM`; \
+									int $FKSpineCOGCheck = `checkBox -q -v FKSpineCOGCheck`; \
+									int $FKSpineNeckCheck = `checkBox -q -v fkSpineNeckCheck`; \
+									int $FKSpineHeadCheck = `checkBox -q -v fkSpineHeadCheck`; \
+									string $FKSpineID = `textField -q -tx fkSpinePrefixTF`;\
+									dwCreateFKSpine($FKSpineRoot, $FKSpineLowerTorso, $FKSpineUpperTorso, $FKSpineNeckCheck, $FKSpineNeck, $FKSpineHeadCheck, $FKSpineHead, $FKSpineStretchOnOff, $FKSpineControlType, $FKSpineControlColor, $FKSpineCOGCheck, $FKSpineID);}"
+								 	-ann "Create FK spine rig."
+								 	applyButtonSpine`;
+	string $closeButton3 = `button -h 30 -label "Close Window" -c "deleteUI dwRiggingToolsUI" -ann "Close UI window." closeButtonSpine`;
+
+
+	formLayout -e
+		-attachForm $scroll3 left 0
+		-attachForm $scroll3 top 0
+		-attachForm $scroll3 right 0
+		-attachControl $scroll3 bottom 0 $applyButton3
+
+		-attachForm $applyButton3 left 0
+		-attachNone $applyButton3 top
+		-attachPosition $applyButton3 right 0 50
+		-attachForm $applyButton3 bottom 0
+
+		-attachControl $closeButton3 left 0 $applyButton3
+		-attachNone $closeButton3 top
+		-attachForm $closeButton3 right 0
+		-attachForm $closeButton3 bottom 0
+		$form3;
+	setParent..;
+
+	
+	
+	string $formTools = `formLayout "Tools"`;
+		string $scrollOrientJoints = `scrollLayout utilitiesScrollLayout`;
+			columnLayout;
+			
+			frameLayout 
+				-w 375 
+				-marginWidth 1 
+				-borderStyle "etchedIn"
+				-labelVisible 1 
+				-l "Build Skeleton:"
+				-ann "Create simple biped skeleton (one skeleton per scene)."
+				-cll true
+				-cl true;
+				
+				columnLayout dwCreateBipedColumnLayout;
+					text -l "" -h 10;
+					
+					radioButtonGrp 
+						-cw 1 75 -cw 2 75
+						-en2 0
+						-nrb 2 
+						-la2 "Biped" "Quadraped" 
+						-sl 1;
+					
+					text -l "" -h 10;
+					
+					text -l "Optional naming prefix:";
+					textField -w 150 dwCreateBipedTXTFLD;
+					
+					
+					dwRTClearTextFieldPOPUP dwCreateBipedTXTFLD;
+					
+					text -l "" -h 15;
+					button 
+						-l "Build Skeleton"
+						-c "dwCreateBipedSkeleton(`textField -q -tx dwCreateBipedTXTFLD`);"
+						-ann "Create simple skeleton (one skeleton per scene)."
+						-w 150
+						dwCreateBipedButton;
+					
+					text -l "" -h 10;
+					setParent..;
+				setParent..;
+			
+			
+			
+				
+			frameLayout 
+				-w 375 
+				-marginWidth 1 
+				-borderStyle "etchedIn"
+				-labelVisible 1 
+				-l "Orient Joints:"
+				-ann "Orient joints options."
+				-cll true
+				-cl true;
+				
+				columnLayout;
+					text -l "";
+					text 
+						-l "Add the joints to orient to the text list:" 
+						-align left 
+						-ann "Add joints you wish to orient to textlist."
+						-w 350;				
+		
+					textScrollList 
+						-w 270 
+						-h 150
+						-allowMultiSelection true
+						-ann "Add joints you wish to orient to textlist."
+						ojTextScrollList;
+					rowColumnLayout -nc 3 -cw 1 90 -cw 2 90 -cw 3 90;
+						button 
+							-l "Add Joints" 
+							-ann "Add selected joints to textlist."
+							-c "dwAddSelectedJointsToList (\"ojTextScrollList\")";
+						button 
+							-l "Remove Joints" 
+							-ann "Remove highlighted members from textlist."
+							-c "dwRemoveObjectsFromList (\"ojTextScrollList\")";
+						button 
+							-l "Clear All" 
+							-ann "Clear all members from textlist."
+							-c "textScrollList -e -removeAll ojTextScrollList;";
+						setParent..;
+	
+					text -l "" -h 4;
+	
+					rowColumnLayout -nc 3 -cw 1 53 -cw 2 35 -cw 3 150;
+						text 
+							-ann "Select the axis which should aim to the next joint."
+							-l " Make the ";
+						optionMenu
+							-ann "Select the axis which should aim to the next joint."
+							-cc "	if (`optionMenu -q -sl ojAimAxisOM` == 1)\
+									{\
+									menuItem -e -en 0 ojXSideMenuItem;\
+									menuItem -e -en 1 ojYSideMenuItem;\
+									menuItem -e -en 1 ojZSideMenuItem;\
+									optionMenu -e -sl 2 ojSideAxisOM;\
+									}\
+								if (`optionMenu -q -sl ojAimAxisOM` == 2)\
+									{\
+									menuItem -e -en 0 ojYSideMenuItem;\
+									menuItem -e -en 1 ojXSideMenuItem;\
+									menuItem -e -en 1 ojZSideMenuItem;\
+									optionMenu -e -sl 3 ojSideAxisOM;\
+									}\
+								if (`optionMenu -q -sl ojAimAxisOM` == 3)\
+									{\
+									menuItem -e -en 0 ojZSideMenuItem;\
+									menuItem -e -en 1 ojXSideMenuItem;\
+									menuItem -e -en 1 ojYSideMenuItem;\
+									optionMenu -e -sl 1 ojSideAxisOM;\
+									}" 
+							ojAimAxisOM;
+							
+							//Currently only "X" option is available.
+							menuItem -l "X" ojXAimMenuItem;
+							menuItem -l "Y" -en 0 ojYAimMenuItem;
+							menuItem -l "Z" -en 0 ojZAimMenuItem;
+			
+						text -l "-axis aim down the joint.";
+						setParent..;
+		
+					text -l "" -h 4;
+		
+					rowColumnLayout -nc 5 -cw 1 53 -cw 2 35 -cw 3 75 -cw 4 43 -cw 5 10;
+						text 
+							-ann "Orient this axis as desired."
+							-l " Orient the ";
+						
+						optionMenu 
+							-ann "Orient this axis as desired."
+							ojSideAxisOM;
+							menuItem -l "X" -en 0 ojXSideMenuItem;
+							menuItem -l "Y" -en 1 ojYSideMenuItem;
+							menuItem -l "Z" -en 1 ojZSideMenuItem;
+						optionMenu -e -sl 2 ojSideAxisOM;
+						
+						text 
+							-ann "Orient this axis as desired."
+							-l "-axis pointing in ";
+						
+						optionMenu 
+							-ann "Orient this axis as desired."
+							ojDirectionOptionMenu;
+							
+							menuItem -l "- Z";
+							menuItem -l "+ Z";
+						text -l ".";
+						
+						setParent..;
+					
+					text -l "" -h 10;
+					separator -w 400;
+					text -l "" -h 10;
+					
+					rowColumnLayout -nc 5 -cw 1 23 -cw 2 100 -cw 3 23 -cw 4 100 -cw 5 24;
+						text -l "";
+						button 
+							-ann "Show/hide the local rotation axis for the selected hierarchy."
+							-l "Toggle Local Axis"
+							-c "dwToggleJointsLocalAxis();";
+						text -l "";
+						button 
+							-ann "Select each joint in the currently selected hierarchy."
+							-l "Select All Joints"
+							-c "dwSelectAllJoints();";
+						text -l "";
+						setParent..;
+					text -l "" -h 10;
+					separator -w 400;
+					text -l "" -h 10;
+					
+					rowColumnLayout -nc 1 -cw 1 275;
+						button 
+							-ann "Click to orient joints."
+							-l "ORIENT JOINTS" 
+							-w 200 
+							-c "{int $ojAimAxisInt = `optionMenu -q -sl ojAimAxisOM`;\
+								string $ojJointList[] = `textScrollList -q -ai ojTextScrollList`;\
+								int $ojSideAxisInt = `optionMenu -q -sl ojSideAxisOM`;\
+								int $ojDirectionInt = `optionMenu -q -sl ojDirectionOptionMenu`;\
+								dwOrientJoints($ojJointList, $ojAimAxisInt, $ojSideAxisInt, $ojDirectionInt);}";
+						setParent..;
+					text -l "" -h 10;
+					
+				setParent..;
+			setParent..;
+			
+			
+			frameLayout 
+				-w 375 
+				-marginWidth 1 
+				-borderStyle "etchedIn"
+				-labelVisible 1 
+				-l "Insert Joints:"
+				-ann "Insert joints options."
+				-cll true
+				-cl true;
+				
+				columnLayout;
+					text -l "" -h 20;
+					text 
+						-ann "Insert a single joint between currently selected joint and next joint in hierarchy."
+						-l " Insert single joint:" 
+						-font boldLabelFont 
+						-align left 
+						-w 150;
+					
+					text -l "" -h 5;
+					
+					button 
+						-ann "Insert a single joint between currently selected joint and next joint in hierarchy."
+						-l "Insert Joint"
+						-c "{string $selection[] = `ls -sl -type joint`; \
+							dwRTInsertSingleJoint($selection[0], `floatSlider -q -v jointPositionSlider`);}"
+						-w 150
+						dwInsertSingleJointButton;
+					
+					text -l "" -h 20;
+					separator -w 375;
+					text -l "" -h 20;
+					
+					text -l "  Place joint:" 
+						-font boldLabelFont 
+						-w 100 
+						-align left
+						-ann "Place the current joint along the current parent-child joint vector.";
+					
+					rowColumnLayout -nc 2 -cw 1 120 -cw 2 50;
+						text -ann "Select this checkbox to interactively position the joint with the slider."
+							-l "   Interactive placement:";
+						checkBox 
+							-ann "Select this checkbox to interactively position the joint with the slider."
+							-l "" 
+							-onc "dwRTInsertJointSliderInteractive (1);"
+							-ofc "dwRTInsertJointSliderInteractive (2);"
+							interactiveCheckBox;
+						setParent..;
+
+					rowColumnLayout -nc 2 -cw 1 300 -cw 2 50;
+						//Joint placement slider. Default is NOT interactive (no -dc flag given).
+						floatSlider
+							-ann "Position the joint along the current joint vector."
+							-min 0
+							-max 1
+							-v 0.5
+							-cc "floatField -e -v `floatSlider -q -v jointPositionSlider` jointPositionValue;\
+							dwMoveJoint (`floatSlider -q -v jointPositionSlider`);"
+							jointPositionSlider;
+	
+						floatField 
+							-ann "Shows the current position of the joint relative to the joints before and after."
+							-ed 0
+							-precision 2 
+							-v `floatSlider -q -v jointPositionSlider` 
+							-cc "floatSlider -e -v `floatField -q -v jointPositionValue` jointPositionSlider" 
+							jointPositionValue;
+						setParent..;
+
+					text -l "" -h 20;
+					separator -w 375;
+					text -l "" -h 30;
+
+					text 
+						-ann "Insert multiple joints between currently selected joint and next joint in the hierarchy."
+						-l "  Insert multiple joints:" 
+						-font boldLabelFont 
+						-align left 
+						-w 150;
+
+					rowColumnLayout -nc 3 -cw 1 90 -cw 2 250 -cw 3 20;
+						text 
+							-l " Number of joints:"
+							-ann "Choose number of joints to insert between current joint and next joint.";
+						intSlider
+							-min 1
+							-max 10
+							-ann "Choose number of joints to insert between current joint and next joint."
+							-dc "intField -e -v `intSlider -q -v dwInsertMultiJointIntSlider` dwInsertMultiJointIntValue;"
+							dwInsertMultiJointIntSlider;
+						intField 
+							-ed 0
+							-ann "Choose number of joints to insert between current joint and next joint."
+							-v `intSlider -q -v dwInsertMultiJointIntSlider` 
+							-cc "intSlider -e -v `intField -q -v dwInsertMultiJointIntValue` dwInsertMultiJointIntSlider" 
+							dwInsertMultiJointIntValue;
+							setParent..;
+						
+					text -l "" -h 7;
+						
+					button 
+						-ann "Insert multiple joints between current joint and next joint."
+						-l "Insert multiple joints"
+						-c "{string $joint[] = `ls -sl -type joint`; dwRTInsertMultipleJoints ($joint[0], `intSlider -q -v dwInsertMultiJointIntSlider`);}"
+						-w 150
+						dwInsertMultiJointsButton;
+					
+					text -l "" -h 20;
+					separator -w 375;
+					text -l "" -h 30;
+					
+					button -l "Remove Joint" -c "removeJoint" -w 150;
+					
+					text -l "" -h 20;
+					setParent..;
+				setParent..;
+				
+			
+			frameLayout 
+				-w 375 
+				-marginWidth 1 
+				-borderStyle "etchedIn"
+				-labelVisible 1 
+				-l "Stretchy IK:"
+				-ann "Add stretchiness to an existing IK chain."
+				-cll true
+				-cl true;
+				
+				columnLayout;
+					text -l "" -h 10;
+					
+					rowColumnLayout -nc 3 -cw 3 50;
+						
+						
+						text 
+							-ann "Insert the name of the IK handle into the text field."
+							-l "IK Handle:";
+						textField 
+							-ann "Insert the name of the IK handle into the text field."
+							dwRTCreateStretchyIK_IKHandleTF;
+						button 
+							-l "Get" 
+							-ann "Inserts the name of the selected IK handle into the text field."
+							-c "textField -e -tx `ls -sl -type ikHandle` dwRTCreateStretchyIK_IKHandleTF;";
+						
+						text 
+							-l "IK Control Object:"
+							-ann "Insert the name of the IK control object into the text field. This may be the same as the IK handle.";
+						textField 
+							-ann "Insert the name of the IK control object into the text field. This may be the same as the IK handle."
+							dwRTCreateStretchyIK_ControlObjTF;
+						button 
+							-l "Get" 
+							-ann "Inserts the name of the current selection into the text field."
+							-c "textField -e -tx `ls -sl` dwRTCreateStretchyIK_ControlObjTF;";
+				
+						text -l "" -h 10;
+						text -l "" -h 10;
+						text -l "" -h 10;
+				
+						text 
+							-ann "Choose a unique naming prefix to give to all nodes created."
+							-l "Naming prefix:";
+						textField 
+							-ann "Choose a unique naming prefix to give to all nodes created."
+							dwRTCreateStretchyIK_PrefixTF;
+						dwRTClearTextFieldPOPUP dwRTCreateStretchyIK_PrefixTF;
+						text -l "";	
+						
+						setParent..;
+					
+					text -l "" -h 15;
+					
+					frameLayout 
+						-w 369 
+						-marginWidth 1 
+						-borderStyle "etchedIn"
+						-labelVisible 1 
+						-l "Advanced:"
+						-ann "Advanced stretchy options."
+						-cll true
+						-cl true;
+						
+						rowColumnLayout -nc 2 -cw 2 225;
+							text -l "";
+							text -l "";
+							
+							text -l "Stretch Type:" -ann "Stretch rig either by joint scaling or joint translation.";
+							
+							radioButtonGrp 
+								-nrb 2
+								-la2 "Joint Scaling" "Joint Translation"
+								-ann "Stretch rig either by joint scaling or joint translation."
+								dwRTCreateStretchyIK_StretchTypeRBG;
+							radioButtonGrp -e -sl 2 dwRTCreateStretchyIK_StretchTypeRBG;
+							
+							text -l "" -h 10;
+							text -l "" -h 10;
+							
+							setParent..;
+						setParent..;
+					
+					text -l "";
+					
+					button 
+						-w 250 
+						-l "Create Stretchy IK"
+						-ann "Create Stretchy IK"
+						-c "dwRTCreateStretchyIK (`textField -q -tx dwRTCreateStretchyIK_IKHandleTF`, \
+									`textField -q -tx dwRTCreateStretchyIK_ControlObjTF`, \
+									`textField -q -tx dwRTCreateStretchyIK_PrefixTF`, \
+									`radioButtonGrp -q -sl dwRTCreateStretchyIK_StretchTypeRBG`)";
+					
+					text -l "" -h 10;
+					
+					setParent..;
+					
+				setParent..;
+				
+			
+			
+			
+			frameLayout 
+				-w 375 
+				-marginWidth 1 
+				-borderStyle "etchedIn"
+				-labelVisible 1 
+				-l "Stretchy Spline IK:"
+				-ann "Create a stretchy Spline IK chain."
+				-cll true
+				-cl true;
+				
+				columnLayout;
+				
+					rowColumnLayout -nc 3 -cw 3 50;
+					
+						text 
+							-l "Start Joint"
+							-ann "Insert the name of the starting joint.";
+						textField 
+							-ann "Insert the name of the starting joint."
+							dwStretchySplineIK_StartTF;
+						button 
+							-ann "Inserts the name of currently selected joint into the text field."
+							-l "Get" 
+							-c "textField -e -tx `ls -sl -type joint` dwStretchySplineIK_StartTF";
+					
+						text 
+							-ann "Insert the name of the ending joint."
+							-l "End Joint";
+						textField 
+							-ann "Insert the name of the ending joint."
+							dwStretchySplineIK_EndTF;
+						button 
+							-ann "Inserts the name of currently selected joint into the text field."
+							-l "Get" 
+							-c "textField -e -tx `ls -sl -type joint` dwStretchySplineIK_EndTF";
+						
+						text -l "" -h 10;
+						text -l "" -h 10;
+						text -l "" -h 10;
+						
+						text 
+							-ann "Provide an optional naming prefix for all created nodes."
+							-l "Naming Prefix";
+						textField 
+							-ann "Provide an optional naming prefix for all created nodes."
+							dwStretchySplineIK_PrefixTF;
+						dwRTClearTextFieldPOPUP dwStretchySplineIK_PrefixTF;
+						text -l "" -h 10;
+					setParent..;
+					
+					text -l "" -h 10;
+					
+					rowColumnLayout -nc 2 -cw 2 250;
+						text 
+							-ann "Creates clusters on created IK spline."
+							-l "Create Clusters:";
+						checkBox 
+							-ann "Creates clusters on created IK spline."
+							-l "" 
+							-v 1 dwStretchSplineIK_ClusterCB;
+						
+						text -l "" -h 10;
+						text -l "" -h 10;
+						
+						
+					setParent..;
+					
+					text -l "" -h 10;
+					
+					frameLayout
+						-cll 1
+						-cl 1
+						-w 369
+						-bs "etchedIn"
+						-l "Advanced:"
+						-ann "Advanced settings for IK spline.";
+					
+						columnLayout;
+							text -l "" -h 10;
+							
+							rowColumnLayout -nc 2 -cw 2 250;
+								text 
+									-ann "Stretch by either joint scaling or joint translation."
+									-l "Stretch Type:";
+							radioButtonGrp 
+								-ann "Stretch by either joint scaling or joint translation."
+								-nrb 2
+								-la2 "Joint Scaling" "Joint Translation"
+								dwStretchySplineIK_StretchTypeRBG;
+							radioButtonGrp -e -sl 2 dwStretchySplineIK_StretchTypeRBG;
+							setParent..;
+							
+							text -l "" -h 25;
+							text 
+								-ann "Spline IK Options"
+								-l " Spline IK Options:" 
+								-font boldLabelFont
+								-align left 
+								-w 150;
+							text -l "" -h 5;
+							
+							rowColumnLayout -nc 3 -cw 1 90 -cw 2 195 -cw 3 35;
+								
+								text -l "";
+								checkBox 
+									-ann "Root on Curve (consult Maya docs for more info)"
+									-l "Root on Curve" 
+									-v 1
+									-onc "checkBox -e -v 0 dwStretchySplineIK_AutoCreateRootAxisCB; checkBox -e -en 0 dwStretchySplineIK_AutoCreateRootAxisCB;"
+									-ofc "checkBox -e -en 1 dwStretchySplineIK_AutoCreateRootAxisCB;"
+									dwStretchySplineIK_RootOnCurveCB;
+								text -l "";
+								
+								text -l "";
+								checkBox 
+									-ann "Auto Create Root Axis (consult Maya docs for more info)"
+									-l "Auto Create Root Axis" 
+									-en 0
+									dwStretchySplineIK_AutoCreateRootAxisCB;
+								text -l "";
+								
+								text -l "";
+								checkBox 
+									-ann "Auto Parent Curve (consult Maya docs for more info)"
+									-l "Auto Parent Curve"
+									-v 0
+									dwStretchySplineIK_AutoParentCurveCB;
+								text -l "";
+								
+								text -l "";
+								checkBox 
+									-ann "Snap Curve to Root (consult Maya docs for more info)"
+									-l "Snap Curve to Root" 
+									-en 0
+									dwStretchySplineIK_SnapCurveToRootCB;
+								text -l "";
+								
+								text -l "";
+								checkBox 
+									-ann "Auto Create Curve (consult Maya docs for more info)"
+									-l "Auto Create Curve"
+									-onc "checkBox -e -v 0 dwStretchySplineIK_SnapCurveToRootCB; \
+										checkBox -e -en 0 dwStretchySplineIK_SnapCurveToRootCB; \
+										checkBox -e -en 1 dwStretchySplineIK_AutoSimplifyCurveCB; \
+										text -e -en 1 dwStretchySplineIK_NoSpansTXT; \
+										intSlider -e -en 1 dwStretchySplineIK_NoSpansSlider; \
+										intField -e -en 1 dwStretchySplineIK_NoSpansIF; \
+										text -e -en 0 dwStretchySplineIK_CurveTXT; \
+										textField -e -tx \"\" dwStretchySplineIK_CurveTF; \
+										textField -e -en 0 dwStretchySplineIK_CurveTF; \
+										button -e -en 0 dwStretchySplineIK_CurveBTN;"
+									-ofc "checkBox -e -en 1 dwStretchySplineIK_SnapCurveToRootCB; \
+										checkBox -e -en 0 dwStretchySplineIK_AutoSimplifyCurveCB; \
+										text -e -en 0 dwStretchySplineIK_NoSpansTXT; \
+										intSlider -e -en 0 dwStretchySplineIK_NoSpansSlider; \
+										intField -e -en 0 dwStretchySplineIK_NoSpansIF; \
+										text -e -en 1 dwStretchySplineIK_CurveTXT; \
+										textField -e -en 1 dwStretchySplineIK_CurveTF; \
+										button -e -en 1 dwStretchySplineIK_CurveBTN;"
+									-v 1
+									dwStretchySplineIK_AutoCreateCurveCB;
+								text -l "";
+								
+								
+								text 
+									-ann "Specify a curve to use for the IK spline."
+									-l " Curve:" 
+									-en 0 dwStretchySplineIK_CurveTXT;
+								textField 
+									-ann "Specify a curve to use for the IK spline."
+									-en 0 dwStretchySplineIK_CurveTF;
+								dwRTClearTextFieldPOPUP dwStretchySplineIK_CurveTF;
+								button 
+									-ann "Inserts the current selection into the text field."
+									-l "Get" 
+									-en 0 
+									-c "textField -e -tx `ls -sl` dwStretchySplineIK_CurveTF;" 
+									dwStretchySplineIK_CurveBTN;
+								
+								
+								
+								text -l "";
+								checkBox 
+									-ann "Auto Simplify Curve (consult Maya docs for more info)"
+									-l "Auto Simplify Curve" 
+									-v 1
+									-onc "text -e -en 1 dwStretchySplineIK_NoSpansTXT; \
+										intSlider -e -en 1 dwStretchySplineIK_NoSpansSlider; \
+										intField -e -en 1 dwStretchySplineIK_NoSpansIF;"
+									-ofc "text -e -en 0 dwStretchySplineIK_NoSpansTXT; \
+										intSlider -e -en 0 dwStretchySplineIK_NoSpansSlider; \
+										intField -e -en 0 dwStretchySplineIK_NoSpansIF;"
+									dwStretchySplineIK_AutoSimplifyCurveCB;
+								text -l "";
+								
+								text 
+									-ann "Number of spans on created IK spline."
+									-l " Number of Spans:" 
+									dwStretchySplineIK_NoSpansTXT;
+								intSlider 
+									-ann "Number of spans on created IK spline."
+									-min 1 
+									-max 10 
+									-v 2
+									-dc "intField -e -v `intSlider -q -v dwStretchySplineIK_NoSpansSlider` dwStretchySplineIK_NoSpansIF;"
+									dwStretchySplineIK_NoSpansSlider;
+								intField 
+									-ann "Number of spans on created IK spline."
+									-min 1 
+									-max 20 
+									-v 2 
+									-cc "intSlider -e -v `intField -q -v dwStretchySplineIK_NoSpansIF` dwStretchySplineIK_NoSpansSlider;"
+									dwStretchySplineIK_NoSpansIF;
+								
+								text -l "" -h 10;
+								text -l "" -h 10;
+								text -l "" -h 10;
+							
+								text 
+									-ann "Select a twist type (consult Maya docs for more info)"
+									-l " Twist Type:";
+								optionMenu 
+									-ann "Select a twist type (consult Maya docs for more info)"
+									-l "" dwStretchySplineIK_TwistTypeOM;
+									menuItem -l "linear";
+									menuItem -l "easeIn";
+									menuItem -l "easeOut";
+									menuItem -l "easeInOut";
+								text -l "";
+							setParent..;
+							text -l "" -h 10;
+							
+						setParent..;
+					setParent..;
+				text -l "";
+						
+				button 
+					-l "Create Stretchy Spline IK" 
+					-ann "Create Stretchy Spline IK"
+					-w 250
+					-c "dwRTCreateStretchySplineIK (`textField -q -tx dwStretchySplineIK_StartTF`, \
+								`textField -q -tx dwStretchySplineIK_EndTF`, \
+								`textField -q -tx dwStretchySplineIK_PrefixTF`, \
+								`checkBox -q -v dwStretchSplineIK_ClusterCB`, \
+								`radioButtonGrp -q -sl dwStretchySplineIK_StretchTypeRBG`, \
+								`checkBox -q -v dwStretchySplineIK_RootOnCurveCB`, \
+								`checkBox -q -v dwStretchySplineIK_AutoCreateRootAxisCB`, \
+								`checkBox -q -v dwStretchySplineIK_AutoParentCurveCB`, \
+								`checkBox -q -v dwStretchySplineIK_SnapCurveToRootCB`, \
+								`checkBox -q -v dwStretchySplineIK_AutoCreateCurveCB`, \
+								`checkBox -q -v dwStretchySplineIK_AutoSimplifyCurveCB`, \
+								`intField -q -v dwStretchySplineIK_NoSpansIF`, \
+								`optionMenu -q -v dwStretchySplineIK_TwistTypeOM`, \
+								`textField -q -tx dwStretchySplineIK_CurveTF`)";
+				text -l "";	
+				setParent..;
+			setParent..;
+			
+			
+			
+			frameLayout 
+				-w 375 
+				-marginWidth 1 
+				-borderStyle "etchedIn"
+				-labelVisible 1 
+				-l "FK Control Rig:"
+				-ann "Create FK control setup on existing joint chain."
+				-cll true
+				-cl true;
+				
+					columnLayout;	
+
+						text -l "";
+						text -l "FK Joint List (in hierarchical order):";
+						textScrollList -ams 0 -w 270 -h 150 dwCreateFKControlRigTSL;
+					
+						rowColumnLayout -nc 3 -cw 1 90 -cw 2 90 -cw 3 90;
+							button -l "Add Joints" -c "dwAddSelectedJointsToList dwCreateFKControlRigTSL";
+							button -l "Remove Joints" -c "dwRemoveObjectsFromList dwCreateFKControlRigTSL";
+							button -l "Clear List" -c "textScrollList -e -ra dwCreateFKControlRigTSL;";	
+						setParent..;
+						
+						text -l "";
+						
+						rowColumnLayout -nc 2 -cw 1 180 -cw 2 70;
+							text -l "Parent control shapes to joints:";
+							checkBox -l "" -onc "checkBox -e -v 0 dwCreateFKControlRigStretchCheck; \
+										checkBox -e -en 0 dwCreateFKControlRigStretchCheck; \
+										text -e -en 0 dwCreateFKControlRig_OrientJointsTypeTXT; \
+										text -e -en 0 dwCreateFKControlRig_StretchTXT; \
+										radioButtonGrp -e -en 0 dwCreateFKControlRig_OrientJointsTypeRBG;"
+									-ofc "checkBox -e -en 1 dwCreateFKControlRigStretchCheck; \
+										text -e -en 1 dwCreateFKControlRig_OrientJointsTypeTXT; \
+										text -e -en 1 dwCreateFKControlRig_StretchTXT; \
+										radioButtonGrp -e -en 1 dwCreateFKControlRig_OrientJointsTypeRBG;"
+									dwCreateFKControlRigParentControlShapeCheck;
+						
+						setParent..;
+						
+						text -l "" -h 10;
+						
+						rowColumnLayout -nc 2 -cw 1 180 -cw 2 70;
+							text -l "Stretch Joints:" dwCreateFKControlRig_StretchTXT;
+							checkBox -l "" dwCreateFKControlRigStretchCheck;
+						
+						setParent..;
+						
+						text -l "" -h 10;
+						
+						
+						rowColumnLayout -nc 2 -cw 1 100 -cw 2 300;
+							text -l "Control joints by:" dwCreateFKControlRig_OrientJointsTypeTXT;
+							radioButtonGrp 
+								-nrb 2
+								-la2 "Orient Constraints" "Connect Rotations"
+								-sl 1
+								dwCreateFKControlRig_OrientJointsTypeRBG;
+						setParent..;
+						
+						text -l "" -h 15;
+						
+						rowColumnLayout -nc 2;
+						text -l "Control Type:";
+						
+						optionMenu -l "" dwCreateFKControlRigControlType;
+							menuItem -l "BoundingBox";
+							menuItem -l "Circle";
+							menuItem -l "Square";
+						setParent..;
+						
+						
+						
+						text -l "";
+						button -w 270 -l "Create FK Control Setup" -c "dwRTCreateFKControlRig \
+											`textScrollList -q -ai dwCreateFKControlRigTSL` \
+											`checkBox -q -v dwCreateFKControlRigStretchCheck` \
+											`optionMenu -q -sl dwCreateFKControlRigControlType` \
+											`checkBox -q -v dwCreateFKControlRigParentControlShapeCheck` \
+											`radioButtonGrp -q -sl dwCreateFKControlRig_OrientJointsTypeRBG`";
+						text -l "";
+					setParent..;
+				setParent..;
+			
+			
+			
+			frameLayout 
+				-w 375 
+				-marginWidth 1 
+				-borderStyle "etchedIn"
+				-labelVisible 1 
+				-l "Finger Controls:"
+				-ann "Create finger controls."
+				-cll true
+				-cl true;
+				
+				columnLayout;
+					text -l "" -h 15;
+					
+					rowColumnLayout -nc 2 -cw 1 120 -cw 2 220;
+						
+						text 
+							-l "Finger Setup Type:"
+							-ann "Choose the type of finger setup for the character.";
+						radioButtonGrp
+							-nrb 2
+							-cw2 100 100
+							-l1 "Simple"
+							-l2 "Complete"
+							-ann "Choose the type of finger setup for the character."
+							fingerControlTypeRBG;
+						setParent..;
+					
+					text -l "" -h 25;
+					
+					rowColumnLayout -nc 3 -cw 1 110 -cw 2 110 -cw 3 60;
+					text 
+						-l "Control Object:"
+						-ann "Select the control object on which finger attrs will be created.";
+					textField  
+						-ann "Select the control object on which finger attrs will be created." 
+						dwFCControlObjTF;
+					button 
+						-l "Get" 
+						-c "textField -e -tx `ls -sl` dwFCControlObjTF"  
+						-ann "Inserts the name of the current selection into the appropriate text field.";
+					setParent..;
+			
+				text -l "";
+				
+				text -l "Specify First Finger Joints:" 
+					-w 250
+					-align left
+					-ann "Specify the names of the first joints in each finger chain.";
+				rowColumnLayout -nc 3 -cw 1 60 -cw 3 50;
+					checkBox 
+						-l "Thumb" 
+						-v 1
+						-ann "Choose if you have a thumb joint in your skeleton."
+						-onc "textField -e -en 1 FCthumbTF; button -e -en 1 thumbBUT"
+						-ofc "textField -e -en 0 -tx \"\" FCthumbTF; button -e -en 0 thumbBUT"
+						FCthumbCB;
+					textField -en 1 
+						-ann "Insert the name of the first thumb joint into the text field."
+						FCthumbTF;
+					button -l "Get" 
+						-ann "Inserts the name of the current seletion into the appropriate text field."
+						-c "textField -e -tx `ls -sl -type joint` FCthumbTF" thumbBUT;
+					
+					checkBox 
+						-l "Index" 
+						-v 1 
+						-ann "Choose if you have an index finger joint in your skeleton."
+						-onc "textField -e -en 1 FCindexTF; button -e -en 1 indexBUT"
+						-ofc "textField -e -en 0 -tx \"\" FCindexTF; button -e -en 0 indexBUT"
+						FCindexCB;
+					textField -en 1 
+						-ann "Insert the name of the first index finger joint into the text field."
+						FCindexTF;
+					button -l "Get" 
+						-ann "Inserts the name of the current seletion into the appropriate text field."
+						-c "textField -e -tx `ls -sl -type joint` FCindexTF" indexBUT;
+					
+					checkBox 
+						-l "Middle" 
+						-v 1 
+						-ann "Choose if you have a middle finger joint in your skeleton."
+						-onc "textField -e -en 1 FCmiddleTF; button -e -en 1 middleBUT"
+						-ofc "textField -e -en 0 -tx \"\" FCmiddleTF; button -e -en 0 middleBUT"
+						FCmiddleCB;
+					textField -en 1 
+						-ann "Insert the name of the first middle finger joint into the text field."
+						FCmiddleTF;
+					button -l "Get" 
+						-ann "Inserts the name of the current seletion into the appropriate text field."
+						-c "textField -e -tx `ls -sl -type joint` FCmiddleTF" middleBUT;
+					
+					checkBox 
+						-l "Ring" 
+						-v 1 
+						-ann "Choose if you have a ring finger joint in your skeleton."
+						-onc "textField -e -en 1 FCringTF; button -e -en 1 ringBUT"
+						-ofc "textField -e -en 0 -tx \"\" FCringTF; button -e -en 0 ringBUT"
+						FCringCB;
+					textField -en 1 
+						-ann "Insert the name of the first ring finger joint into the text field."
+						FCringTF;
+					button -l "Get" 
+						-ann "Inserts the name of the current seletion into the appropriate text field."
+						-c "textField -e -tx `ls -sl -type joint` FCringTF" ringBUT;
+					
+					checkBox 
+						-l "Pinky" 
+						-v 1 
+						-ann "Choose if you have a pinky finger joint in your skeleton."
+						-onc "textField -e -en 1 FCpinkyTF; button -e -en 1 pinkyBUT"
+						-ofc "textField -e -en 0 -tx \"\" FCpinkyTF; button -e -en 0 pinkyBUT"
+						FCpinkyCB;
+					textField -en 1 
+						-ann "Insert the name of the first pinky finger joint into the text field."
+						FCpinkyTF;
+					button -l "Get" 
+						-ann "Inserts the name of the current seletion into the appropriate text field."
+						-c "textField -e -tx `ls -sl -type joint` FCpinkyTF" pinkyBUT;
+					
+				setParent..;
+				text -l "";
+				
+				rowColumnLayout -nc 2;
+					text -l "Pinky Cup Joint"
+						-ann "Choose if you have a pinky cup joint in your skeleton.";
+					checkBox -l "" 
+						-ann "Choose if you have a pinky cup joint in your skeleton."
+						FCpinkyCupCheck;
+					
+					text -l "";
+					text -l "";
+					
+					text -l "Bend Axis";
+					optionMenu 
+						-cc "	if ((`optionMenu -q -sl FCbendAxisOM` == 1) || (`optionMenu -q -sl FCbendAxisOM` == 2))\
+							{\
+							menuItem -e -en 0 FCspreadAxisXMenuItem;\
+							menuItem -e -en 1 FCspreadAxisYMenuItem;\
+							menuItem -e -en 1 FCspreadAxisZMenuItem;\
+							optionMenu -e -sl 3 FCspreadAxisOM;\
+							}\
+						else if ((`optionMenu -q -sl FCbendAxisOM` == 3) || (`optionMenu -q -sl FCbendAxisOM` == 4))\
+							{\
+							menuItem -e -en 1 FCspreadAxisXMenuItem;\
+							menuItem -e -en 0 FCspreadAxisYMenuItem;\
+							menuItem -e -en 1 FCspreadAxisZMenuItem;\
+							optionMenu -e -sl 3 FCspreadAxisOM;\
+							}\
+						else if ((`optionMenu -q -sl FCbendAxisOM` == 5) || (`optionMenu -q -sl FCbendAxisOM` == 6))\
+							{\
+							menuItem -e -en 1 FCspreadAxisXMenuItem;\
+							menuItem -e -en 1 FCspreadAxisYMenuItem;\
+							menuItem -e -en 0 FCspreadAxisZMenuItem;\
+							optionMenu -e -sl 2 FCspreadAxisOM;\
+							}" 
+						FCbendAxisOM;
+						
+						menuItem -l "- X";
+						menuItem -l "+X";
+						menuItem -l "- Y";
+						menuItem -l "+Y";
+						menuItem -l "- Z";
+						menuItem -l "+Z";
+					
+					optionMenu -e -sl 6 FCbendAxisOM;
+					
+					text -l "Spread Axis";
+					
+					optionMenu FCspreadAxisOM;
+						menuItem -l "X" -en 0 FCspreadAxisXMenuItem;
+						menuItem -l "Y" FCspreadAxisYMenuItem;
+						menuItem -l "Z" FCspreadAxisZMenuItem;
+					
+					optionMenu -e -sl 2 FCspreadAxisOM;
+				setParent..;
+				text -l "";
+				
+				button -l "Create Finger Controls"
+					-h 25 -w 210
+					-c "dwCreateFingerSetupType(`textField -q -tx dwFCControlObjTF`, \
+						`checkBox -q -v FCthumbCB`, \
+						`checkBox -q -v FCindexCB`, \
+						`checkBox -q -v FCmiddleCB`, \
+						`checkBox -q -v FCringCB`, \
+						`checkBox -q -v FCpinkyCB`, \
+						`textField -q -tx FCthumbTF`, \
+						`textField -q -tx FCindexTF`, \
+						`textField -q -tx FCmiddleTF`, \
+						`textField -q -tx FCringTF`, \
+						`textField -q -tx FCpinkyTF`, \
+						`checkBox -q -v FCpinkyCupCheck`, \
+						`optionMenu -q -sl FCbendAxisOM`, \
+						`optionMenu -q -sl FCspreadAxisOM`, \
+						`radioButtonGrp -q -sl fingerControlTypeRBG`)";
+				
+				text -l "";
+				
+				setParent..;
+			setParent..;
+			
+			
+			
+			
+			frameLayout 
+				-w 375 
+				-marginWidth 1 
+				-borderStyle "etchedIn"
+				-labelVisible 1 
+				-l "Create Character Set:"
+				-ann "Create character set: based on rig created with standard biped skeleton."
+				-cll true
+				-cl true;
+				
+				columnLayout;
+					text -l "" -h 10;
+					text -l "Character name:" 
+						-w 150
+						-align left
+						-ann "Character name: Specify a name for the character.";
+					
+					textField 
+						-w 150 
+						-ann "Character name: Specify a name for the character."
+						dwCreateCharacterSetTF;
+					
+					dwRTClearTextFieldPOPUP dwCreateCharacterSetTF;
+					text -l "" -h 10;
+					
+					button 
+						-l "Create Character Set"
+						-c "dwCreateCharacterSet (`textField -q -tx dwCreateCharacterSetTF`);"
+						-ann "Create character set: based on rig created with standard biped skeleton."
+						-w 150
+						dwInsertMultiJointsButton;
+					
+					text -l "" -h 5;
+					setParent..;
+				setParent..;
+			
+			
+			
+		setParent..;
+	setParent..;
+	string $toolsCloseButton = `button -h 30 -l "Close Window" -c "deleteUI dwRiggingToolsUI" -ann "Close UI window."`;
+
+	formLayout -e
+		-attachForm $scrollOrientJoints left 0
+		-attachForm $scrollOrientJoints top 0
+		-attachForm $scrollOrientJoints right 0
+		-attachControl $scrollOrientJoints bottom 0 $toolsCloseButton
+
+		-attachForm $toolsCloseButton left 0
+		-attachNone $toolsCloseButton top
+		-attachForm $toolsCloseButton right 0
+		-attachForm $toolsCloseButton bottom 0
+		$formTools;
+	setParent..;
+setParent..;
+
+string $frameHelp = `frameLayout -lv 0 -borderStyle "etchedIn"`;
+string $help = `helpLine -h 20`;
+	setParent..;
+	
+formLayout -e
+	-af $tabMain left 0
+	-af $tabMain top 0
+	-af $tabMain right 0
+	-ac $tabMain bottom 0 $frameHelp
+	
+	-af $frameHelp left 0
+	-af $frameHelp right 0
+	-af $frameHelp bottom 0
+	$formMain;
+
+showWindow dwRiggingToolsUI;
+}
+//end of script

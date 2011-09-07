@@ -1,0 +1,1486 @@
+// 	Script:	js_greasePencil_4.mel
+//	Author:	Jason Schleifer
+//			jason.schleifer@gmail.com
+//
+//
+//	Descr:	This is a quick hack to simulate a greasePencil interface for maya.
+//
+//  Aug 23, 2010 - Adjustment
+//  -------------------------
+//      Adjusted icon paths to use the dilloTools image procedure "dillo_getImage"
+//
+//  Aug 14, 2005 - Fixes
+//  --------------------
+//  		o Added Edit/Lock button which will let the user "erase" curves if they need to
+//		o Fixed bug with crashing when on frame 1
+//		o Added checking for system os, if on windows it should look
+//		  for bmp files, otherwise it should look for iff
+//		o additional misc fixes
+//
+//  May 22, 2005 - Fixes
+//  --------------------
+//		o fixed size of planes for orthographic views
+//
+//  April 30, 2005 - Additions
+//  --------------------------
+//		o added post frame ghosting
+//		o added warning for pre-frame 1 errors
+//		o made it so when you store a frame, it automatically removes it from the timed frames
+//		o removed Trans and Scale fields, added ability to select frames instead
+//		o added ability to shift frames up and down
+//		o can now select "stored" frames
+//		o can now toggle template and visibility of "stored" frames
+//
+//	April 27, 2005 - Additions
+//	--------------------------
+//		o Added ability to change timing of drawings
+//		o New cleaner interface which shows what frames drawings are on
+//		o Snap to drawing by clicking on item in interface
+//		o Remembers previous camera
+//		o Visibility toggle
+//		o Curves are no longer stored under the camera
+//		o Can scale and translate plane
+//		o can turn on and off the ghosting
+//		o added ability to store frames so they stay throughout the shot
+//		
+//
+//		To Do:
+//		------
+//		o Make it so the tool isn't name based
+//		o Add ability to color lines
+//		o Add ability to modify thickness
+
+
+global proc js_gpCreateSketchLayerWin ()
+{
+	// this procedure will create a window which will prompt the user to create
+	// a Sketch Layer
+
+	$win = "js_gpCreateSketchLayerWindow";
+	if (`window -exists $win`)
+		deleteUI $win;
+
+	window -title "Create Sketch Layer" $win;
+	
+	$f1 = `formLayout -nd 100`;
+	$tfg = `textFieldGrp -l "Layer Name:" -adj 2 -cw 1 100 -tx "NewLayer" js_gpNewLayerTFG`; 
+	// create an option menu which shows all the cameras
+	$om = `optionMenuGrp -cw 1 100 -adj 2 -ad2 1 -cal 1 "right" -l "Camera:" gp_om`;
+
+	// check for the optionVar
+		string $prevCam;
+		if (`optionVar -exists "js_gpCameraOptionVar"`)
+		{
+			$prevCam = `optionVar -q "js_gpCameraOptionVar"`;
+		}
+		$cameras = `ls -type camera`;
+		for ($cam in $cameras)
+		{
+			$p = `listRelatives -p $cam`;
+			menuItem -l $p[0];
+			if ($prevCam != "")
+			{
+				if ($p[0] == $prevCam)
+				{
+					optionMenuGrp -e -v $prevCam $om;
+				}
+			}
+		}
+
+	$createButton = `button -l "Create" -c ("js_gpCreateSketchLayer \""+$win+"\"")`;
+	$cancelButton = `button -l "Cancel" -c ("deleteUI " + $win)`;
+
+
+	formLayout -e
+		-af $tfg top 5
+		-af $tfg left 5
+		-af $tfg right 5
+	
+		-af $om left 5
+		-af $om right 5
+		-ac $om top 5 $tfg
+
+		-af $createButton left 5
+		-ap $createButton right 0 50
+		-af $createButton bottom 5
+
+		-af $cancelButton right 5
+		-ap $cancelButton left 0 50
+		-af $cancelButton bottom 5
+		$f1;
+	showWindow $win;
+	
+}
+global proc js_greasePencil_4 ()
+{
+
+	$win = "js_greasePencilWin";
+
+	if (`window -exists $win`)
+		deleteUI $win;
+
+	createGreasePencilWin $win;
+	showWindow $win;
+}
+
+
+global proc js_gpShiftFrames (string $direction, int $type)
+{
+	// This procedure will shift all frames from the current one on either up or down, unless $type is 0.  If $type is
+	// then only the currently selected frame will move.
+	// the first frame will not go above frame 1.
+	// inputs are "up" and "down"
+	// first get the camera and curGP
+	$layer = `textScrollList -q -si js_gpLayerTSL`;
+	$cam = $layer[0];
+	if (`objExists ($cam +"_gpGrp")`)
+	{
+		// get a list of all the items in the textScrollList
+		// then get the selected item number
+		string $items[] = `textScrollList -q -ai js_gpTSL`;
+		int $sel[] = `textScrollList -q -sii js_gpTSL`;
+		if (size($sel) > 0)
+		{		
+			$size = size($items);
+			if (($sel[0] == 1) && ($direction == "up") && ($items[0] == 1))
+			{
+				confirmDialog -m ("Sorry, can't go up past frame 1!");
+			}
+			else
+			{
+				int $exit=0;
+				//print ("Sel[0] = "+$sel[0] + "\n");
+				if (($sel[0]-2) >= 0)
+				{
+					int $curItem = $items[($sel[0]-1)];
+					int $prevItem = $items[($sel[0]-2)];
+					if (($direction == "up") && (($curItem-1) == $prevItem))
+					{
+						confirmDialog -m ("You can't go past this value!");
+						$exit = 1;	
+					}
+					// check and see if the item selected is the last item in the list.  
+					// if not, make sure it's isn't being asked to move past the next item.
+					if ($sel[0] == $size)
+					{
+					} 
+					else
+					{
+						int $nextItem = $items[($sel[0])];
+						if (($direction == "down") && ($type == 0) && (($nextItem-1) == $curItem))
+						{
+							confirmDialog -m ("You can't go past this value!");
+							$exit = 1;
+						}
+					}
+				}
+				
+				if ($exit == 0)
+				{
+					if ($direction == "down")
+					{
+						if ($type == 1)
+						{
+							for ($x = ($size-1); $x >=($sel[0]-1); $x--)
+							{
+								$name = ("gp_"+$cam+"_"+$items[$x]);
+								
+								$dir = 1;
+								int $newValue = (int($items[$x]) + 1);
+								$newName = ("gp_"+$cam+"_"+$newValue);
+								rename $name $newName;
+							}
+						}
+						else
+						{
+							$curItem = $items[($sel[0]-1)];
+							$name = ("gp_"+$cam+"_"+$curItem);
+							int $newValue = (int($curItem) + 1);
+							$newName = ("gp_"+$cam+"_"+$newValue);
+							rename $name $newName;
+						}
+					}	
+					else
+					{
+						if ($type == 1)
+						{
+							for ($x = ($sel[0]-1); $x < $size; $x++)
+							{
+								$name = ("gp_"+$cam+"_"+$items[$x]);
+								int $newValue = (int($items[$x]) -1);
+								$newName = ("gp_"+$cam+"_"+$newValue);
+								rename $name $newName;
+							}		
+						}
+						else
+						{
+							$curItem = $items[($sel[0]-1)];
+							$name = ("gp_"+$cam+"_"+$curItem);
+							int $newValue = (int($curItem) - 1);
+							$newName = ("gp_"+$cam+"_"+$newValue);
+							rename $name $newName;
+							
+						}
+					}
+					js_updateGPVis $cam;
+					js_sortFramesList $cam;
+					//js_pmUpdateInterface;
+					// now select the item
+					textScrollList -e -sii $sel[0] js_gpTSL;
+					js_goSelectedFrame;
+					
+				}		
+			}		
+			
+			
+		}		
+	}
+}
+global proc js_sortFramesList (string $layer)
+{
+	// given the layer, it will sort the list of frames
+	string $children[0];
+	$children = `js_getGPList $layer`;
+	$framesTSL = "js_gpTSL";
+	int $ordered[0];
+	int $num = 0;
+
+	textScrollList -e -ra $framesTSL;
+	for ($item in $children)
+	{
+		string $break[0];
+		tokenize ($item, "_", $break);
+		$ordered[$num++] = $break[2];
+	}
+	$ordered = `sort $ordered`;
+	for ($number in $ordered)
+	{
+		textScrollList -e -a $number $framesTSL;
+	}
+
+}
+global proc string js_getCurGP ( string $camera)
+{
+	$curFrame = `currentTime -q`;
+	// first check and see if the frame exists
+	
+	$greasePlane = ("gp_"+$camera + "_" + $curFrame);
+
+	return $greasePlane;
+
+}
+global proc js_addGreasePencilFrame ( string $camera, string $frame )
+{
+	// this procedure will add a grease pencil plane for the current frame for the given camera
+
+	// first check to see if we're on a frame less than frame 1.  If so, return a warning.
+	if (`currentTime -q` < 1)
+	{
+		confirmDialog -m ("The Grease Pencil script does not work on any frames less than 1.");	
+	}
+	else
+	{
+		string $greasePlane;
+		if ($frame == "cur")
+			$greasePlane = `js_getCurGP $camera`;
+		else
+			$greasePlane = ("gp_"+$camera+"_1");
+		string $camGrp;
+	 	$camGrp = ($camera + "_gpGrp");	
+	
+		if (`objExists $greasePlane`)
+		{
+			// it already exists, do nothing
+		}
+		else
+		{
+			// create the plane
+			$plane = `nurbsPlane -p 0 0 0 -ax 0 1 0 -w 1 -lr 1 -d 3 -u 1 -v 1 -ch 0`;
+			$greasePlane = `rename $plane $greasePlane`;
+	
+			// parent the greasePlane to the camGrp
+			parent $greasePlane $camGrp;
+
+			// set the attributes
+			setAttr ($greasePlane + ".tx") 0;
+			setAttr ($greasePlane + ".ty") 0;
+			setAttr ($greasePlane + ".tz") -1;
+			setAttr ($greasePlane + ".rx") 90;
+			setAttr ($greasePlane + ".ry") 0;
+			setAttr ($greasePlane + ".rz") 0;
+			setAttr ($greasePlane + ".v") 1;
+			if (`getAttr ($camGrp + ".orthographic")`)
+			{
+				setAttr ($greasePlane + ".sx") 32;
+				setAttr ($greasePlane + ".sy") 1;
+				setAttr ($greasePlane + ".sz") 20;
+			}
+			else
+			{
+				setAttr ($greasePlane + ".sx") 3;
+				setAttr ($greasePlane + ".sy") 1;
+				setAttr ($greasePlane + ".sz") 2;
+			}	
+			// get the shape
+			$shape = `listRelatives -f -s $greasePlane`;
+	
+			setAttr ($shape[0] + ".overrideEnabled") 1;
+			setAttr ($shape[0] + ".overrideShading") 0;
+			// leave the object in normal selection mode so we can manipulate the colour
+			setAttr ($shape[0] + ".overrideDisplayType") 2;
+			
+	
+		}
+	
+		js_updateGPVis $camera;
+		//js_setGPLive $camera;
+	}
+}
+
+global proc int js_createGPFScriptJob (string $camera)
+{
+	// this proc will create the scriptJob that makes it so every time the frame changes and stops, the
+	// approriate visible gpf will be active
+	global int $gDrawToolOn;
+
+	print "Grease Pencil Tool: ON";
+	$gDrawToolOn = 1;
+	$job = `scriptJob -cf "playingBack" ("js_setGPLive " + $camera )`;
+    // set the selection draw to be black
+    //displayColor -active lead 1;
+    //selectType -cos 0;
+    refresh;
+	scriptJob -event "ToolChanged" ("js_removeGPFScriptJob " + $job ) -ro 1;
+	return $job;
+}
+
+global proc js_setGPLive (string $camera)
+{
+	// this will find the currently active gp for the camera & make it live
+
+	// first, we have to have a hilighted layer, otherwise we don't know which
+	// layer to make live..
+	//print ("make live\n");
+	string $items[0];
+	$items = `textScrollList -q -si js_gpLayerTSL`;
+	if (size($items) > 0)
+	{
+		string $camGrp;
+		$camGrp = `jsGetCamGrp $camera`;
+		
+		//print ("camera: "  +$camGrp + "\n");
+		string $gp;
+		//$gp = `js_findVisGPS $camera`;
+		$gp = `js_findVisGPS $camGrp`;
+
+		if ($gp == "")
+		{
+			warning "No grease pencil planes available for this camera.  Creating one..";
+			js_addGreasePencilFrame $camera "cur";
+			$gp = `js_findVisGPS $camGrp`;
+			
+		}
+		//print ("gp: " + $gp + "\n");
+		select $gp;
+		MakeLive;
+		select -d;
+	}
+	else
+	{
+		warning ("There are no sketch layers selected.");
+		select -d;
+		MakeLive;
+	}
+}
+global proc string js_findVisGPS (string $camera)
+{
+	string $gp;
+	string $children[0];
+	$children = `listRelatives -c -type "transform" $camera`;
+	string $child;
+	for ($child in $children)
+	{
+		string $break[0];
+		tokenize ($child, "_", $break);
+		if ($break[0] == "gp")
+		{
+			// check and see if it's visible.
+			if ((`getAttr ($child + ".v")`) && (!`getAttr ($child + ".template")`))
+			{
+				$gp = $child;
+			}
+		}
+	}
+	return $gp;
+
+}
+global proc js_removeGPFScriptJob (int $job)
+{
+	global int $gDrawToolOn;
+    
+    // hack this so the tool stays on if we're still in pencilContext
+    $currentCtx = `currentCtx`;
+    if ($currentCtx != "pencilContext")
+    {
+        string $objs[0];
+        $objs = `ls -sl`;
+        print "Grease Pencil Tool: OFF";
+        $gDrawToolOn = 0;
+        scriptJob -kill $job;  
+	$jobs = `scriptJob -lj`;
+	string $job;
+	for ($job in $jobs)
+	{
+		if (`gmatch $job "*js_setGPLive*"`)
+		{
+			string $tmp[0];
+			tokenize ($job, ":", $tmp);
+			int $jobNum = (int($tmp[0]));
+			scriptJob -kill $jobNum;
+		}
+	}
+ 
+        //displayColor -active lead 19;
+        //selectType -cos 0;
+
+        select -d;
+        MakeLive;
+        select $objs;
+    }
+}
+
+global proc js_setGPTool (string $camera)
+{
+	// This procedure sets the tool to the pencil
+	// first, we need to set the tool:
+	curveSketchToolScript 4;	
+	curveSketchCtx -e -d 1 `currentCtx`;
+	refresh;
+	// now start the scriptJobs
+	js_createGPFScriptJob $camera;
+	js_setGPLive $camera;
+	
+}
+
+global proc js_gpSelectFrame ()
+{
+	string $frame;
+	$frame = `js_gpGetSelectedFrame`;
+	if ($frame != "")
+		select $frame;
+	else
+		warning ("Cannot select " +$frame+ " because it doesn't exist..\n");
+}
+global proc js_gpSelectStoredFrame ()
+{
+	string $items[] = `textScrollList -q -si js_gpStoredFramesTSL`;
+	if (size($items) > 0)	
+	{
+		$layer = `textScrollList -q -si js_gpLayerTSL`;
+		$cam = $layer[0];
+		setToolTo "selectSuperContext";
+		$name = ("stored_gp_"+$cam+"_"+$items[0]);
+		if (`objExists $name`)
+			select $name;
+		else
+			warning ("Cannot select " +$name+ " because it doesn't exist..\n");
+	}
+}
+global proc js_removeGPFrame (string $camera)
+{
+	// this proc will remove a gp from the selected frame in the
+	// greasePencilwindow
+
+	string $items[] = `textScrollList -q -si js_gpTSL`;
+	if (size($items) > 0)	
+	{
+		// attempt to delete it
+		$greasePlane = ("gp_"+$camera+"_"+$items[0]);
+
+		if (`objExists $greasePlane`)
+		{
+			// it exists, delete it
+			delete $greasePlane;
+			js_updateGPVis $camera;
+			js_setGPLive $camera;
+			//$gp = `js_findVisGPS $camera`;
+			//print ("Current Vis: " + $gp + "\n");
+		}
+	}
+
+	js_pmUpdateInterface;
+
+}
+global proc js_removeGPStoredFrame (string $camera)
+{
+	// this proc will remove a stored frame from the selected frame in the
+	// greasePencilwindow
+
+	string $items[] = `textScrollList -q -si js_gpStoredFramesTSL`;
+	if (size($items) > 0)	
+	{
+		// attempt to delete it
+		$greasePlane = ("stored_gp_"+$camera+"_"+$items[0]);
+
+		if (`objExists $greasePlane`)
+		{
+			// it exists, delete it
+			delete $greasePlane;
+			js_updateGPVis $camera;
+			js_setGPLive $camera;
+			//$gp = `js_findVisGPS $camera`;
+			//print ("Current Vis: " + $gp + "\n");
+		}
+	}
+
+	js_pmUpdateInterface;
+
+}
+global proc js_makeFrameActive (string $camera)
+{
+	js_addGreasePencilFrame $camera "cur";
+}
+global proc js_removeGPFrame (string $camera)
+{
+	// this proc will remove a gp from the selected frame in the
+	// greasePencilwindow
+
+	string $items[] = `textScrollList -q -si js_gpTSL`;
+	if (size($items) > 0)	
+	{
+		// attempt to delete it
+		$greasePlane = ("gp_"+$camera+"_"+$items[0]);
+
+		if (`objExists $greasePlane`)
+		{
+			// it exists, delete it
+			delete $greasePlane;
+			js_updateGPVis $camera;
+			js_setGPLive $camera;
+			//$gp = `js_findVisGPS $camera`;
+			//print ("Current Vis: " + $gp + "\n");
+		}
+	}
+
+	js_pmUpdateInterface;
+
+}
+global proc js_makeFrameActive (string $camera)
+{
+	js_addGreasePencilFrame $camera "cur";
+
+	$greasePlane = `js_getCurGP $camera`;
+	select $greasePlane;
+	MakeLive;
+
+}
+global proc js_makeFrameNotActive (string $camera)
+{
+	select -d;
+	MakeLive;
+
+}
+global proc int js_gpGetValidReturn ( string $camera, int $initial)
+{
+	int $return = $initial;
+	string $result = "good";
+	string $text;
+	int $enteredValue;
+	string $value;
+	string $newValue;
+	
+	// this proc will query the user for a new number to enter.  It will return
+	// the number as long as it doesn't match another pre-existing frame, other
+	// than the one that they started with
+
+	do {
+		$return = $initial;
+		$result = "good";
+		$text = "";
+		$enteredValue = 0;
+		$value = "";
+		$newValue = "";
+		$value = `promptDialog
+			-title "Set New Frame"
+			-message "New Frame #"
+			-button "OK" -button "Cancel"
+			-defaultButton "OK" -cancelButton "Cancel"
+			-text $initial
+			-dismissString "Cancel" `;
+
+		if ($value == "OK") 
+		{
+			$newValue = `promptDialog -q -text `;
+			$enteredValue = $newValue;
+
+			if ($enteredValue == $initial)
+			{
+				$result = "good";
+				$return = $initial;
+			}
+			else
+			{
+				// now we have to check all the other items in the list to make
+				// sure it doesn't match one of those.
+				string $items[] = `textScrollList -q -ai js_gpTSL`;
+				for ($item in $items)
+				{
+					// now check the newValue and see if it matches an
+					// item.. 
+					if ($enteredValue == $item)
+					{
+						$result = "bad";
+						confirmDialog -m "Ooops! You already have a drawing on this frame!";
+					}
+				}
+				if ($result == "good")
+					$return = $enteredValue;
+
+			}
+		}
+		else
+		{
+			$result = "good";
+			$return = $initial;
+		}
+	} while ($result == "bad");
+	// ("Returning: " + $return + "\n");
+	return $return;
+}
+global proc string js_gpIconExt ()
+{
+	// it seems that windows needs to display bmp files.. and mac needs iff files..
+	// so hopefully this will take care of it.  If on windows, then it'll pick bmp..
+	// otherwise, it'll use iff.
+
+	string $ext;
+	$system = `about -os`;
+	if (($system == "nt") || ($system == "win64"))
+	{
+		$ext = "bmp";
+	}
+	else
+	{
+		$ext = "iff";
+	}	
+	return $ext;
+}
+global proc createGreasePencilWin (string $win)
+{
+		
+	window -title "Poor-Man's Grease Pencil" $win;
+	
+	$f = `formLayout -nd 100`;
+		//text -align "left" -label "Please choose a camera to work with.";
+
+	setParent $f;
+
+	string $ext;
+	$ext = `js_gpIconExt`;	
+	$layerForm = `formLayout -nd 100`;
+
+		// create a textScrollList for the grease pencil layers
+		$layerText = `text -align "left" -l "Sketch Layers:"`;
+		$layerTSL  = `textScrollList -ams 0 -nr 10 -sc "js_pmUpdateInterface" js_gpLayerTSL`;
+		$layerAddB = `symbolButton -i (dillo_getImage("greasePencil/add."+$ext)) -ann "Add Sketch Layer" -c "js_gpCreateSketchLayerWin" js_gpNewLayerB`;
+		$layerDelB = `symbolButton -enable 0 -i (dillo_getImage("greasePencil/del."+$ext)) -ann "Delete Sketch Layer" -c "js_gpDeleteSketchLayer" js_gpDelLayerB`;
+		
+		$vb = `symbolCheckBox  -enable 0  -ann "Visibility" -i (dillo_getImage("greasePencil/visOn."+$ext)) -onc ("symbolCheckBox -e -i (dillo_getImage(\"greasePencil/visOn."+$ext+"\")) js_gpIconTextButton") -ofc ("symbolCheckBox -e -i (dillo_getImage(\"greasePencil/visOff."+$ext+"\")) js_gpIconTextButton") js_gpIconTextButton`;
+		$tb = `symbolCheckBox  -enable 0 -ann "Template Layer" -i (dillo_getImage("greasePencil/tmpOn." +$ext))
+			-onc ("symbolCheckBox -e -i (dillo_getImage(\"greasePencil/tmpOn."+$ext+"\")) js_gpTemplateIconTextButton") 
+			-ofc ("symbolCheckBox -e -i (dillo_getImage(\"greasePencil/tmpOff."+$ext+"\")) js_gpTemplateIconTextButton") 
+			js_gpTemplateIconTextButton`;
+		$gb1 = `symbolCheckBox -enable 0 -h 20 -w 20 -ann "Enable Ghost Post" -i (dillo_getImage("greasePencil/ghostPostOn."+$ext)) -onc "js_gpGhost 1 1" -ofc "js_gpGhost 1 0" js_gpPostGhostIconTextButton`;
+		$gb2 = `symbolCheckBox -enable 0 -h 20 -w 20 -ann "Enable Ghost Pre" -i (dillo_getImage("greasePencil/ghostPreOn."+$ext)) -onc "js_gpGhost 2 1" -ofc "js_gpGhost 2 0" js_gpPreGhostIconTextButton`;
+		
+		formLayout -e 
+			-af $layerText top 5
+			-af $layerText left 5
+			-af $layerText right 0
+
+			-ac $layerTSL top 0 $layerText
+			-ap $layerTSL right 0 80
+			-af $layerTSL left 5
+			-af $layerTSL bottom 0
+
+			-ac $layerAddB left 0 $layerTSL
+			-ac $layerAddB top 2 $layerText
+			-af $layerAddB right 0 
+
+			-af $layerDelB right 0
+			-ac $layerDelB top 2 $layerAddB
+			-ac $layerDelB left 0 $layerTSL
+			
+			-af $vb right 0
+			-ac $vb top 2 $layerDelB
+			-ac $vb left 0 $layerTSL
+
+			-af $tb right 0
+			-ac $tb top 2 $vb
+			-ac $tb left 0 $layerTSL
+
+			-af $gb1 right 0
+			-ac $gb1 top 2 $tb
+			-ac $gb1 left 0 $layerTSL
+			
+			-af $gb2 right 0
+			-ac $gb2 top 2 $gb1
+			-ac $gb2 left 0 $layerTSL
+			$layerForm;
+
+	setParent $f;
+
+	$framesForm = `formLayout -nd 100`;
+
+
+		// create a textScrollList, this will show all the frames for the current
+		// sketch layer
+		$frameText = `text -align "left" -l "Frames:"`;
+		$tsl = `textScrollList 
+			-nr 10
+			-dcc "js_gpDoubleClickTSL"
+			-sc "js_goSelectedFrame"
+			js_gpTSL`;
+
+		// add a checkbox for visibility
+		//$cbg = `checkBoxGrp -cw 1 50 -cal 1 "right" -l "Vis:" -ncb 1 js_pmCheckBoxGrp`;
+		//$gbg = `checkBoxGrp -cw 1 50 -cw 2 50 -cw 3 50 -l "Ghost:" -l1 "Pre" -l2 "Post" -ncb 2 -on1 "js_gpGhost 1 1" -of1 "js_gpGhost 1 0" -on2 "js_gpGhost 2 1" -of2 "js_gpGhost 2 0" -cal 1 "right" js_pmGhostCheckBoxGrp`;
+	
+		$b2 = `symbolButton -enable 0 -i (dillo_getImage("greasePencil/add."+$ext)) -ann "Add Frame" -c "js_pmAddFrame" js_gpAddFrameB`;
+		$b3 = `symbolButton -enable 0 -i (dillo_getImage("greasePencil/del."+$ext)) -ann "Delete Frame" -c "js_pmDelFrame" js_gpDelFrameB`;
+		$b7a = `symbolButton -enable 0 -i (dillo_getImage("greasePencil/down."+$ext)) -ann "Shift Frame Down" -c "js_gpShiftFrames down 0" js_gpDownThisFrame`;
+		$b8a = `symbolButton -enable 0 -i (dillo_getImage("greasePencil/up."+$ext)) -ann "Shift Frame Down" -c "js_gpShiftFrames up 0" js_gpUpThisFrame`;
+		$b7 = `symbolButton -enable 0 -i (dillo_getImage("greasePencil/downAll."+$ext)) -ann "Shift Frames Down" -c "js_gpShiftFrames down 1" js_gpDownFrame`;
+		$b8 = `symbolButton -enable 0 -i (dillo_getImage("greasePencil/upAll."+$ext)) -ann "Shift Frames Up" -c "js_gpShiftFrames up 1" js_gpUpFrame`;
+		$b9 = `symbolButton -enable 0 -i (dillo_getImage("greasePencil/sel."+$ext)) -ann "Select hilighted frame" -c "js_gpSelectFrame" js_gpSelectFrameB`;
+		$b10 = `button -enable 0 -l "Edit" -ann "Toggle Ref hilighted frame" -c "js_gpToggleRef" js_gpToggleRefB`;
+		formLayout -e
+			-af $frameText top 5
+			-af $frameText left 5
+			-af $frameText right 0
+
+			-af $tsl left 5
+			-ac $tsl top 0 $frameText
+			-ap $tsl right 0 80
+			-af $tsl bottom 0
+
+			-ac $b2 left 2 $tsl
+			-ac $b2 top 5 $frameText
+			-af $b2 right 5
+
+			-ac $b3 left 0 $tsl
+			-ac $b3 top 5 $b2
+			-af $b3 right 5
+
+			-ac $b7 left 2 $tsl
+			-ac $b7 top 5 $b8
+			-af $b7 right 5
+			
+			-ac $b8a left 0 $tsl
+			-ac $b8a top 5 $b3
+			-af $b8a right 5
+			
+			-ac $b7a left 0 $tsl
+			-ac $b7a top 5 $b8a
+			-af $b7a right 5
+			
+			-ac $b8 left 0 $tsl
+			-ac $b8 top 5 $b7a
+			-af $b8 right 5
+			
+			-ac $b9 left 0 $tsl
+			-ac $b9 top 5 $b7
+			-af $b9 right 5
+
+			-ac $b10 left 0 $tsl
+			-ac $b10 top 5 $b9
+			-af $b10 right 5
+
+			$framesForm;
+	setParent $f;
+
+	
+	$b1 = `button -l "Use Draw Tool" -enable 0 -c "js_pmDrawToolGo" js_gpUseDrawToolB`;
+
+
+	formLayout -e
+	    -af $b1 left 0
+		-af $b1 right 0
+		-af $b1 bottom 0
+
+		-af $layerForm top 0
+		-af $layerForm left 0
+		-ac $layerForm bottom 5 $b1
+		-ap $layerForm right 5 50
+		
+		-af $framesForm top 0
+		-af $framesForm right 0
+		-ac $framesForm bottom 5 $b1
+		-ap $framesForm left 5 50
+		$f;
+
+	js_gpUpdateLayersList;
+	//js_pmUpdateInterface;
+}
+
+global proc js_goSelectedFrame ()
+{
+	// get the current frame
+	$delFrameB = "js_gpDelFrameB";
+	$dwnFrameB = "js_gpDownFrame";
+	$upFrameB  = "js_gpUpFrame";
+	$selFrame  = "js_gpSelectFrameB";
+	$upThisFrameB = "js_gpUpThisFrame";
+	$downThisFrameB = "js_gpDownThisFrame";
+	$toggleRefB = "js_gpToggleRefB";
+
+	string $items[] = `textScrollList -q -si js_gpTSL`;
+	if (size($items) > 0)	
+	{
+		currentTime -e $items[0];
+		// enable all the buttons
+		symbolButton -e -enable 1 $delFrameB;
+		symbolButton -e -enable 1 $dwnFrameB;
+		symbolButton -e -enable 1 $upFrameB;
+		symbolButton -e -enable 1 $selFrame;
+		symbolButton -e -enable 1 $upThisFrameB;
+		symbolButton -e -enable 1 $downThisFrameB;
+		button -e -enable 1 $toggleRefB;
+		js_gpToggleRefCheck;
+	}
+	else
+	{
+		// disable all the buttons
+		symbolButton -e -enable 0 $delFrameB;
+		symbolButton -e -enable 0 $dwnFrameB;
+		symbolButton -e -enable 0 $upFrameB;
+		symbolButton -e -enable 0 $selFrame;
+		symbolButton -e -enable 0 $upThisFrameB;
+		symbolButton -e -enable 0 $downThisFrameB;
+		button -e -enable 0 $toggleRefB;
+
+	}
+}
+
+global proc js_gpCreateSketchLayer (string $win)
+{
+	// get the name that the person input and try and create a display layer
+	// based on that name.
+	string $layerName;
+	string $cameraName;
+
+	$layerName = `textFieldGrp -q -tx js_gpNewLayerTFG`;
+	if ((`objExists ($layerName + "_gpGrp")`) || (`objExists ("gp_"+$layerName+"_1")`))
+	{
+		confirmDialog -m ("An object already exists with the name " + $layerName + "\nPlease try a new one..");
+	}
+	else
+	{
+		$cameraName = `optionMenuGrp -q -v "gp_om"`;
+	
+		// now create the layer group
+		js_gpCreateSketchLayerGo $cameraName $layerName;
+		deleteUI $win;
+	}
+}
+
+global proc js_gpDeleteSketchLayer ()
+{
+	// the user wants to delete a sketch layer.  Confirm that this is the case,
+	// and then delete it
+	
+	// first get the name of the layer they want to delete
+	string $layer[0];
+	$layer = `textScrollList -q -si js_gpLayerTSL`;
+	if (size($layer) > 0)
+	{
+		// confirm with the user that they want to do this
+		$result = `confirmDialog -m ("Do you want to remove the layer " + $layer[0] + "?") -b "Delete" -b "Cancel" -db "Delete" -cb "Cancel"`;
+		if ($result == "Delete")
+		{
+			// get the index number of the selected item
+			$index = `textScrollList -q -sii js_gpLayerTSL`;
+
+			// now get the size
+			$size = `textScrollList -q -ni js_gpLayerTSL`;
+			
+			if (`objExists ($layer[0] + "_gpGrp")`)
+				delete ($layer[0] + "_gpGrp");
+
+			// now re-draw the layers
+			js_gpUpdateLayersList;
+
+			// next, select the next item.  If the user deleted item 2, then
+			// select what was item 3.
+			if ($index[0] == $size)
+				$index[0] = $size-1;
+			if ($index[0] > 0)
+				textScrollList -e -sii $index[0] js_gpLayerTSL; 
+
+
+		}
+	}
+}
+global proc js_gpCreateSketchLayerGo (string $camera, string $layer)
+{
+	// this is now the first time we're creating a layer, so we'll want to
+	// create the group itself based on the camera, and then create one plane
+
+	// first save the camera in the optionVar
+    optionVar -sv "js_gpCameraOptionVar" $camera;
+	// ** create a group which will be point and orient constrained to the
+	// camera.  This group will be the thing that all planes are under
+	// first check and see if it already exists
+	
+	$dup = `duplicate $camera`;
+	delete `listRelatives -f -s $dup[0]`;
+	$camGrp = `rename $dup[0] ($layer + "_gpGrp")`;
+
+	addAttr -ln "orthographic" -at "bool" $camGrp;
+	connectAttr ($camera + ".orthographic") ($camGrp + ".orthographic");
+
+	// add attributes for ghosting, pre and post
+	addAttr -ln "preGhost" -at "bool" $camGrp;
+	addAttr -ln "postGhost" -at "bool" $camGrp;
+	
+	setAttr ($camGrp + ".preGhost") 1;
+	setAttr ($camGrp + ".postGhost") 1;	
+	
+	// make sure that all the group attributes are unlocked
+	string $attrs[] = {"tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz", "v", "translate", "rotate", "scale" };
+	for ($at in $attrs)
+	{
+		setAttr -l 0 ($camGrp +"." + $at);
+	}
+	setAttr ($camGrp + ".v") 1;
+	// now point and orientConstrain the camGrp to the camera
+	select $camera $camGrp;
+	pointConstraint;
+	orientConstraint;
+
+
+
+	js_gpUpdateLayersList;
+
+	// we know that we've just added a new item to the list.. so now we should
+	// select the most recent item
+	$numItems = `textScrollList -q -ni js_gpLayerTSL`;
+	if ($numItems > 0)
+		textScrollList -e -si ($layer) js_gpLayerTSL; 
+
+	js_addGreasePencilFrame $layer "1";
+	js_pmUpdateInterface;
+}
+global proc js_gpUpdateLayersList ()
+{
+	// first remove all layers from the list
+	textScrollList -e -ra js_gpLayerTSL;
+
+	string $layers[0];
+	string $layer;
+	$layers = `ls "*_gpGrp"`;
+	if (size($layers) > 0)
+	{
+		for ($layer in $layers)
+		{
+			$layer = `substitute "_gpGrp" $layer "" `;
+			textScrollList -e -a $layer js_gpLayerTSL;
+		}
+	}
+
+}
+global proc js_pmUpdateInterface ()
+{
+	// one of the items in the layer list was selected.  
+	// to update the interface, first we must disable everything, then we'll
+	// start seeing what we can add.
+	global int $gDrawToolOn;
+	$layerTSL  = "js_gpLayerTSL";
+	$layerDelB = "js_gpDelLayerB";
+	$framesTSL = "js_gpTSL";
+	$addFrameB = "js_gpAddFrameB";
+	$delFrameB = "js_gpDelFrameB";
+	$dwnFrameB = "js_gpDownFrame";
+	$upFrameB  = "js_gpUpFrame";
+	$selFrame  = "js_gpSelectFrameB";
+	$ghostPreB = "js_gpPreGhostIconTextButton";
+	$ghostPostB= "js_gpPostGhostIconTextButton";
+	$visB      = "js_gpIconTextButton";
+	$tempB     = "js_gpTemplateIconTextButton";
+	$drawB	   = "js_gpUseDrawToolB";
+
+	// set everything disabled
+	textScrollList -e -enable 0 -ra $framesTSL;
+
+	string $ext;
+	$ext = `js_gpIconExt`;	
+	symbolButton -e -enable 0 $layerDelB;
+	symbolButton -e -enable 0 $addFrameB;
+	symbolButton -e -enable 0 $delFrameB;
+	symbolButton -e -enable 0 $dwnFrameB;
+	symbolButton -e -enable 0 $upFrameB;
+	symbolButton -e -enable 0 $selFrame;
+	symbolCheckBox -e -enable 0 -v 0 $ghostPreB;
+	symbolCheckBox -e -enable 0 -v 0 $ghostPostB;
+	symbolCheckBox -e -enable 0 -i (dillo_getImage("greasePencil/visOff."+$ext)) -v 0 $visB;
+	symbolCheckBox -e -enable 0 -i (dillo_getImage("greasePencil/tmpOff."+$ext)) -v 0 $tempB;
+	button -e -enable 0 $drawB;
+	
+	// updates the interface based on the selected item in the layer TSL
+	string $sel[0];
+	$sel = `textScrollList -q -si $layerTSL`;
+	if (size($sel) > 0)
+	{
+		$item = ($sel[0] + "_gpGrp");
+		// now we start enabling things.  First, we enable the other layer
+		// buttons
+		symbolButton -e -enable 1 $layerDelB;
+		symbolCheckBox -e -enable 1 $ghostPreB;
+		symbolCheckBox -e -enable 1 $ghostPostB;
+		symbolCheckBox -e -enable 1 $visB;
+		symbolCheckBox -e -enable 1 $tempB;
+		textScrollList -e -enable 1 $framesTSL;
+		symbolButton -e -enable 1 $addFrameB;
+		button -e -enable 1 $drawB;
+
+		// now we have to set the state of the layer buttons
+		if (`objExists $item`)
+		{
+			connectControl $visB ($item + ".v");
+			if (`getAttr ($item + ".v")`)
+				symbolCheckBox -e -i `dillo_getImage("greasePencil/visOn."+$ext)` $visB;
+			connectControl $tempB ($item + ".template");
+			if (`getAttr ($item + ".template")`)
+				symbolCheckBox -e -i `dillo_getImage("greasePencil/tmpOn."+$ext)` $tempB;
+			connectControl $ghostPreB ($item + ".preGhost");
+			connectControl $ghostPostB ($item + ".postGhost");
+
+			// now fill the textScrollList with frame numbers
+			string $children[0];
+			$children = `js_getGPList $sel[0]`;
+			int $ordered[0];
+			int $num = 0;
+
+			for ($item in $children)
+			{
+				string $break[0];
+				tokenize ($item, "_", $break);
+				$ordered[$num++] = $break[2];
+			}
+			$ordered = `sort $ordered`;
+			for ($number in $ordered)
+			{
+				textScrollList -e -a $number $framesTSL;
+			}
+			
+		}
+		
+		if ($gDrawToolOn)
+			js_setGPLive $sel[0];
+	}
+}
+
+global proc js_gpStoredTSLSel ()
+{
+	// this proc will check the selected TSL and see if it should turn on or off the
+	// checkboxes for the hilighted stored plane
+	string $sel[0];
+	$sel = `textScrollList -q -si js_gpStoredFramesTSL`;
+	if (size($sel) > 0)
+	{
+		checkBoxGrp -e -enable 1 js_pmStoredCheckBoxGrp;
+		checkBoxGrp -e -enable 1 js_pmStoredTemplateCheckBoxGrp;
+	
+		string $om = "gp_om";
+		$cam = `optionMenuGrp -q -v $om`;
+		
+		$name = ("stored_gp_"+$cam+"_"+$sel[0]);
+		if (`objExists $name`)
+		{
+			connectControl -index 2 js_pmStoredCheckBoxGrp ($name + ".v");
+			connectControl -index 2 js_pmStoredTemplateCheckBoxGrp ($name + ".template");
+		}	
+	}
+	else
+	{
+		checkBoxGrp -e -v1 0 -enable 0 js_pmStoredCheckBoxGrp;
+		checkBoxGrp -e -v1 0 -enable 0 js_pmStoredTemplateCheckBoxGrp;
+	}
+}
+global proc js_gpGhost (int $cb, int $value)
+{
+	// set the value of the checkbox either on or off
+	
+	// first get the camera
+	string $item[0];
+	$item = `textScrollList -q -si js_gpLayerTSL`;
+	
+	// now get the camGrp
+	$camGrp = ($item[0] + "_gpGrp");
+	
+	// set the value of ghost
+	if ($cb == 2)
+	{
+		setAttr ($camGrp + ".preGhost") $value;
+		//checkBoxGrp -e -v1 $value $cbg;
+	}
+	else
+	{
+		setAttr ($camGrp + ".postGhost") $value;
+		//checkBoxGrp -e -v2 $value $cbg;
+	}	
+	js_updateGPVis $item[0];
+}
+global proc js_gpDoubleClickTSL ()
+{
+	// if the textScrollList is double-clicked, that means the user may want to
+	// change the frame number that the image is currently on.
+	//
+	// first, get the camera
+	string $tsl = "js_gpTSL";
+	string $cam;
+	string $item;
+	string $items[];
+
+	$layer = `textScrollList -q -si js_gpLayerTSL`;
+	$cam = $layer[0];
+
+	// now find out what was selected
+	$items = `textScrollList -q -si $tsl`;
+	$item = $items[0];
+	// pop up a box which will ask the user to enter a new frame number
+	$result = `js_gpGetValidReturn $cam $item`;
+	
+	// now we have a result.. check and see if the result is the same as the
+	// $item.  If so, do nothing.. if not, re-order things!  woo!
+	if ($result != $item)
+	{
+		// create a new name for the item
+		$newName = ("gp_"+$cam+"_"+$result);
+
+		// the old name is
+		$oldName = ("gp_"+$cam+"_"+$item);
+
+		// rename it
+		rename $oldName $newName;
+
+		// now update everything
+		js_updateGPVis $cam;
+		js_setGPLive $cam;
+		js_pmUpdateInterface;
+
+		// now go to that frame
+		textScrollList -e -si $result js_gpTSL;
+		currentTime -e $result;
+	}
+}
+global proc js_pmAddFrame()
+{
+	// get the current value in the camera pullDown
+	$sel = `textScrollList -q -si js_gpLayerTSL`;	
+	js_addGreasePencilFrame $sel[0] "cur";
+	js_pmUpdateInterface;
+}
+global proc js_pmDelFrame()
+{
+	// get the current value in the camera pullDown
+	$layer = `textScrollList -q -si js_gpLayerTSL`;
+	$cam = $layer[0];
+	js_removeGPFrame $cam;
+}
+global proc js_gpDeleteStoredFrame()
+{
+	// get the current value in the camera pullDown
+	$cam = `optionMenuGrp -q -v gp_om`;	
+	js_removeGPStoredFrame $cam;
+}
+global proc js_pmDrawToolGo ()
+{
+	// get the current value in the camera pullDown
+    string $cam[0];
+	$cam = `textScrollList -q -si js_gpLayerTSL`;
+	js_setGPTool $cam[0];
+}
+
+global proc string jsCreateExtrudeCircle (string $grp)
+{
+	// create a circle and connect it to the camGrp
+	string $circle[0];
+	$circle = `circle -radius .005`;
+	hide $circle;
+
+	addAttr -ln "gp_ExtrudeCircle" -at "message" $grp;
+	connectAttr ($circle[0] + ".message") ($grp + ".gp_ExtrudeCircle");
+	return ($circle[0]);
+}
+global proc string jsGetExtrudeCircle (string $camGrp)
+{
+	$tmp = `listConnections ($camGrp + ".gp_ExtrudeCircle")`;
+	return ($tmp[0]);
+}
+global proc string jsGetCamGrp (string $camera)
+{
+	string $camGrp;
+	string $items[] = `textScrollList -q -si js_gpLayerTSL`;
+	$camGrp = ($items[0] + "_gpGrp");
+	return $camGrp;
+}
+global proc string[] js_getStoredGPList ( string $camera )
+{
+	// get a list of all the gps for the current camera
+	string $list[0];
+	int $count = 0;
+	string $camGrp;
+	$camGrp = `jsGetCamGrp $camera`;
+	string $children[0];
+	$children = `listRelatives -c -type "transform" $camGrp`;
+	string $child;
+	for ($child in $children)
+	{
+		string $break[0];
+		tokenize ($child, "_", $break);
+		if ($break[0] == "stored")
+		{
+			$list[$count++] = $child;
+		}
+	}
+	
+	return $list;
+}
+global proc string[] js_getGPList ( string $item )
+{
+	// get a list of all the gps for the current selected item
+	string $list[0];
+	int $count = 0;
+	string $itemGrp;
+	$itemGrp = ($item + "_gpGrp");
+	string $children[0];
+	$children = `listRelatives -c -type "transform" $itemGrp`;
+	string $child;
+	for ($child in $children)
+	{
+		string $break[0];
+		tokenize ($child, "_", $break);
+		if ($break[0] == "gp")
+		{
+			$list[$count++] = $child;
+		}
+	}
+	
+	return $list;
+}
+global proc js_gpSaveFrame ()
+{
+	// this procedure will duplicate the hilighted frame and "store" it for
+	// later use.
+
+	// first find out which one is selected
+	string $om = "gp_om";
+	string $tsl = "js_gpTSL";
+	string $cam;
+	string $item;
+
+	$cam = `optionMenuGrp -q -v $om`;	
+
+	// now find out what was selected
+	$items = `textScrollList -q -si $tsl`;
+
+	if (size($items) > 0)
+	{
+		// prompt the user for a name
+		$result = `promptDialog -t "New Stored Frame" -m "What would you like to call this frame?" -b "Store it" -b "Cancel" -db "Store it" -cb "Cancel" `;
+		
+		if ($result == "Store it")
+		{
+			$value = `promptDialog -q -text`;	
+			// the name of the hilighted frame
+			$name = ("gp_"+$cam+"_"+$items[0]);
+
+			// duplicate it
+			string $dup[0];
+			$dup = `duplicate $name`;
+
+
+			$newName = `rename $dup[0] ("stored_gp_"+$cam+"_"+$value)`;
+			
+			// now remove the drawing so it's not part of the animated bit
+			js_pmDelFrame;
+			js_pmUpdateInterface;
+		}
+	}
+}
+global proc js_updateGPVis (string $camera)
+{
+	// first get a list of all the grease pencils in the list
+	string $camGrp;
+	string $children[0];
+	string $gps[0];
+	int $frames[0];
+	int $count = 0;
+	int $count2 = 0;
+	int $count3 = 0;
+
+	$camGrp = `jsGetCamGrp $camera`;
+	//$children = `listRelatives -c -type "transform" $camera`;
+	$children = `listRelatives -c -type "transform" $camGrp`;
+	string $child;
+	for ($child in $children)
+	{
+		string $break[0];
+		tokenize ($child, "_", $break);
+		if ($break[0] == "gp")
+		{
+			$frames[$count++] = $break[size($break)-1];
+		}
+	}
+
+	$frames = `sort $frames`;
+	int $preGhost = `getAttr ($camGrp + ".preGhost")`;
+	int $postGhost = `getAttr ($camGrp + ".postGhost")`;
+
+	////print ("Setting up visibility ... \n");
+	//print ("-----------------------------------------\n");	
+	for ($x = 0; $x < size($frames); $x++)
+	{
+		
+		// first delete all the keys on the visibility for the gp
+		$gp = ("gp_" + $camera + "_" + $frames[$x]);
+		//print ("\nWorking on " + $gp + "\n");
+		if (`objExists $gp`)
+			catch (`cutKey -at "visibility" -at "template" $gp`);
+
+		// now, set a key for the value of 0 at $x before this current value, unless $x = 0;
+		if ($x > 0)
+		{
+			// make sure that all visibility is off first
+			
+			$cmd = ("setKeyframe -at \"visibility\" -v 0  -ott \"step\" -t (0) \""+$gp+"\"");
+			//$cmd = ("setKeyframe -at \"visibility\" -v 0  -ott \"step\" -t (0) -t ("+$frames[$x+1+$postGhost]+") \""+$gp+"\"");
+			//print ($cmd + "\n");
+			eval $cmd;
+			
+		}
+		else 
+		{
+		
+			// turn on visibility for the first item
+			$cmd = ("setKeyframe -at \"visibility\" -v 1 -ott \"step\" -t 0 \""+$gp+"\"");	
+			//print ($cmd + "\n");
+			eval $cmd;
+		}
+
+		// now set a key for it to be on at this frame
+		if (`objExists $gp`)
+		{
+			//print ("Now set up when the drawing should be turned on and off\n");
+			if ($x > 0)
+			{
+				//setKeyframe -at "visibility" -v 1 -ott "step" -t ($frames[$x-$preGhost]) $gp;
+				$cmd = ("setKeyframe -at \"visibility\" -v 1 -ott \"step\" -t ("+($frames[$x - $postGhost])+") \""+$gp+"\"");
+				//print ($cmd + "\n");
+				eval $cmd;
+				$cmd = ("setKeyframe -at \"visibility\" -v 0 -ott \"step\" -t ("+($frames[$x +1+ $preGhost])+") \""+$gp+"\"");
+				//print ($cmd + "\n");
+				eval $cmd;
+				setKeyframe -at "template" -v 1 -ott "step" -t ($frames[$x - $postGhost]) $gp;
+				setKeyframe -at "template" -v 0 -ott "step" -t ($frames[$x]) $gp;
+			}
+			else
+			{
+				if ((size($frames)) > 1 )
+				{
+					if ((size($frames)) == 2)
+					{
+						if ($preGhost == 0)	
+						{
+							$cmd = ("setKeyframe -at \"visibility\" -v 0 -ott \"step\" -t ("+($frames[($x +1)])+") \""+$gp+"\"");
+							//print ($cmd + "\n");
+							eval $cmd;
+						}
+					}
+					else
+					{
+						$cmd = ("setKeyframe -at \"visibility\" -v 0 -ott \"step\" -t ("+($frames[($x +1+ $preGhost)])+") \""+$gp+"\"");
+						//print ($cmd + "\n");
+						eval $cmd;
+					}
+					setKeyframe -at "template" -v 0 -ott "step" -t ($frames[$x]) $gp;
+				}
+				else
+					setKeyframe -at "template" -v 0 -ott "step" -t ($frames[$x]) $gp;
+			}	
+			setKeyframe -at "template" -v 1 -ott "step" -t ($frames[$x+1]) $gp;
+	}
+	}
+}
+
+// initially added by Nicola Danese, rewritten by jason schleifer
+// this provides a quick way to "erase" drawings.. it's not a true eraser, but it sorta works.
+//
+
+global proc string js_gpGetSelectedFrame ()
+{
+	string $frame;
+
+	string $items[] = `textScrollList -q -si js_gpTSL`;
+	if (size($items) > 0)	
+	{
+		$layer = `textScrollList -q -si js_gpLayerTSL`;
+		$cam = $layer[0];
+		setToolTo "selectSuperContext";
+		$name = ("gp_"+$cam+"_"+$items[0]);
+		if (`objExists $name`)
+			$frame = $name;
+	}
+	return $frame;
+	
+}
+//check if the frame is locked or normal 
+global proc js_gpToggleRefCheck ()
+{
+	// check the hilighted frame to see if it's referenced or not.  If it is referenced, then set the js_gpToggleRefB
+	// to show that it can be turned to non-referenced, otherwise set the js_gpToggleRefB to show that it can be set to 
+	// Edit.
+
+	string $button = "js_gpToggleRefB";
+	string $frame;
+	int $currentState;
+	
+	$frame = `js_gpGetSelectedFrame`;
+	if ($frame != "")
+	{	
+		$shape = `listRelatives -f -s $frame`;
+		$currentState = `getAttr ($shape[0] + ".overrideDisplayType")`;
+		if ($currentState == 2)
+		{
+			button -e -l "Edit" $button;
+		}
+		else
+		{
+			button -e -l "Lock" $button;
+		}	
+	}
+
+}
+
+global proc js_gpToggleRef ()
+{
+	// will toggle the currently selected frame between editable and not
+	string $frame;
+	int $currentState;
+	int $newState;
+	$frame = `js_gpGetSelectedFrame`;
+	if ($frame != "")
+	{	
+		$shape = `listRelatives -f -s $frame`;
+		$currentState = `getAttr ($shape[0] + ".overrideDisplayType")`;
+		if ($currentState == 2)
+			setAttr ($shape[0] + ".overrideDisplayType") 0;
+		else
+			setAttr ($shape[0] + ".overrideDisplayType") 2;
+		
+
+		js_gpToggleRefCheck ;
+	}
+	
+}

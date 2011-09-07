@@ -1,0 +1,552 @@
+/*
+    Taffy
+    1.3
+    
+    Keith Osborn and Bohdon Sayre
+    
+    Description
+        Provides a way to add small animation tweak controls for
+        refining poses and badly shaped geometry.
+        Designed primarily for facial rigs.
+    
+    ToDo:
+        Fix Double Translations
+        deselect the taffy spheres
+        
+    Version 1.3:
+        > Currently incompatible with alternate linear units (cm only)
+        > Basic taffy setup and weight painting
+    
+*/
+
+
+
+global proc taffy() {
+    
+    string $win = "taffyWin";
+    if (`window -q -ex $win`)
+        deleteUI -wnd $win;
+    
+    window -tlb 1 -t " " -bgc 0.24 0.17 0.23 $win;
+        frameLayout -lv 0 -mw 4 -mh 4;
+            columnLayout -adj 1 -rs 10;
+                frameLayout -bs "out" -lv 0 -mw 1 -mh 1;
+                    columnLayout -cat "both" 2 -adj 1 -bgc 1 0.6 1;
+                        separator -st none -h 2;
+                        text -l "Taffy 1.3" -al "center" -bgc 1 0.7 1 -font "boldLabelFont" -h 35;
+                        separator -st none -h 2;
+                        setParent ..;
+                    setParent ..; 
+                
+                columnLayout -cat "both" 6 -adj 1;
+                    frameLayout -bs "out" -lv 0 -mw 1 -mh 1;
+                        columnLayout -cat "both" 4 -adj 1 -rs 2 -bgc 0.5 0.35 0.5;
+                            separator -st none -h 3;
+                            text -l "Select some verts on the object to deform." -h 20 -al "center";
+                            button -l "Create Taffy Influence" -c taffyCreateInfluences -h 30 -bgc 1 0.7 1;
+                            popupMenu -b 3;
+                                menuItem -l "Delete All Influences (Cancel)" -c taffyDeleteInfluences;
+                            separator -st none -h 3;
+                            setParent ..;
+                        setParent ..; 
+                    setParent ..;
+                
+                columnLayout -cat "both" 6 -adj 1;
+                    frameLayout -bs "out" -lv 0 -mw 2 -mh 2;
+                        columnLayout -cat "both" 4 -adj 1 -rs 2 -bgc 0.5 0.35 0.5;
+                            separator -st none -h 3;
+                            text -label "Adjust the influence then make some taffy." -h 20 -al "center";
+                            columnLayout -cat "both" 1 -adj 1;
+                                floatSliderGrp -field true
+                                    -min 0.05 -max 5 -fmx 100 -v 1 -pre 3 -adj 2 -cw2 40 100
+                                    -dc ("taffyAdjInfluenceSizeHandler 0")
+                                    -cc ("taffyAdjInfluenceSizeHandler 1")
+                                    taffy_InflSizeSlider;
+                                setParent ..;
+                            button -l "Make Taffy!" -c taffyCreate -h 30 -bgc 1 0.7 1;
+                            separator -st none -h 1;
+                            progressBar -min 0 -max 100 -h 12 taffyProgressBar;
+                            separator -st none -h 2 taffyProgressBarSep;
+                            taffySetProgress(-1);
+                            setParent ..;
+                        setParent ..; 
+                    setParent ..;
+                
+                columnLayout -cat "both" 6 -adj 1;
+                    frameLayout -bs "out" -lv 0 -mw 2 -mh 2;
+                        columnLayout -cat "both" 4 -adj 1 -rs 2 -bgc 0.5 0.35 0.5;
+                            separator -st none -h 3;
+                            text -l "Select the control then paint some weights." -h 20 -align "center";
+                            button -l "Paint Weights" -c taffyPaintWeights -h 30 -bgc 1 0.7 1;
+                            popupMenu -b 3;
+                                menuItem -l "Reset Weights (Distance Based)" -c taffyAutoWeightCtl;
+                            separator -st none -h 3;
+                            setParent ..;
+                        setParent ..; 
+                    setParent ..;
+    
+    if (`windowPref -q -ex $win`)
+        windowPref -e -w 280 -h 332 $win;
+    window -e -w 280 -h 332 $win;
+    showWindow;
+}
+
+global proc taffySetProgress(int $pr) {
+    if (`progressBar -q -ex taffyProgressBar`) {
+        if ($pr == -1) {
+            progressBar -e -vis 0 taffyProgressBar;
+            separator -e -vis 0 taffyProgressBarSep;
+        } else {
+            progressBar -e -vis 1 taffyProgressBar;
+            separator -e -vis 1 taffyProgressBarSep;
+        }
+        progressBar -e -pr $pr taffyProgressBar;
+    }
+}
+
+global proc taffySetProgressMax(int $max) {
+    if (`progressBar -q -ex taffyProgressBar`)
+        progressBar -e -max $max taffyProgressBar;
+}
+
+
+global proc taffyAddProgress(float $dif) {
+    if (`progressBar -q -ex taffyProgressBar`)
+        progressBar -e -pr (`progressBar -q -pr taffyProgressBar`+$dif) taffyProgressBar;
+}
+
+
+
+global proc taffyCreateInfluences() {
+    /*
+    * Create taffy influences at all selected vertices
+    * Currently it is assumed that vertices are selected from only 1 object at a time
+    */
+    
+    //get selection
+    string $selList[] = `ls -sl`;
+    if (!size($selList))
+        error "// Taffy: nothing was selected";
+    string $obj = taffyGetFrom(`stringToStringArray $selList[0] "."`, 0);
+    
+    //get vertex list
+    string $selVtx[] = `filterExpand -ex 1 -fp 1 -sm 31`;
+    if (!size($selVtx))
+        error "// Taffy: no vertices were selected";
+    
+    string $mtl = taffyCreateInfluenceMtl();
+    
+    //create the influences
+    string $inflList[];
+    int $count = 0;
+    float $pt[3];
+    for ($vtx in $selVtx) {	
+        $pt = `pointPosition -w $vtx`;
+        
+        string $infl = taffyGetFrom(`sphere -r 1 -ax 0 1 0 -ch 0 -n ("taffy_influence")`, 0);
+        $inflList[size($inflList)] = $infl;
+        addAttr -ln "taffyInfluence" -at long $infl;
+        addAttr -ln "object" -dt "string" $infl;
+        setAttr ($infl+".object") -type "string" $obj;
+        addAttr -ln "vertex" -dt "string" $infl;
+        setAttr ($infl+".vertex") -type "string" $vtx;
+        
+        hyperShade -assign $mtl; 
+        
+        move -a $pt[0] $pt[1] $pt[2] $infl;
+        makeIdentity -apply true -t 1 -r 1 -s 0 -n 0;
+        
+        taffySetAttrs({$infl}, {"tx", "ty", "tz", "rx", "ry", "rz"}, 1, 0, 0);
+        taffySetAttrs({$infl}, {"sx", "sy", "sz", "v"}, 0, 0, 0);
+	}
+	
+	select -cl;
+}
+global proc taffyDeleteInfluences() {
+    /*
+    * Delete all influences in the scene
+    * This is used to abort the taffy operation
+    */
+    string $inflList[] = taffyGetAllInfluences();
+    if (size($inflList))
+        for ($obj in $inflList)
+            catch(`delete $obj`);
+    taffyDeleteInfluenceMtl();
+}
+
+global proc string taffyCreateInfluenceMtl() {
+    /* Create the taffy influence mtl */
+    if (`objExists "taffy_influence_mtl"`)
+        return "taffy_influence_mtl";
+    string $mtl = `shadingNode -as lambert -n "taffy_influence_mtl"`;
+    setAttr ($mtl+".color") -type double3 0 0 0 ;
+    setAttr ($mtl+".incandescence") -type double3 1 0.7 1;
+    setAttr ($mtl+".transparency") -type double3 0.6 0.6 0.6;
+    return $mtl;
+}
+global proc taffyDeleteInfluenceMtl() {
+    /* Delete the taffy influence mtl if it exists */
+    string $mtl = "taffy_influence_mtl";
+    if (`objExists $mtl`) {
+        string $sg = taffyGetFrom(`listConnections -s 0 -d 1 ($mtl+".outColor")`, 0);
+        delete $mtl;
+        if (`objExists $sg`)
+            catchQuiet(`delete $sg`);
+    }
+}
+
+
+
+
+global proc taffyAdjInfluenceSizeHandler( int $undo ) {
+    /*
+    * Handler for the taffy influence size slider
+    * Taffy influences can also be scaled manually
+    */
+    string $selList[] = `ls -sl`;
+    string $inflList[];
+    for ($obj in $selList) {
+        if (`objExists ($obj+".taffyInfluence")`)
+            $inflList[size($inflList)] = $obj;
+    }
+    if (!size($inflList))
+        $inflList = taffyGetAllInfluences();
+    if (!size($inflList))
+        if ($undo)
+            error ("// Taffy: no influences exist in the scene");
+    
+    float $value = `floatSliderGrp -q -v taffy_InflSizeSlider`;
+    
+    if (!$undo) undoInfo -swf 0;
+    for ($obj in $inflList) {
+        setAttr ($obj + ".sx") $value;
+        setAttr ($obj + ".sy") $value;
+        setAttr ($obj + ".sz") $value;
+    }
+    undoInfo -swf 1;
+} 
+
+
+
+
+
+global proc taffyCreate() {
+    /*
+    * Take the information from taffy influences
+    * and build the final taffy ctls
+    */
+    
+    //get all influences
+    string $inflList[] = taffyGetAllInfluences();
+    if (!size($inflList))
+        error ("// Taffy: no influence objects exist in the scene. Use Create Taffy Influence first");
+    
+    //build the main grp if it doesn't exist
+    string $mainGrp;
+    if (!`objExists "taffy_ctls_GRP"`) {
+        $mainGrp = `group -em -n "taffy_ctls_GRP"`;
+        addAttr -ln "taffyGrp" -at long $mainGrp;
+    } else {
+        $mainGrp = "taffy_ctls_GRP";
+    }
+    
+    //keep track of all created controls
+    string $taffyCtls[];
+    //declare variables for use in the loop
+    string $geo, $vtx, $vtxShort, $grp, $compensateGrp, $ctl, $ctlLong, $temp, $follicle, $cluster, $clusterCtl, $mult, $clusterReturn[], $selList[];
+    float $radius, $dist, $distMin, $distMax, $percent, $scale[3], $pt[3];
+    int $i;
+    
+    //allow for 14 progress increments per taffy:
+    //  ctl, follicle, cluster, 10 for autoweighting, finish
+    taffySetProgressMax(size($inflList)*14);
+    taffySetProgress(0);
+    for ($infl in $inflList) {
+        $geo = `getAttr ($infl+".object")`;
+        $vtx = `getAttr ($infl+".vertex")`;
+        $pt = `pointPosition -w $vtx`;
+        $scale = `getAttr ($infl+".scale")`;
+        $dist = $scale[0];
+        $vtxShort = `substitute "^[^.]*\\." $vtx ""`;
+        
+        //create the control circle
+        $radius = $scale[0] * .2;
+        $ctl = taffyGetFrom(`circle -c 0 0 ($radius*0.5) -nr 0 0 1 -sw 360 -r $radius -d 3 -ut 0 -tol 0.01 -s 8 -ch 0 -n "taffy_ctl#"`, 0);
+        addAttr -ln "taffyCtl" -at long $ctl;
+        addAttr -ln "taffyCluster" -at long $ctl;
+        addAttr -ln "taffyGeo" -at long $ctl;
+        connectAttr ($geo+".message") ($ctl+".taffyGeo");
+        addAttr -ln "taffyVtx" -dt "string" $ctl;
+        setAttr ($ctl+".taffyVtx") -typ "string" $vtxShort;
+        addAttr -ln "taffyDist" -at double $ctl;
+        setAttr ($ctl+".taffyDist") $dist;
+        //build the ctl's grp
+        $grp = `group -em -p $mainGrp -n ($ctl+"_GRP")`;
+        taffyAddProgress(1);
+        
+        //position and orient the ctl and its compensate group
+        $compensateGrp = `group -p $grp -n ($ctl+"_compensate") $ctl`;
+        $ctlLong = ($mainGrp+"|"+$grp+"|"+$compensateGrp+"|"+$ctl);
+        move -a $pt[0] $pt[1] $pt[2] $compensateGrp;
+        $temp = taffyGetFrom(`normalConstraint -aimVector 0 0 1 $geo $ctlLong`, 0);
+        delete $temp;
+        
+        
+        //create a follicle on the vertex
+        $follicle = taffyCreateFollicle($ctl, $geo, $vtx);
+        $follicle = taffyGetFrom(`parent $follicle $grp`, 0);
+        $compensateGrp = taffyGetFrom(`parent $compensateGrp $follicle`, 0);
+        //freeze the compensate grp
+        makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 $compensateGrp;
+        $mult = `shadingNode -asUtility multiplyDivide -n ($ctl+"_compensateMult")`;
+        setAttr ($mult+".input2X") -1;
+        setAttr ($mult+".input2Y") -1;
+        setAttr ($mult+".input2Z") -1;
+        connectAttr -f ($ctl+".tx") ($mult+".input1X");
+        connectAttr -f ($ctl+".ty") ($mult+".input1Y");
+        connectAttr -f ($ctl+".tz") ($mult+".input1Z");
+        connectAttr -f ($mult+".output") ($compensateGrp+".translate");
+        taffyAddProgress(1);
+        
+        //create the cluster affecting vertices within radius of the influence
+        select -r $geo;
+        //give distance some buffer room for smoothing later
+        polySelectConstraint -m 3 -t 1 -d 1 -db 0 (1.5*$dist) -dp ($pt[0]) ($pt[1]) ($pt[2]);
+        $clusterReturn = `cluster -relative -n ($ctl+"_cluster")`;
+        $clusterCtl = $clusterReturn[1];
+        $cluster = $clusterReturn[0];
+        connectAttr ($cluster+".message") ($ctl+".taffyCluster");
+        $clusterCtl = taffyGetFrom(`parent $clusterCtl $grp`, 0);
+        move -a ($pt[0]) ($pt[1]) ($pt[2]) ($clusterCtl + ".scalePivot") ($clusterCtl + ".rotatePivot");
+        connectAttr -f ($ctl+".t") ($clusterCtl+".t");
+        connectAttr -f ($ctl+".r") ($clusterCtl+".r");
+        connectAttr -f ($ctl+".s") ($clusterCtl+".s");
+        polySelectConstraint -d 0;
+        taffyAddProgress(1);
+        
+        
+        //weight the cluster automatically
+        taffyAutoWeightCluster($cluster, $geo, $vtx, $dist, -1, -1);
+        
+        // Lock & Hide Cluster Channels
+        setAttr ($clusterCtl + ".v") 0;
+        
+        delete $infl;
+        taffyAddProgress(1);
+        refresh;
+    }
+    taffySetProgress(-1);
+    select -cl;
+    taffyDeleteInfluenceMtl();
+}
+
+
+global proc taffyAutoWeightCluster(string $cluster, string $geo, string $vtx, float $dist, int $steps, int $sm) {
+    //autoweight a cluster based on the distance to a vertex of an object
+    //error check, since were using the suspend refresh technique
+    if (!`objExists $cluster` || !`objExists $geo` || !`objExists $vtx`)
+        error "//Taffy: not all necessary objects exist to auto weight the cluster\n";
+    
+    
+    refresh -su 1;
+    string $curCtx = `currentCtx`;
+    string $selList[] = `ls -r 1 -sl`;
+    float $pt[3] = `pointPosition -w $vtx`;
+    string $curTaffyWeights = "cluster." + $cluster + ".weights";
+    
+    //flood weights to 0
+    select -r $geo;
+    artAttrToolScript 4 "cluster";
+    artSetToolAndSelectAttr( "artAttrCtx", $curTaffyWeights);
+    artAttrCtx -e -op 1.0 -val 0.0 -sao "absolute" `currentCtx`;
+    artAttrCtx -e -clear `currentCtx`;
+    
+    
+    //auto weight points based on distance from the cluster
+    polySelectConstraint -m 3 -t 1 -d 1 -db 0 $dist -dp ($pt[0]) ($pt[1]) ($pt[2]);
+    $vtCount = size(`ls -fl -sl`);
+    if ($steps == -1) {
+        //determine based on the number of verts contained by dist
+        $steps = (int)($vtCount/100)+20;
+    }
+    if ($sm == -1) {
+        $sm = (int)($vtCount/100);
+    }
+    //5 progress bar steps per stage, 4 during each loop and 1 at the finish
+    $stepProg = (int)$steps/4;
+    if ($stepProg == 0) $stepProg = 1;
+    $stepProgCount = 0;
+    $smProg = (int)$sm/4;
+    if ($smProg == 0) $smProg = 1;
+    $smProgCount = 0;
+    
+    print ("//Taffy: Auto-weighting "+$vtx+", verts:"+$vtCount+", steps:"+$steps+", smooths:"+$sm+"\n");
+    float $interval = $dist/$steps;
+    float $distMin, $distMax, $w;
+    string $selVts[];
+    for ($i = 0; $i < $steps; $i++) {
+        $distMin = ($steps-$i-1) * $interval;
+        $distMax = ($steps-$i) * $interval;
+        $w = (float)$i / $steps; //normalize
+        $w = smoothstep(0, 1, $w); //change to smooth interpolation, instead of linear
+        $w = smoothstep(0, 1, $w); //double smooth! bam!
+        polySelectConstraint -m 3 -t 1 -d 1 -db $distMin $distMax -dp ($pt[0]) ($pt[1]) ($pt[2]);
+        $selVts = `ls -sl`;
+        if (`size($selVts)` > 0)
+            percent -v $w $cluster;
+        if ($i%$stepProg == 0) {
+            if ($stepProgCount < 4) {
+                taffyAddProgress(1);
+                $stepProgCount += 1;
+            }
+        }
+    }
+    polySelectConstraint -d 0;
+    while ($stepProgCount < 4) {
+        taffyAddProgress(1);
+        $stepProgCount += 1;
+    }
+    taffyAddProgress(1);
+    
+    //smooth the weights a bit
+    artAttrToolScript 4 "cluster";
+    artSetToolAndSelectAttr( "artAttrCtx", $curTaffyWeights);
+    artAttrCtx -e -op 1.0 -val 1.0 -sao "smooth" `currentCtx`;
+    //check for auto smooth steps
+    
+    for ($i = 0; $i < $sm; $i++) {
+        artAttrCtx -e -clear `currentCtx`;
+        $sm -= 1;
+        if ($i%$smProg == 0) {
+            if ($smProgCount < 4) {
+                taffyAddProgress(1);
+                $smProgCount += 1;
+            }
+        }
+    }
+    while ($smProgCount < 4) {
+        taffyAddProgress(1);
+        $smProgCount += 1;
+    }
+    
+    taffyAddProgress(1);
+    
+    //clear select constraint
+    changeSelectMode -object;
+    select $selList;
+    setToolTo $curCtx;
+    refresh -su 0;
+}
+
+
+global proc string taffyCreateFollicle(string $ctl, string $geo, string $vtx) {
+    /*
+    * Create a follicle on the specified vertex
+    */
+    
+    string $geoShape = taffyGetFrom(`listRelatives -f -c -s $geo`, 0);
+    string $uv = taffyGetFrom(`polyListComponentConversion -tuv $vtx`, 0);
+    float $coord[] = `polyEditUV -q -u -v $uv`;
+    
+    string $follicleShape = `createNode "follicle"`;
+    string $follicle = taffyGetFrom(`listRelatives -p -typ "transform" $follicleShape`, 0);
+    
+    connectAttr ($geoShape + ".outMesh") ($follicleShape + ".inputMesh");
+    connectAttr ($geoShape + ".worldMatrix[0]") ($follicleShape + ".inputWorldMatrix");
+    setAttr ($follicleShape + ".v") 0;    
+    
+    connectAttr ($follicleShape + ".outTranslate") ($follicle + ".translate");
+    
+    setAttr ($follicleShape + ".parameterU") $coord[0];
+    setAttr ($follicleShape + ".parameterV") $coord[1];
+    $follicle = `rename $follicle ($ctl+"_follicle")`;
+    return $follicle;
+}
+
+
+global proc taffyAutoWeightCtl() {
+    //Re-runs the auto weighting based on the selected taffy ctl
+    string $selList[] = `ls -sl`;
+    if (!size($selList))
+        return;
+    for ($ctl in $selList) {
+        if (!`objExists ($ctl+".taffyCtl")`)
+            continue;
+        string $ctl = taffyGetFrom(`ls -sl`, 0);
+        string $related[] = taffyGetRelated($ctl);
+        //reset ctl, weight, then restore transforms
+        float $t[] = `getAttr ($ctl+".t")`;
+        float $r[] = `getAttr ($ctl+".r")`;
+        float $s[] = `getAttr ($ctl+".s")`;
+        xform -os -t 0 0 0 -ro 0 0 0 -s 1 1 1 $ctl;
+        taffyAutoWeightCluster($related[0], $related[1], $related[2], (float)$related[3], -1, -1);
+        xform -os -t ($t[0]) ($t[1]) ($t[2]) $ctl;
+        xform -os -ro ($r[0]) ($r[1]) ($r[2]) -s ($s[0]) ($s[1]) ($s[2]) $ctl;
+    }
+    select $selList;
+}
+global proc taffyPaintWeights() {
+    //Initiate the paint weights tool with the cluster
+    //represented by the currently selected control
+    string $ctl = taffyGetFrom(`ls -sl`, 0);
+    string $related[] = taffyGetRelated($ctl);
+    string $cluster = $related[0];
+    string $geo = $related[1];
+    string $curTaffyWeights = "cluster." + $cluster + ".weights";
+    select -r $geo;
+    artAttrToolScript 4 "cluster";
+    artSetToolAndSelectAttr( "artAttrCtx", $curTaffyWeights);
+}
+
+global proc string[] taffyGetAllInfluences() {
+    /* Return a list of all taffy influences in the scene */
+    string $trList[] = `ls -typ "transform" "taffy*"`;
+    string $inflList[];
+    for ($obj in $trList) {
+        if (`objExists ($obj+".taffyInfluence")`)
+            $inflList[size($inflList)] = $obj;
+    }
+    return $inflList;
+}
+
+global proc string[] taffyGetRelated(string $ctl) {
+    //Return the cluster, geo, vtx, and dist associated with a taffy ctl
+    if (!`objExists ($ctl+".taffyCtl")`)
+        error ("// Taffy: "+$ctl+" is not a valid taffy control\n");
+    string $clusterCtl, $cluster, $curGeoList[], $geo, $vtx, $dist;
+    $cluster = taffyGetFrom(`listConnections -s 1 -d 0 ($ctl+".taffyCluster")`, 0);
+    $geo = taffyGetFrom(`listConnections -s 1 -d 0 ($ctl+".taffyGeo")`, 0);
+    $vtx = ($geo + "." + `getAttr ($ctl+".taffyVtx")`);
+    $dist = `getAttr ($ctl+".taffyDist")`;
+    return {$cluster, $geo, $vtx, $dist};
+}
+
+
+global proc taffySetAttrs(string $objs[], string $attrs[], int $l, int $k, int $cb) {
+	/**
+	* v1.4
+	* Sets multiple attributes on multiple objects at the same time
+	* params:
+	*   objs: string array of objects
+	*   attrs: string array of attributes
+	*   l: locked, boolean
+	*   k: keyable, boolean
+	*   cb: channel box visible, boolean
+	**/
+	
+	if ($attrs[0] == "[xforms]") {
+		$attrs = {"tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz"};
+	} else if ($attrs[0] == "[xforms+]") {
+		$attrs = {"tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz", "shxy", "shxz", "shyz"};
+	} else if ($attrs[0] == "[all]") {
+		$attrs = {"tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz", "shxy", "shxz", "shyz", "v"};
+	}
+	for ($obj in $objs) {
+		for ($attr in $attrs) {
+			setAttr -l $l -k $k -cb $cb ($obj+"."+$attr);
+		}
+	}
+}
+global proc string taffyGetFrom(string $arr[], int $index) {
+    return $arr[$index];
+}

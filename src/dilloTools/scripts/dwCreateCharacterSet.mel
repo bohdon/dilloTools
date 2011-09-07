@@ -1,0 +1,113 @@
+//Title:	dwCreateCharacterSet.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Updated:	March 21, 2004: Added dwRTAddObjsToCharSet.mel, which adds specified objs to char set and checks for all the errors.
+//
+//Creates character sets for rig built using standard biped.
+global proc dwCreateCharacterSet(string $characterName)
+{
+if (! `size ($characterName)`)
+	error "No character name given.";
+
+if ($characterName == " ")
+	error "Character name is empty.";
+	
+if ((`objExists $characterName`) && (`nodeType $characterName` != "character"))
+	error "Another object exists in the scene with given name. Use a different character name and try again.";
+else if ((`objExists $characterName`) && (`nodeType $characterName` == "character"))
+	error "Another character exists in the scene with given name. Use a different character name and try again.";	
+
+else if (! `dwRTValidateName $characterName`)
+	error "Character name invalid. Remove special characters and try again.";
+	
+//IMPORTANT: Get and clear initial selection. Otherwise selections are automatically added to created charSet (twice!!).
+string $selection[] = `ls -sl`;	
+select -cl;
+	
+	
+	
+//LEFT ARM.
+string $leftFKUpperArmControl[] = `ls "L_FK_UPPERARM_CONTROL" "*L_FK_UPPERARM_CONTROL"`;
+string $leftFKElbowControl[] = `ls "L_FK_ELBOW_CONTROL" "*L_FK_ELBOW_CONTROL"`;
+string $leftIKControl[] = `ls "L_IKArm_Control" "*L_IKArm_Control"`;
+string $leftHandControl[] = `ls "L_Hand_Control" "*L_Hand_Control"`;
+string $leftIKArmPoleVector[] = `ls "L_IKArm_PoleVector" "*L_IKArm_PoleVector"`;
+string $leftShoulderControl[] = `ls "L_SHOULDER_CONTROL" "*L_SHOULDER_CONTROL"`;
+string $leftHandOrientLocator[] = `ls "L_Hand_Orient_Locator" "*L_Hand_Orient_Locator"`;
+string $leftFKWristControl[] = `ls "L_FK_WRIST_CONTROL" "*L_FK_WRIST_CONTROL"`;
+string $leftArmSubChar = dwRTAddObjsToCharSet ({$leftFKUpperArmControl[0], $leftFKElbowControl[0], $leftIKControl[0], $leftHandControl[0],
+						 $leftIKArmPoleVector[0], $leftShoulderControl[0], $leftHandOrientLocator[0], $leftFKWristControl[0]},
+					"ARM_Left");
+//RIGHT ARM.
+string $rightFKUpperArmControl[] = `ls "R_FK_UPPERARM_CONTROL" "*R_FK_UPPERARM_CONTROL"`;
+string $rightFKElbowControl[] = `ls "R_FK_ELBOW_CONTROL" "*R_FK_ELBOW_CONTROL"`;
+string $rightIKControl[] = `ls "R_IKArm_Control" "*R_IKArm_Control"`;
+string $rightHandControl[] = `ls "R_Hand_Control" "*R_Hand_Control"`;
+string $rightIKArmPoleVector[] = `ls "R_IKArm_PoleVector" "*R_IKArm_PoleVector"`;
+string $rightShoulderControl[] = `ls "R_SHOULDER_CONTROL" "*R_SHOULDER_CONTROL"`;
+string $rightHandOrientLocator[] = `ls "R_Hand_Orient_Locator" "*R_Hand_Orient_Locator"`;
+string $rightFKWristControl[] = `ls "R_FK_WRIST_CONTROL" "*R_FK_WRIST_CONTROL"`;				
+string $rightArmSubChar = dwRTAddObjsToCharSet ({$rightFKUpperArmControl[0], $rightFKElbowControl[0], $rightIKControl[0], $rightHandControl[0],
+						 $rightIKArmPoleVector[0], $rightShoulderControl[0], $rightHandOrientLocator[0], $rightFKWristControl[0]}, 
+					"ARM_Right");
+			
+				
+//LEFT LEG.
+string $leftLegPoleVector[] = `ls "L_Leg_Pole_Vector" "*L_Leg_Pole_Vector"`;
+string $leftIKFootControl[] = `ls "L_IKFootControl" "*L_IKFootControl"`;
+string $leftFemurFKControl[] = `ls "L_FK_FEMUR_CONTROL" "*L_FK_FEMUR_CONTROL"`;
+string $leftKneeFKControl[] = `ls "L_FK_KNEE_CONTROL" "*L_FK_KNEE_CONTROL"`;
+string $leftAnkleFKControl[] = `ls "L_FK_ANKLE_CONTROL" "*L_FK_ANKLE_CONTROL"`;
+string $leftBallFKControl[] = `ls "L_FL_BALL_CONTROL" "*L_FK_Ball_Control"`;		
+string $leftLegSubChar = dwRTAddObjsToCharSet ({$leftLegPoleVector[0], $leftIKFootControl[0], $leftFemurFKControl[0],
+						 $leftKneeFKControl[0], $leftAnkleFKControl[0], $leftBallFKControl[0]}, 
+					"LEG_Left");
+//RIGHT LEG.
+string $rightLegPoleVector[] = `ls "R_Leg_Pole_Vector" "*R_Leg_Pole_Vector"`;
+string $rightIKFootControl[] = `ls "R_IKFootControl" "*R_IKFootControl"`;
+string $rightFemurFKControl[] = `ls "R_FK_FEMUR_CONTROL" "*R_FK_FEMUR_CONTROL"`;
+string $rightKneeFKControl[] = `ls "R_FK_KNEE_CONTROL" "*R_FK_KNEE_CONTROL"`;
+string $rightAnkleFKControl[] = `ls "R_FK_ANKLE_CONTROL" "*R_FK_ANKLE_CONTROL"`;
+string $rightBallFKControl[] = `ls "R_FL_BALL_CONTROL" "*R_FL_BALL_CONTROL"`;			
+string $rightLegSubChar = dwRTAddObjsToCharSet ({$rightLegPoleVector[0], $rightIKFootControl[0], $rightFemurFKControl[0], 
+							$rightKneeFKControl[0], $rightAnkleFKControl[0], $leftBallFKControl[0]},
+					"LEG_Right");
+
+		
+//NECK_HEAD.
+string $headControl[] = `ls "HEAD_CONTROL" "*HEAD_CONTROL"`;
+string $neckControl[] = `ls "NECK_CONTROL" "*NECK_CONTROL"`;
+string $neckHeadSubChar = dwRTAddObjsToCharSet ({$headControl[0], $neckControl[0]}, 
+					"NECK_HEAD");			
+//TORSO.
+string $lowerTorsoControl[] = `ls "LOWER_TORSO_CONTROL" "*LOWER_TORSO_CONTROL"`;
+string $upperTorsoControl[] = `ls "UPPER_TORSO_CONTROL" "*UPPER_TORSO_CONTROL"`;
+string $upperTorsoStretchControl[] = `ls "UPPER_TORSO_STRETCH_CONTROL" "*UPPER_TORSO_STRETCH_CONTROL"`;
+string $torsoSubChar = dwRTAddObjsToCharSet ({$lowerTorsoControl[0], $upperTorsoControl[0], $upperTorsoStretchControl[0]}, 
+					"TORSO");
+
+//COMBINE NECK_HEAD AND TORSO TOGETHER INTO TORSO_HEAD.
+string $torsoHeadSubChar = dwRTAddObjsToCharSet ({$neckHeadSubChar, $torsoSubChar}, "TORSO_HEAD");
+
+
+//HIPS.
+string $COGControl[] = `ls "COG_CONTROL" "*COG_CONTROL"`;
+string $hipControl[] = `ls "HIP_CONTROL" "*HIP_CONTROL"`;
+string $hipsSubChar = dwRTAddObjsToCharSet ({$COGControl[0], $hipControl[0]}, "HIPS");
+
+
+//Body character set. Ideally, the main character ($characterName) should have one main "body" 
+//sub-character, and one main "facial" sub-character set.
+string $subCharsTemp[] = {$leftArmSubChar, $rightArmSubChar, $leftLegSubChar, $rightLegSubChar, $torsoHeadSubChar, $hipsSubChar};
+string $bodyAnimationCharacter = dwRTAddObjsToCharSet ($subCharsTemp, "BODY");
+
+
+
+//Main character set.
+string $mainCharacter = dwRTAddObjsToCharSet ({$bodyAnimationCharacter}, $characterName );
+
+//Reselect initial selection.
+select -r $selection;
+}

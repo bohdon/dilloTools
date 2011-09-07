@@ -1,0 +1,236 @@
+
+/*
+___________________________________________________________________________________________________________________________________________________________________
+|mdBlendCorrect v. 1.0
+|written by Megan Deane and Bo Sayre
+|
+|About:
+|		-This script allows for changes to be made to a base head after creating blendshapes.
+|	
+|	To Use:
+|		-Create a duplicate of the original base head and make changes to geometry as needed.
+|		-Run mdbcBlendCorrect and load heads into their respective fields.
+|		-Click button. 
+|		
+|	Tips:
+|		-Smooth mesh preview slows down the display, make sure all of the heads are displayed at a smoothness of 1 before running, to make refreshing quicker.
+|		-if drastic changes are made, or if this is being used for different characters, 
+|			advanced wrap options are listed, or alterations to your regenerated blendshapes may be necessary.
+|			
+|
+| 	Before Using:
+|		Save mdBlendCorrect.mel into your Maya>2008>scripts folder and
+|		copy this script onto a shelf button:
+|
+|					source mdBlendCorrect.mel;
+					mdBlendCorrect;
+|___________________________________________________________________________________________________________________________________________________________________
+
+*/
+
+
+
+global proc mdBlendCorrect() {
+
+	if (`window -query -exists mdBlendCorrect`){deleteUI mdBlendCorrect;}
+		window  -rtf 1 mdBlendCorrect ;
+		
+			string $mdbcForm = `formLayout`;
+			string $b2 = `button  -l "Start" -c "mdbcCorrectBlends" `;
+			formLayout -edit
+				-attachNone     $b2     "top"
+				-attachForm     $b2     "left"   5
+				-attachForm     $b2     "bottom" 5
+				-attachForm     $b2     "right"  5
+				$mdbcForm;
+			setParent..;
+			
+				columnLayout -rs 5;
+					textFieldButtonGrp  -cw3 85 125 50 -ct3 "left" "both" "left" -l "Old Base Head" -bl "load" -bc "fillOldBaseShape" mdbcOldBaseField;
+					textFieldButtonGrp -cw3 85 125 50 -ct3 "left" "both" "left" -l "New Base Head" -bl "load" -bc "fillNewBaseShape" mdbcNewBaseField;
+					//checkBox -l "Restore Deleted Target Heads" -ofc
+				
+					
+		
+
+			
+				
+		showWindow;
+}
+
+global proc mdbcCorrectBlends () {
+	$oldBase = `textFieldButtonGrp -q -tx mdbcOldBaseField`; //get the contents of oldBaseField
+	$newBase = `textFieldButtonGrp -q -tx mdbcNewBaseField`; //get the contents of newBaseField
+	if ($oldBase == "") {
+		error "no base chosen\n";
+		return ;
+	}
+	if ($newBase == "") {
+		error "no base chosen\n";
+		return ;
+	}
+	string $oldBlends[] =  `mdbcGetBlendShape $oldBase`; // finds the blendshape nodes
+	
+	string $newBlend[];
+	for($i = 0; $i < size($oldBlends); $i++) {
+		string $blendAttrs[] = `mdbcGetBlendAttrs $oldBlends[$i]`; // gets the attributes
+		
+		for ($attr in $blendAttrs) {
+			setAttr ($oldBlends[$i]+"."+$attr) 0;  // sets the blendshape attributes to 0
+		}
+		
+		
+		float $oldBaseTrans[] = `getAttr ($oldBase+".translate")`; // gets the translations of oldBase
+			
+		setAttr ($newBase+".translate") $oldBaseTrans[0] $oldBaseTrans[1] $oldBaseTrans[0]; // matches newBase's trans with oldBase's
+		
+		
+		select $newBase $oldBase;
+		doWrapArgList "2" {"1", "0", "0.1"};  // assigns a wrap deformer
+		
+		//creates a new blendshape node on the new base head.  preparing for reconnection.
+		select $newBase;
+		$newBlend = `blendShape -n $oldBlends[$i]`;
+		select -cl; 
+			
+		string $deleteGrp = `group -em -n mdbcDeletedTargets`; //creates a new group node preparing for deleted targets.
+		
+		
+		int $index = 0;
+		int $delLen = 0;
+		for ($attr in $blendAttrs) {
+			float $weights[] = `mdbcGetBlendValues $oldBlends[$i] $index`;
+			
+			for ($weight in $weights) {
+				setAttr ($oldBlends[$i]+"."+$attr) $weight;	 //turns each blendshape on to it's correct weight
+				
+				string $newTarget[] = `duplicate $newBase`;			//creates new target
+				polyMapDel -ch 0 $newTarget[0];
+				select $newTarget[0];
+				sets -e -forceElement initialShadingGroup;
+
+				
+				string $oldTarget =`mdbcGetBlendTarget $oldBlends[$i] $index $weight`; //gets current target if it exists
+				if ($oldTarget != "") {
+					float $oldTargetTrans[] = `getAttr ($oldTarget+".translate")`;
+					string $oldTargetParent[] = `listRelatives -p $oldTarget`; //gets parent of old target
+					delete $oldTarget; //deletes old target
+					
+					move -a $oldTargetTrans[0] $oldTargetTrans[1] $oldTargetTrans[2] $newTarget[0];  // moves new target to correct position
+					$newTarget[0] = `rename $newTarget[0] $oldTarget`;
+					string $newTargetParent[] = `listRelatives -p $newTarget[0]`; //gets parent of new target
+					if ($newTargetParent[0]  != $oldTargetParent[0]){
+						if(size($oldTargetParent) > 0)
+							parent $newTarget[0] $oldTargetParent[0];
+					}
+					
+				  //if target has been deleted
+				  }else {      
+					move -a (($delLen+3)*4+1) 0 0 $newTarget[0]; //move it over to the right
+					$newTarget[0] = `rename $newTarget[0] ($attr+"_"+$weight)`;  // rename it using the corresponding attribute + it's weight
+					parent $newTarget[0] $deleteGrp; //groups deleted targets
+					$delLen++;
+				}
+				setAttr ($oldBlends[$i]+"."+$attr) 0;
+				
+				// reconnects the blendshapes
+				$targetPath = ($newTarget[0]+".worldMesh[0]");
+				string $basePath = ($newBlend[0]+".inputTarget[0].inputTargetGroup["+$index+"].inputTargetItem["+($weight*1000+5000)+"].inputGeomTarget");
+				connectAttr -f $targetPath $basePath;
+				
+				
+			}
+			setAttr ($newBlend[0]+".weight["+$index+"]") 0;  // sets the blendshape attributes to 0
+			aliasAttr $attr ($newBlend[0]+".w["+$index+"]") ;
+			$index++;
+			
+				
+		}	
+		if ($delLen == 0)  //removes group node if no targets have been deleted
+			select $deleteGrp;
+			delete;
+	}	
+	delete $oldBase;
+	
+		
+
+	
+	print ("// Successfully recreated blend shapes! :D");
+}
+
+	
+
+
+//gets the old base head.
+global proc fillOldBaseShape () {
+	string $s[]=`ls -sl`;
+	textFieldButtonGrp -e -tx ($s[0]) mdbcOldBaseField;
+}
+//gets the new base head.
+global proc fillNewBaseShape () {
+	string $s[]=`ls -sl`;
+	textFieldButtonGrp -e -tx ($s[0]) mdbcNewBaseField; 
+}
+//Gets all of the Blend Shape nodes affiliated with the base shape being used
+global proc string[] mdbcGetBlendShape(string $base) {
+	if (!`objExists $base`) return {};
+	string $baseShape[] = `listRelatives -s -c $base`; //gets shape node from the given object
+	
+	string $blendShapeNodes[] = `listConnections -d 0 ($baseShape[0]+".inMesh")`;
+	$blendShapeNodes = {$blendShapeNodes[0]};
+	
+	$hasConnect = 1;
+	while($hasConnect) {
+		string $tempCon[] = `listConnections -d 0 $blendShapeNodes[size($blendShapeNodes)-1]`;
+		if (!size($tempCon)) {
+			$hasConnect = 0;
+		} else {
+			$blendShapeNodes[size($blendShapeNodes)] = $tempCon[0];
+		}
+	}
+	for ($i = size($blendShapeNodes)-1; $i >=0; $i--) {
+		string $type[] = `ls -st $blendShapeNodes[$i]`;
+		if ($type[1] != "blendShape") {
+			$blendShapeNodes = stringArrayRemove({$blendShapeNodes[$i]}, $blendShapeNodes);
+		}
+	}
+	
+	return $blendShapeNodes;
+}
+//gets blendshape attributes	
+global proc string[] mdbcGetBlendAttrs(string $blendShape) {
+	if (!`objExists $blendShape`) return {};
+	string $weights[] = `listAttr -m ($blendShape+".w")`;
+	return $weights;
+}
+//gets the weights of the targets
+global proc float[] mdbcGetBlendValues(string $blendShape, int $index) {
+	if (!`objExists $blendShape`) return {};
+	string $valuesStr[] = `listAttr -m ($blendShape+".inputTarget[0].inputTargetGroup["+$index+"]")`;
+	stringArrayRemoveAtIndex(0, $valuesStr);
+	int $valueLen = size($valuesStr);
+	float $values[] = {};
+	//remove and isolate number
+	for($i = ($valueLen-1); $i >= 0; $i--) {
+		if (($i%4) != 0) {
+			stringArrayRemoveAtIndex($i, $valuesStr);
+		} else {
+			$valuesStr[$i] = `substring $valuesStr[$i] (size($valuesStr[$i])-4) (size($valuesStr[$i])-1)`;
+			$valuesStr[$i] = (float($valuesStr[$i])-5000)/1000;
+		}
+	}
+	for ($i = 0; $i < size($valuesStr); $i++) {
+		$values[$i] = float($valuesStr[$i]);
+	}
+	return $values;
+}
+// gets the target associated with the blenshape attribute
+global proc string mdbcGetBlendTarget(string $blendShape, int $index, float $weight) {
+	if (!`objExists $blendShape`) return "";
+	string $inAttr = ($blendShape+".inputTarget[0].inputTargetGroup["+$index+"].inputTargetItem["+($weight*1000+5000)+"].inputGeomTarget");
+	string $blendTargets[] = `listConnections -t shape -d 0 $inAttr`;
+	
+	return $blendTargets[0];
+}
+
+

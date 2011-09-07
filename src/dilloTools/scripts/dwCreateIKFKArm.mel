@@ -1,0 +1,937 @@
+//Title:	dwCreateIKFKArm.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//Dates: Nov. 2002 - Jan. 2003
+//
+//See "About dwRiggingTools in main UI "Help" menu for detailed update descriptions.
+//
+//Updated: Sept. 1-3 2003:
+//	Removed "Stretch by Scaling" which (I believe) is useless. All stretching is now done via translating the joints.
+//	Replaced implicitSphere IK Control Obj with spline cube obj (less distracting). Added unitConversion node between
+//	distanceDimension node and output. DistanceDimension only outputs a value in centimeters, so the user´s current
+//	linear units must be checked, and a unitConversion node inserted which converts centimeters to the current linear units.
+//	For Maya 5.0 users, all blended orient constraints have their "interpType" set to shortest.
+//
+//Updated: Sept. 13-15 2003:
+//	Removed `pickWalk` replaced it with `listRelatives` command, for identifying joint chain members. This
+//	enables us to use skeletons with parented geometry etc under the joints. Parented geometry is useful for
+//	creating loRez, realtime character rigs. Added "dwDeleteBadChildren.mel" procedure which deletes extra
+//	geometry which might be parented under joints. Major update: User can now choose to split the shoulder and forearm
+//	as many times as desired (currently up to 10 splits are implemented in UI, but this can be easily changed).
+//	Rotation of joints is divided automatically across these multiple "split" joints via "dwDistributeRotations.mel" script.
+//	User must now specify 1st binding shoulder joint in the UI (should avoid some confusion about how this works).  
+//	"String ID" option is now moved under the "Advanced" tab at the bottom of the layout (this is mainly for characters 
+//	with more than one left arm and one right arm).
+//
+//Updated Sept. 30 2003:
+//	Added "Free_Orient" attr to FK shoulder control, which allows the shoulder to either follow the torso rotations
+//	or orient itself independently. The latter is the default behavior. Note that this is only performed when
+//	$autoShoulderCheck returns 1. When $autoShoulderCheck returns 0 the shoulder control automatically orients itself
+//	freely.
+//
+//Updated Nov. 12 2003:
+//	Removed renaming of joints. This enables the script to work with referenced skeletons.
+//	Added options for creating Standard Shoulder, Auto-Shoulder, or no shoulder. Previous version only created an auot-shoulder,
+//	which I find an impractical setup.
+//
+//Updated March 18 2004: Added clamp node to dwConnectByCondition.
+//
+//Updated March 30, 2004: Added stretch attr for each IK joint that is stretched. Changed naming on all FK controls. Cleaned up some stuff.
+//
+//Description: PROCEDURE CREATES IKFKARM WITH SOME FANCY OPTIONS.
+global proc dwCreateIKFKArm (string $bindingShoulder,			//1st argument...
+				int $middleShoulderJoints, 		//2
+				int $forearmSplitJoints, 		//3
+				int $sideFlagInt, 			//4
+				int $elbowAxisInt,			//5
+				int $stretchCheck, 			//6
+				int $controlColor,			//7
+				int $shoulderTypeCheck,			//8
+				int $standardShoulderControlType,	//9
+				int $FKArmControlType,			//10
+				int $stretchAxis, 			//11
+				int $fkShldrRotateOrder, 		//12
+				int $wristCntrlRotateOrder,		//13
+				string $namingPrefix,			//14
+				int $lockFKElbowCHECK)			//15
+{
+//Turn cycleCheck off. Stretchy calculations create cycles on some joints' ".matrix" attr. This is not a problem when animating, however.
+cycleCheck -e 0;
+
+
+//Assign $prefix.
+string $prefix = dwRTAssignPrefix ($namingPrefix, $sideFlagInt);
+
+
+//ASSIGN $ELBOWAXIS.
+string $elbowAxis;
+if ($elbowAxisInt == 1)
+	{$elbowAxis = "X";}
+if ($elbowAxisInt == 2)
+	{$elbowAxis = "Y";}
+if ($elbowAxisInt == 3)
+	{$elbowAxis = "Z";}
+if (! $elbowAxisInt)
+	error "Elbow´s preferred axis is not selected in UI. Try again.";
+
+
+//Report errors if shoulder joint is specified incorrectly.
+if (! `objExists $bindingShoulder`)
+	error ("No shoulder joint found with given name (\"" + $bindingShoulder + "\"). Try again.");
+
+
+//GET CURRENT JOINT HIERARCHY.	
+string $bindingElbowJoint[];
+string $shoulderJoints[];			//Array which contains all binding "shoulder" joints (including first shoulder joint).
+string $shoulderJointsTemp[];			//temp array.
+$shoulderJoints[0] = $bindingShoulder;		//Assign first member to the first shoulder joint.
+int $b;						//Counter integer.
+
+//Allow negative lengths with the first arm joint.
+//dwReportErrorNegativeJointLength ($shoulderJoints[0]);
+
+if ($middleShoulderJoints)
+	{
+	for ($b = 0; $b < $middleShoulderJoints; $b++)
+		{
+		$shoulderJointsTemp = `listRelatives -pa -c -type joint $shoulderJoints[$b]`;	//Place all immediate children into temp array.
+		dwReportErrorNegativeJointLength ($shoulderJointsTemp[0]);
+		
+		$shoulderJoints[$b + 1] = $shoulderJointsTemp[0];				//Put child into real array.
+		}
+	
+	$bindingElbowJoint = `listRelatives -pa -c -type joint $shoulderJoints[$b]`;	
+	dwReportErrorNegativeJointLength ($bindingElbowJoint[0]);
+	}
+
+else if (! $middleShoulderJoints)
+	{
+	$bindingElbowJoint = `listRelatives -pa -c -type joint $bindingShoulder`;
+	dwReportErrorNegativeJointLength ($bindingElbowJoint[0]);
+	}
+	
+string $forearmJoints[];			//Array which contains all binding "forearm" joints (does NOT include bindingElbow).
+string $forearmJointsTemp[];			//temp array.
+string $bindingWristJoint[];
+
+if ($forearmSplitJoints)
+	{
+	$forearmJointsTemp = `listRelatives -pa -c -type joint $bindingElbowJoint[0]`;
+	dwReportErrorNegativeJointLength ($forearmJointsTemp[0]);
+	
+	//Assign first forearm joint as array index zero;
+	$forearmJoints[0] = $forearmJointsTemp[0];
+	for ($b = 1; $b < $forearmSplitJoints; $b++)
+		{
+		$forearmJointsTemp = `listRelatives -pa -c -type joint $forearmJoints[$b - 1]`;	//Place all immediate children into temp array.
+		$forearmJoints[$b] = $forearmJointsTemp[0];					//Put child into real array.						
+		}
+	$bindingWristJoint = `listRelatives -pa -c -type joint $forearmJoints[$b - 1]`;
+	dwReportErrorNegativeJointLength ($bindingWristJoint[0]);
+	}
+else if (! $forearmSplitJoints)
+	{
+	$bindingWristJoint = `listRelatives -pa -c -type joint $bindingElbowJoint[0]`;
+	dwReportErrorNegativeJointLength ($bindingWristJoint[0]);
+	}
+
+string $bindingHandJoint[] = `listRelatives -pa -c -type joint $bindingWristJoint[0]`;
+
+dwReportErrorNegativeJointLength ($bindingHandJoint[0]);
+
+//IF `LISTRELATIVES` COMMAND RETURNED ZERO (IF THE CHAIN ENDED), REPORT AN ERROR.
+if (size($bindingHandJoint) == 0)
+	error "Setup must contain hand joint parented to the wrist joint.";
+
+
+
+
+
+//ASSIGN NEW STRINGS (NOT ARRAYS) TO BINDING HIERARCHY.
+string $bindingElbow = $bindingElbowJoint[0];
+string $bindingWrist = $bindingWristJoint[0];
+string $bindingHand = $bindingHandJoint[0];
+
+
+$bindingShoulder = $shoulderJoints[0];
+
+
+string $clavicleJointArray[] = `listRelatives -pa -p -type joint $bindingShoulder`;
+string $clavicleJoint;
+string $torsoJoint[];
+
+//Assign clavicle variables.
+if (($shoulderTypeCheck == 1) || ($shoulderTypeCheck == 2))
+	{
+	$clavicleJoint = $clavicleJointArray[0];
+	$torsoJoint = `listRelatives -pa -p -type joint $clavicleJoint`;
+	if (! `size($torsoJoint)`)
+		error "No torso joint in hierarchy.";
+	}
+
+
+//CREATE CONTROL CHAIN BY DUPLICATING CURRENT CHAIN. RENAME WITH "_ControlArm" SUFFIX AND ASSIGN VARIABLES.
+//Delete $controlBicepJoint and $controlForearmJoint, as they are not necessary.
+string $controlShoulder;
+string $controlElbow;
+string $controlWrist;
+string $controlHand;
+
+string $controlHierarchy[] = `duplicate -rc $bindingShoulder`;
+$controlShoulder = `rename $controlHierarchy[0] ($prefix + "Shldr_ControlArm")`;
+
+//DELETE OTHER OBJECTS THAT MAY BE PARENTED TO SHOULDER.
+//Updated May 5 2004: Search through entire control hiearchy and delete everything that is not a joint.
+string $controlChildren[] = `listRelatives -ad -path $controlShoulder`;
+for ($c in $controlChildren)
+	dwDeleteBadChildren ($c, "joint");
+//dwDeleteBadChildren($controlShoulder, "joint");
+
+if ($middleShoulderJoints)
+	{
+	//REMOVE EACH MIDDLE SHOULDER JOINT (UNNECESSARY FOR CONTROL HIERARCHY).
+	string $controlMiddleShoulder[];
+	for ($b = 0; $b < $middleShoulderJoints; $b++)
+		{
+		$controlMiddleShoulder = `listRelatives -pa -c -type joint $controlShoulder`;
+		//dwDeleteBadChildren($controlMiddleShoulder[0], "joint");
+		removeJoint $controlMiddleShoulder[0];
+		}
+	}
+
+
+string $controlElbowJoint[] = `listRelatives -pa -c -type joint $controlShoulder`;
+//DELETE OTHER OBJECTS THAT MAY BE PARENTED TO ELBOW.
+//dwDeleteBadChildren($controlElbowJoint[0], "joint");
+
+$controlElbow = `rename $controlElbowJoint[0] ($prefix + "Elbow_ControlArm")`;
+
+
+if ($forearmSplitJoints)
+	{
+	//REMOVE EACH FOREARM JOINT (UNNECESSARY FOR CONTROL HIERARCHY).
+	string $controlForearm[];
+	for ($b = 0; $b < $forearmSplitJoints; $b++)
+		{
+		$controlForearm = `listRelatives -pa -c -type joint $controlElbow`;
+		//DELETE OTHER OBJECTS THAT MAY BE PARENTED TO FOREARM.
+		//dwDeleteBadChildren($controlForearm[0], "joint");
+		removeJoint $controlForearm[0];
+		}
+	}
+
+string $controlWristJoint[] = `listRelatives -pa -c -type joint $controlElbow`;
+$controlWrist = `rename $controlWristJoint[0] ($prefix + "Wrist_ControlArm")`;
+
+//DELETE OTHER OBJECTS THAT MAY BE PARENTED TO WRIST.
+//dwDeleteBadChildren($controlWrist, "joint");
+	
+
+string $controlHandJoint[] = `listRelatives -pa -c -type joint $controlWrist`;
+$controlHand = `rename $controlHandJoint[0] ($prefix + "Hand_ControlArm")`;
+
+
+
+//CHECK TO SEE IF CHAIN HAS ANY FURTHER CHILDREN (JOINTS OR OTHER). IF SO, DELETE THEM.
+string $handChildJoints[] = `listRelatives -c -f $controlHand`;
+if (size($handChildJoints) > 0)
+	delete $handChildJoints;
+
+
+//CONNECT CONTROL CHAIN´S ROTATIONS TO SKINNING CHAIN. LOCK UNNECESSARY ROTATIONS ON SKINNING CHAIN.
+connectAttr -f ($controlShoulder + ".rotateY") ($bindingShoulder + ".rotateY");
+connectAttr -f ($controlShoulder + ".rotateZ") ($bindingShoulder + ".rotateZ");
+if ($middleShoulderJoints)
+	{
+	//DISTRIBUTE X-ROTATION AMONG THE SHOULDER JOINTS.
+	dwDistributeRotations ($controlShoulder,
+				"rx",
+				$shoulderJoints,
+				"rx",
+				($prefix + "Shoulder_X_Rotation_MultiplyDivide"));
+	
+	//OLD: LOCK AND HIDE ATTRIBUTES FOR SHOULDER JOINTS.
+	//This will NOT work on referenced skeletons, so it is currently disabled.
+	//for ($b = 0; $b < $middleShoulderJoints; $b ++)			
+	//	{
+	//	dwLockHideAttributes (0, 1, $shoulderJoints[$b + 1], "ry rz");
+	//	}
+	}
+		
+if (! $middleShoulderJoints)
+	{connectAttr -f ($controlShoulder + ".rotateX") ($bindingShoulder + ".rotateX");}
+
+
+
+connectAttr -f ($controlElbow + ".rotateX") ($bindingElbow + ".rotateX");
+connectAttr -f ($controlElbow + ".rotateY") ($bindingElbow + ".rotateY");
+connectAttr -f ($controlElbow + ".rotateZ") ($bindingElbow + ".rotateZ");	
+
+if ($forearmSplitJoints)
+	{
+	dwDistributeRotations ($controlWrist,
+				"rx",
+				$forearmJoints,
+				"rx",
+				($prefix + "Forearm_X_Rotation_MultiplyDivide"));
+	}
+
+connectAttr -f ($controlWrist + ".rotateY") ($bindingWrist + ".rotateY");
+connectAttr -f ($controlWrist + ".rotateZ") ($bindingWrist + ".rotateZ");
+if (! $forearmSplitJoints)
+	connectAttr -f ($controlWrist + ".rotateX") ($bindingWrist + ".rotateX");
+if ($forearmSplitJoints)
+	{
+	//Following line is disabled because it will not work on referenced skeletons.
+	//dwLockHideAttributes (0, 1, $bindingWrist, "rx");
+	setAttr ($controlWrist + ".rotateOrder") 1;
+	
+	//Following lines will not work when working with referenced skeletons.
+	//for ($b = 0; $b < $forearmSplitJoints; $b ++)			//Lock and hide attributes for forearm joints.
+	//	{
+	//	dwLockHideAttributes (0, 1, $forearmJoints[$b], "ry rz");
+	//	}
+	}
+
+
+//DUPLICATE CONTROL ARM AND CREATE FK ARM; ASSIGN VARIABLES.
+string $fkShoulder;
+string $fkElbow;
+string $fkWrist;
+
+string $FKHierarchy[] = `duplicate -rc -rr $controlShoulder`;
+$fkShoulder = $FKHierarchy[0];
+setAttr ($fkShoulder + ".rotateOrder") $fkShldrRotateOrder;
+$fkShoulder = `rename $fkShoulder ($prefix + "FKUpperArm")`;
+
+
+string $fkElbowJoint[] = `listRelatives -pa -c -type joint $fkShoulder`;
+$fkElbow = `rename $fkElbowJoint[0] ($prefix + "FKElbow")`;
+
+
+string $fkWristJoint[] = `listRelatives -pa -c -type joint $fkElbow`;
+$fkWrist = `rename $fkWristJoint[0] ($prefix + "FKWrist")`;
+
+
+string $fkHandJoint[] = `listRelatives -pa -c -type joint $fkWrist`;
+removeJoint $fkHandJoint[0];
+	
+
+//DUPLICATE FK ARM AND CREATE IK ARM;
+string $ikShoulder;
+string $ikElbow;
+string $ikWrist;
+
+string $IKHierarchy[] = `duplicate -rc -rr $fkShoulder`;
+$ikShoulder = $IKHierarchy[0];
+$ikShoulder = `rename $ikShoulder ($prefix + "IKUpperArm")`;
+
+
+string $ikElbowJoint[] = `listRelatives -pa -c -type joint $ikShoulder`;
+$ikElbow = `rename $ikElbowJoint[0] ($prefix + "IKElbow")`;
+
+
+string $ikWristJoint[] = `listRelatives -pa -c -type joint $ikElbow`;
+$ikWrist = `rename $ikWristJoint[0] ($prefix + "IKWrist")`;
+
+
+
+//SINCE V. 1.52 WE NEED TO ORIENTCONSTRAIN THE FK JOINT CHAIN TO THE FK CONTROLS, 
+//THEREFORE WE WILL NOT LOCK ROTATIONS ON THE FK CHAIN.
+//setAttr -lock true ($fkElbow + ".rx");
+//if ($elbowAxis == "Z")
+//	{setAttr -lock true ($fkElbow + ".ry");}
+//if ($elbowAxis == "Y")
+//	{setAttr -lock true ($fkElbow + ".rz");}
+
+//ADD IK HANDLE TO IK ARM;
+string $ikHandleIKArm[] = `ikHandle 
+				-solver ikRPsolver
+				-n ($prefix + "IKArm_IKHandle") 
+				-sj $ikShoulder 
+				-ee $ikWrist`;
+setAttr ($ikHandleIKArm[0] + ".stickiness") 1;
+
+
+//ADD FK CONTROL OBJECTS IF DESIRED IN UI; CREATE CONTROL OBJECTS WITH X-TRANSLATE ATTRIBUTE CONNECTED TO APPROPRIATE JOINT.
+//GET THE ELBOW->WRIST DISTANCE WHICH WILL DETERMINE THE SIZE OF OUR CONTROL SPLINE OBJECTS LATER.
+float $armLengthValue = dwRTGetDistance ($fkElbow, $fkWrist);
+string $FKshoulderFollowOrientGrp;
+string $FKshoulderFreeOrientGrp;
+string $FKshoulderFreeOrientConstraint[];
+//Query Maya version. If version 5.0 or higher, set the orientConstraints´ "interpType" attr to 2 ("shortest").
+float $mayaVersion = `dwRT_GetMayaVersion`;
+
+string $fkShoulderOrientGrp;
+string $fkElbowOrientGrp;
+
+string $fkUpperArmControl;
+string $fkElbowControl;
+if ($FKArmControlType > 1)
+	{
+	//Create FK controls once, using $stretchCheck as an argument.
+	$fkShoulderOrientGrp = dwCreateFKControl($fkShoulder, $fkElbow, 1, 1, 
+							"orientConstrainRotations", 1, $stretchCheck, 
+							$FKArmControlType, ($armLengthValue/1.5),
+							 2, $prefix, "FK_UPPERARM_CONTROL");
+		$fkElbowOrientGrp = dwCreateFKControl($fkElbow, $fkWrist, 1, 1, 
+							"orientConstrainRotations", 1, $stretchCheck, 
+							$FKArmControlType, ($armLengthValue/1.5),
+							 2, $prefix, "FK_ELBOW_CONTROL");
+		
+		$fkUpperArmControl = ($prefix + "FK_UPPERARM_CONTROL");
+		$fkElbowControl = ($prefix + "FK_ELBOW_CONTROL");
+		
+		//Lock y- or z- rotations on elbow.
+		//Updated June 18, 2004: Only if $lockFKElbowCHECK has been checked.
+		if ($lockFKElbowCHECK)
+			{
+			if ($elbowAxis == "Y")
+				dwLockHideAttributes (0, 0, $fkElbowControl, "rx rz");
+			else if ($elbowAxis == "Z")
+				dwLockHideAttributes (0, 0, $fkElbowControl, "rx ry");
+			}
+	
+	parent $fkElbowOrientGrp $fkUpperArmControl;
+	
+	//Add override color scheme to FK control boxes.
+	if ($controlColor > 1)
+		{
+		setAttr ($fkUpperArmControl + ".overrideEnabled") 1;
+		setAttr ($fkUpperArmControl + ".overrideColor") ($controlColor - 1);
+		}
+	setAttr ($fkUpperArmControl + ".rotateOrder") $fkShldrRotateOrder;
+	
+	
+	if (($shoulderTypeCheck == 1) || ($shoulderTypeCheck == 2))
+		{
+		//Create "Free_Orient" attr that will allow the FK Shoulder to either follow the upper torso rotations
+		//or orient itself independently of the upper torso. The FK Shoulder by default should orient itself
+		//*independently* of the upper torso.
+		//Create group node which will follow torso orientation.
+		$FKshoulderFollowOrientGrp = `group -em -n ($prefix + "Shldr_FollowOrientGrp")`;
+		parent $FKshoulderFollowOrientGrp $fkShoulderOrientGrp;
+		makeIdentity -t 1 -r 1 $FKshoulderFollowOrientGrp;
+		parent $fkUpperArmControl $FKshoulderFollowOrientGrp;
+		
+		//Create "Free Orient" group node.
+		$FKshoulderFreeOrientGrp = `group -em -n ($prefix + "Shldr_FreeOrientGrp")`;
+		string $orientTemp[] = `orientConstraint $fkShoulderOrientGrp $FKshoulderFreeOrientGrp`;
+		delete $orientTemp;
+		pointConstraint $fkShoulder $FKshoulderFreeOrientGrp;
+		
+		//Create orient constraint.
+		$FKshoulderFreeOrientConstraint = `orientConstraint $fkShoulderOrientGrp $FKshoulderFreeOrientGrp $FKshoulderFollowOrientGrp`;
+		
+		//Create reverse node setup to blend the orient constraint.
+		dwBlendByReverse ($fkUpperArmControl, 
+					"Free_Orient", 
+					($prefix + "Shldr_FreeOrient_Reverse"), 
+					($FKshoulderFreeOrientConstraint[0] + "." + $FKshoulderFreeOrientGrp + "W1"), 
+					($FKshoulderFreeOrientConstraint[0] + "." + $fkShoulderOrientGrp + "W0"),
+					 1);
+		
+		//UPDATE FOR V. 5.0. SET "INTERPOLATION TYPE" OF ORIENT CONSTRAINT TO "SHORTEST". THIS SEEMS TO WORK WELL
+		//AS IT TRIES TO AVOID FLIPPING WHEN BLENDED ORIENTATION DIFFERENCES ARE TOO HIGH.
+		if ($mayaVersion >= 5.0)
+			setAttr ($FKshoulderFreeOrientConstraint[0] + ".interpType") 2;
+		}
+	}
+
+
+
+//ADD SPLINE CUBE OBJECT TO IK WRIST. PARENT IKHANDLE TO CONTROL OBJECT. 
+string $controlShapeTemp = `curve -d 1 
+	-p ($armLengthValue/3) ($armLengthValue/3) (-$armLengthValue/3) 
+	-p ($armLengthValue/3) (-$armLengthValue/3) (-$armLengthValue/3) 
+	-p ($armLengthValue/3) (-$armLengthValue/3) ($armLengthValue/3) 
+	-p ($armLengthValue/3) ($armLengthValue/3) ($armLengthValue/3) 
+	-p ($armLengthValue/3) ($armLengthValue/3) (-$armLengthValue/3) 
+	-p (-$armLengthValue/3) ($armLengthValue/3) (-$armLengthValue/3) 
+	-p (-$armLengthValue/3) (-$armLengthValue/3) (-$armLengthValue/3) 
+	-p ($armLengthValue/3) (-$armLengthValue/3) (-$armLengthValue/3) 
+	-p (-$armLengthValue/3) (-$armLengthValue/3) (-$armLengthValue/3) 
+	-p (-$armLengthValue/3) (-$armLengthValue/3) ($armLengthValue/3) 
+	-p (-$armLengthValue/3) ($armLengthValue/3) ($armLengthValue/3) 
+	-p (-$armLengthValue/3) ($armLengthValue/3) (-$armLengthValue/3) 
+	-p (-$armLengthValue/3) ($armLengthValue/3) ($armLengthValue/3) 
+	-p ($armLengthValue/3) ($armLengthValue/3) ($armLengthValue/3) 
+	-p ($armLengthValue/3) (-$armLengthValue/3) ($armLengthValue/3) 
+	-p (-$armLengthValue/3) (-$armLengthValue/3) ($armLengthValue/3) 
+	-p ($armLengthValue/3) (-$armLengthValue/3) ($armLengthValue/3) 
+	-p ($armLengthValue/3) (-$armLengthValue/3) (-$armLengthValue/3)
+	-k 0 -k 1 -k 2 -k 3 -k 4 -k 5 -k 6 -k 7 -k 8 -k 9 -k 10 -k 11 -k 12 -k 13 -k 14 -k 15 -k 16 -k 17`;
+
+string $ikWristControl = `rename ($prefix + "IKArm_Control")`;
+setAttr ($ikWristControl + ".showManipDefault") 1;
+	
+float $wristPosition[] = `xform -q -ws -t $ikWrist`;
+move -a $wristPosition[0] $wristPosition[1] $wristPosition[2] $ikWristControl;
+
+//Orient the control to the wrist joint. Not really important but does look nicer in the viewport.
+string $wristControlConstraint[] = `orientConstraint $ikWrist $ikWristControl`;
+delete $wristControlConstraint;
+
+//parent $ikWristControl $ikWristControlCompensateGrp;
+makeIdentity -apply true -t 1 -r 1 $ikWristControl;
+dwLockHideAttributes (0, 0, $ikWristControl, "rx ry rz sx sy sz v");
+parent $ikHandleIKArm[0] $ikWristControl;
+setAttr ($ikHandleIKArm[0] + ".v") 0;
+
+//ADD OVERRIDE COLOR SCHEME TO FK CONTROL BOX.
+if ($controlColor > 1)
+	{
+	setAttr ($ikWristControl + ".overrideEnabled") 1;
+	setAttr ($ikWristControl + ".overrideColor") ($controlColor - 1);
+	}
+
+
+//ADD POLE VECTOR TO IK ARM; PLACE IT IKARM´S ELBOW JOINT. USER CAN REPOSITION THIS AFTER EXECUTING SCRIPT.
+string $poleVectorIKArm;
+float $elbowPosition[] = `xform -q -ws -t $ikElbow`;
+createNode implicitSphere;
+pickWalk -d up;
+$poleVectorIKArm = `rename ($prefix + "IKArm_PoleVector")`;
+setAttr ($poleVectorIKArm + ".showManipDefault") 1;
+dwLockHideAttributes (0, 0, $poleVectorIKArm, "rx ry rz sx sy sz v");
+	
+move -a $elbowPosition[0] $elbowPosition[1] $elbowPosition[2] $poleVectorIKArm;
+
+string $poleVectorIKArmCompensateGrp = `group -em -n ($poleVectorIKArm + "_CompensateGrp")`;
+move -a $elbowPosition[0] $elbowPosition[1] $elbowPosition[2] $poleVectorIKArmCompensateGrp;
+dwLockHideAttributes (0, 0, $poleVectorIKArmCompensateGrp, "rx ry rz sx sy sz v");
+
+parent $poleVectorIKArm $poleVectorIKArmCompensateGrp;
+makeIdentity $poleVectorIKArm;
+
+addAttr -longName "Control_Radius" -at double -min 0 -max 50 -defaultValue 1 -keyable 1 $poleVectorIKArm;
+connectAttr ($poleVectorIKArm + ".Control_Radius") ($poleVectorIKArm + "Shape.radius");
+setAttr ($poleVectorIKArm + ".Control_Radius") ($armLengthValue/6);
+
+poleVectorConstraint $poleVectorIKArm $ikHandleIKArm[0];
+
+//Add color scheme to Pole Vector.
+if ($controlColor > 1)
+	{
+	setAttr ($poleVectorIKArm + ".overrideEnabled") 1;
+	setAttr ($poleVectorIKArm + ".overrideColor") ($controlColor - 1);
+	}
+
+
+
+
+//ADD CONTROL OBJECT TO CONTROL WRIST and ASSIGN VARIABLE. 
+//HAND IS AUTO-ORIENTED BY DEFAULT (IE, FOLLOWS MOVEMENT OF ARM), OR CAN BE ORIENTED TO EXTERNAL LOCATOR (Hand_2_Object).
+//STEP 1: GENERATE HAND CONTROL BOX (SIMILAR TO FK CONTROL OBJECTS ON FK ARM) AND SET APPROPRIATE ATTRIBUTES.
+float $handPosition[] = `xform -q -ws -t $controlHand`;
+select -cl;
+curve -d 1 -p $wristPosition[0] $wristPosition[1] $wristPosition[2] -p $handPosition[0] $handPosition[1] $handPosition[2] -k 0 -k 1;
+string $measureCurve[] = `ls -sl`;
+createNode curveInfo -n curveInfoMeasure;
+connectAttr ($measureCurve[0] + ".worldSpace") curveInfoMeasure.inputCurve;
+float $controlBoxLength = `getAttr curveInfoMeasure.arcLength`;
+delete curveInfoMeasure;
+delete $measureCurve[0];
+curve -d 1 
+	-p ($controlBoxLength * 3)  (($armLengthValue/3)/2) (-$armLengthValue/3) 
+	-p ($controlBoxLength * 3) ((-$armLengthValue/3)/2) (-$armLengthValue/3) 
+	-p ($controlBoxLength * 3) ((-$armLengthValue/3)/2) ($armLengthValue/3) 
+	-p ($controlBoxLength * 3) (($armLengthValue/3)/2) ($armLengthValue/3) 
+	-p ($controlBoxLength * 3) (($armLengthValue/3)/2) (-$armLengthValue/3) 
+	-p 0 (($armLengthValue/3)/2) (-$armLengthValue/3) 
+	-p 0 ((-$armLengthValue/3)/2) (-$armLengthValue/3) 
+	-p ($controlBoxLength * 3) ((-$armLengthValue/3)/2) (-$armLengthValue/3) 
+	-p 0 ((-$armLengthValue/3)/2) (-$armLengthValue/3) 
+	-p 0 ((-$armLengthValue/3)/2) ($armLengthValue/3) 
+	-p 0 (($armLengthValue/3)/2) ($armLengthValue/3) 
+	-p 0 (($armLengthValue/3)/2) (-$armLengthValue/3) 
+	-p 0 (($armLengthValue/3)/2) ($armLengthValue/3) 
+	-p ($controlBoxLength * 3) (($armLengthValue/3)/2) ($armLengthValue/3) 
+	-p ($controlBoxLength * 3) ((-$armLengthValue/3)/2) ($armLengthValue/3) 
+	-p 0 ((-$armLengthValue/3)/2) ($armLengthValue/3) 
+	-p ($controlBoxLength * 3) ((-$armLengthValue/3)/2) ($armLengthValue/3) 
+	-p ($controlBoxLength * 3) ((-$armLengthValue/3)/2) (-$armLengthValue/3)
+	-k 0 -k 1 -k 2 -k 3 -k 4 -k 5 -k 6 -k 7 -k 8 -k 9 -k 10 -k 11 -k 12 -k 13 -k 14 -k 15 -k 16 -k 17 ;
+string $controlBox[] = `ls -sl`;
+string $controlWristControl = `rename $controlBox[0] ($prefix + "Hand_Control")`;
+setAttr ($controlWristControl + ".showManipDefault") 2;
+
+//We don´t want to scale the cntrl obj, as previously thought. We don´t want to limit ourselves to a specific axis!
+//scale -r 2 0.5 1.5 $controlWristControl;
+//makeIdentity -apply true -scale 1 $controlWristControl;
+
+if ($stretchCheck)
+	{
+	addAttr -ln "Stretch" -dv 1 -at double -k true $controlWristControl;
+	connectAttr ($controlWristControl + ".Stretch") ($controlWrist + ".sx");
+	}
+
+if ($forearmSplitJoints)
+	{
+	setAttr ($controlWristControl + ".rotateOrder") 1;
+	}
+if ($controlColor > 1)
+	{
+	setAttr ($controlWristControl + ".overrideEnabled") 1;
+	setAttr ($controlWristControl + ".overrideColor") ($controlColor - 1);
+	}
+
+//STEP 2: CREATE HAND AUTO-ORIENT GROUP NODES AND MAKE NECESSARY CONSTRAINTS TO CONTROL ARM.
+string $wristAutoOrientGrp1 = `group -em -n ($controlWrist + "_AutoOrientGrp1")`;
+string $wristAutoOrientGrp2 = `group -em -n ($controlWrist + "_AutoOrientGrp2")`;
+
+move -a $elbowPosition[0] $elbowPosition[1] $elbowPosition[2] $wristAutoOrientGrp1;
+move -a $wristPosition[0] $wristPosition[1] $wristPosition[2] $wristAutoOrientGrp2;
+
+
+	//ORIENT CONSTRAIN GRP1 TO $controlElbow
+	pointConstraint $controlElbow $wristAutoOrientGrp1;
+	orientConstraint $controlElbow $wristAutoOrientGrp1;
+
+	//POINT CONSTRAIN AND ORIENT GRP2 TO $controlWrist.
+	pointConstraint $controlWrist $wristAutoOrientGrp2;
+	string $orientConstraintTemp[] = `orientConstraint $controlWrist $wristAutoOrientGrp2`;
+		delete $orientConstraintTemp[0];
+	
+	//PARENT GROUP NODES.
+	parent $wristAutoOrientGrp2 $wristAutoOrientGrp1;
+	
+	dwLockHideAttributes (0, 0, $wristAutoOrientGrp1, "tx ty tz rx ry rz sx sy sz v");
+	dwLockHideAttributes (0, 0, $wristAutoOrientGrp2, "tx ty tz rx ry rz sx sy sz v");
+
+
+
+//STEP 3: CREATE WRIST ORIENTATION. DEFAULT IS AUTO ORIENT, WITH ADDITIONAL "ORIENT TO OBJECT" ATTRIBUTE.
+string $hand2LocOrientGrp = `group -em -n ($prefix + "Hand_2_Object_Orient_Grp")`;
+//OLD: MUST BE CONSTRAINED TO CONTROLWRIST INSTEAD:    pointConstraint $bindingWrist $hand2LocOrientGrp;
+pointConstraint $controlWrist $hand2LocOrientGrp;
+string $handOrientLocator[] = `spaceLocator -n ($prefix + "Hand_Orient_Locator")`;
+move -a $handPosition[0] $handPosition[1] ($handPosition[2] - ($armLengthValue/8)) $handOrientLocator[0];
+	string $orientConstraintTemp[] = `orientConstraint $bindingWrist $handOrientLocator[0]`;
+	delete $orientConstraintTemp[0];
+parent $handOrientLocator[0] $hand2LocOrientGrp;
+dwLockHideAttributes (1, 0, $handOrientLocator[0], "tx ty tz sx sy sz v");
+
+string $wristOrientGrp = `group -em -n ($prefix + "Wrist_Orient_Grp")`;
+//OLD: MUST BE CONSTRAINED TO CONTROLWRIST INSTEAD:    pointConstraint $bindingWrist $wristOrientGrp;	
+pointConstraint $controlWrist $wristOrientGrp;
+	$orientConstraintTemp = `orientConstraint $controlWrist $wristOrientGrp`;
+	delete $orientConstraintTemp[0];
+
+
+string $wristOrientConstraint[] = `orientConstraint $handOrientLocator[0] $wristAutoOrientGrp2 $wristOrientGrp`;
+dwBlendByReverse ($controlWristControl, "Free_Orient", ($prefix + "Wrist_Orient_Reverse"), ($wristOrientConstraint[0] + "." + $handOrientLocator[0] + "W0"), ($wristOrientConstraint[0] + "." + $wristAutoOrientGrp2 + "W1"), 0);
+
+//UPDATE FOR V. 5.0. SET "INTERPOLATION TYPE" OF ORIENT CONSTRAINT TO "SHORTEST". THIS SEEMS TO WORK WELL
+//AS IT TRIES TO AVOID FLIPPING WHEN BLENDED ORIENTATION DIFFERENCES ARE TOO HIGH.
+if ($mayaVersion >= 5.0)
+	setAttr ($wristOrientConstraint[0] + ".interpType") 2;
+
+parent $controlWristControl $wristOrientGrp;
+makeIdentity $controlWristControl;
+
+dwLockHideAttributes (0, 0, $wristOrientGrp, "tx ty tz rx ry rz sx sy sz v");
+
+orientConstraint $controlWristControl $controlWrist;
+setAttr ($controlWristControl + ".rotateOrder") $wristCntrlRotateOrder;
+
+dwLockHideAttributes (0, 0, $controlWristControl, "tx ty tz sx sy sz v");
+
+
+
+
+//ORIENTCONSTRAIN THE CONTROL SHOULDER AND CONTROL ELBOW TO THE RESPECTIVE JOINTS ON THE IK AND FK ARM CHAINS. 
+//CREATE SHADING NODES TO WEIGH BETWEEN IK-FK.
+
+//ORIENT CONSTRAIN CONTROL SHOULDER.
+string $IKFKShoulderOrientConstraint[] = `orientConstraint -n ($prefix + "Shldr" + "IKFKOrientConstrain") $ikShoulder $fkShoulder $controlShoulder`;
+if ($mayaVersion >= 5.0)
+	setAttr ($IKFKShoulderOrientConstraint[0] + ".interpType") 2;
+	
+//ORIENT CONSTRAIN CONTROL ELBOW.
+string $IKFKElbowOrientConstraint[] = `orientConstraint -n ($prefix + "Elbow" + "IKFKOrientConstrain") $ikElbow $fkElbow $controlElbow`;
+if ($mayaVersion >= 5.0)
+	setAttr ($IKFKElbowOrientConstraint[0] + ".interpType") 2;
+
+//CONNECT CONSTRAINTS WITH IKFK_BLEND ATTRIBUTE.
+dwBlendByReverse ($controlWristControl, "IKFK_Blend", ($prefix + "IKFK_Orientation_Reverse"), ($IKFKShoulderOrientConstraint[0] + "." + $ikShoulder + "W0"), ($IKFKShoulderOrientConstraint[0] + "." + $fkShoulder + "W1"), 1);
+dwBlendByReverse ($controlWristControl, "IKFK_Blend", ($prefix + "IKFK_Orientation_Reverse"), ($IKFKElbowOrientConstraint[0] + "." + $ikElbow + "W0"), ($IKFKElbowOrientConstraint[0] + "." + $fkElbow + "W1"), 1);
+
+	
+
+
+
+//Add IKArm and FKArm visibility attributes to $controlWristControl.
+addAttr -longName "IKArm_Visibility" -at bool -defaultValue 1 -keyable 1 $controlWristControl;
+addAttr -longName "FKArm_Visibility" -at bool -defaultValue 1 -keyable 1 $controlWristControl;
+connectAttr ($controlWristControl + ".IKArm_Visibility") ($ikShoulder + ".v");
+connectAttr ($controlWristControl + ".FKArm_Visibility") ($fkShoulder + ".v");
+if ($FKArmControlType > 1)
+	{
+	connectAttr ($controlWristControl + ".FKArm_Visibility") ($fkShoulderOrientGrp + ".v");
+	}
+setAttr ($controlWristControl + ".IKArm_Visibility") 0;
+
+
+
+//IF USER CHOOSES "STRETCH JOINTS" IN UI, THEN CONNECT CONTROLARM X-TRANSLATION TO BINDING ARM, AND CREATE NODES 
+//TO CONTROL X-TRANSLATION OF JOINTS.
+if ($stretchCheck)
+	{
+	//MEASURE LENGTHS OF ALL JOINTS AND ASSIGN VARIABLES FOR STRETCHING.
+	string $IKHandleName = $ikHandleIKArm[0];
+	string $IKFKBlendAttribute = $controlWristControl + ".IKFK_Blend";
+	
+	float $forearmTXTemp[];
+	if ($forearmSplitJoints)
+		{
+		for ($b = 0; $b < $forearmSplitJoints; $b++)
+			{
+			$forearmTXTemp[$b] = `getAttr ($forearmJoints[$b] + ".tx")`;
+			}
+		}
+	
+	
+	float $shoulderTXTemp[];	//All ".tx" values for middle shoulder joints will be stored here.
+	if ($middleShoulderJoints)
+		{
+		for ($b = 0; $b < $middleShoulderJoints; $b++)
+			{
+			//GET THE X-TRANSLATION OF EACH OF THE MIDDLE-SHOULDER JOINTS, THEN MAINTAIN THAT AS A PERCENTAGE OF THE 
+			//OF THE TOTAL $SHOULDERLENGTH. HERE, $SHOULDERTXTEMP[0] WILL ACTUALLY BE ASSIGNED TO $SHOULDERJOINTS[1],
+			//AS $SHOULDERJOINTS[0] IS THE FIRST SHOULDER JOINT.
+			$shoulderTXTemp[$b] = `getAttr ($shoulderJoints[$b + 1] + ".tx")`;
+			}
+		}
+	
+	
+	//Get the actual length of the arm.
+	float $lengthControlElbow = dwRTGetDistance ($ikWrist, $ikElbow);
+	float $lengthControlShoulder = dwRTGetDistance ($ikElbow, $ikShoulder);
+	
+	//THIS TECHIQUE *TRANSLATES THE IK ARM HIERARCHY*, AND DOESN`T TOUCH THE *CONTROL* HIERARCHY. 
+	//CONTROL JOINTS ARE CALCULATED AFTERWARDS USING "dwBlend2WeightedAttr.mel" SCRIPT...
+	//HERE, ALL WE ARE DOING IS CALCULATING THE LENGTH OF THE IK ARM, 
+	//THEN BLENDING THIS WITH THE FK ARM VIA THE "dwBlend2WeightedAttr.mel" SCRIPT.
+	
+	//CALCULATE MIDDLE SHOULDER JOINTS TRANSLATE-X AS A PERCENTAGE OF TOTAL SHOULDER JOINT.
+	//LET THIS BE CALCULATED AUTOMATICALLY AS THE ARM IS STRETCHED.
+	if ($middleShoulderJoints)
+		{
+		float $bicepDivideValue;	//Value determines percentage of each joints´ "tx".
+		string $bicepPosition_Divide;	//multiplyDivide node for each middle shoulder joint.
+		for ($b = 0; $b < $middleShoulderJoints; $b++)
+			{
+			//Calculate divide factor for each joint.
+			$bicepDivideValue = $lengthControlShoulder/$shoulderTXTemp[$b];
+			
+			//Create multiplyDivide node and set operation to "divide".
+			$bicepPosition_Divide = `createNode -n ($prefix + "BicepPosition" + ($b + 1) + "_Divide") multiplyDivide`;
+			setAttr ($bicepPosition_Divide + ".operation") 2;
+			
+			//Connect $controlElbow.tx to first input.
+			connectAttr ($controlElbow + ".tx") ($bicepPosition_Divide + ".input1X");
+			
+			//Set value by which it will be divided.
+			setAttr ($bicepPosition_Divide + ".input2X") $bicepDivideValue;
+			
+			//Connect this to corresponding shoulder joint (start with $shoulderJoints[$b + 1],
+			//because $shoulderJoints[0] does not translate).
+			connectAttr ($bicepPosition_Divide + ".outputX") ($shoulderJoints[$b + 1] + ".tx");
+			}
+		}
+	
+	//CALCULATE FOREARM JOINTS´ TRANSLATE-X AS A PERCENTAGE OF TOTAL SHOULDER JOINT.
+	//LET THIS BE CALCULATED AUTOMATICALLY AS THE ARM IS STRETCHED.
+	if ($forearmSplitJoints)
+		{
+		float $forearmDivideValue;	//Value determines the percentage of each joints´ tx.
+		string $forearmPosition_Divide;	//multiplyDivide node.
+		for ($b = 0; $b < $forearmSplitJoints; $b++)
+			{
+			//Calculate divide factor for each joint.
+			$forearmDivideValue = $lengthControlElbow/$forearmTXTemp[$b];	
+			
+			//Create multiplyDivide node and set operation to "divide".
+			$forearmPosition_Divide = `createNode -n ($prefix + "ForearmPosition" + ($b + 1) + "_Divide") multiplyDivide`;
+				setAttr ($forearmPosition_Divide + ".operation") 2;
+			
+			//Connect $controlWrist to first input.
+			connectAttr ($controlWrist + ".tx") ($forearmPosition_Divide + ".input1X");
+			
+			//Set value by which it will be divided.
+			setAttr ($forearmPosition_Divide + ".input2X") $forearmDivideValue;
+			
+			//Connect this to corresponding forearm joint.
+			connectAttr ($forearmPosition_Divide + ".outputX") ($forearmJoints[$b] + ".tx");
+			}
+		}
+	
+	
+	//Create the stretching on the IK Arm.
+	dwRTCreateStretchyIK ($IKHandleName , $ikWristControl, ($prefix + "Arm"), 2);
+	
+	
+	//NOW CALCULATE CONTROL JOINTS´ LENGTHS AS WEIGHTED PERCENTAGES BETWEEN IK AND FK ARMS.
+	dwBlend2WeightedAttr($controlElbow, "tx", $controlWristControl, "IKFK_Blend", ($prefix + "Elbow_Blend2Attr"), $ikElbow, "tx", $fkElbow, "tx");
+	dwBlend2WeightedAttr($controlWrist, "tx", $controlWristControl, "IKFK_Blend", ($prefix + "Wrist_Blend2Attr"), $ikWrist, "tx", $fkWrist, "tx");
+	
+	
+	//POINT CONSTRAIN BINDING HIERARCHY TO CONTROL HIERARCHY.
+	pointConstraint -n ($prefix + "BindingElbowPointConstraint") $controlElbow $bindingElbow;
+	pointConstraint -n ($prefix + "BindingWristPointConstraint") $controlWrist $bindingWrist;
+	pointConstraint -n ($prefix + "BindingHandPointConstraint") $controlHand $bindingHand;
+	
+	} //END OF "IF ARMSTRETCH"...
+
+
+
+
+
+
+
+//CREATE SHOULDER SETUP IF SELECTED IN UI.
+string $clavicleOrientGrp;
+string $clavicleCompensateGrp;
+string $standardShoulderControlOrientGrp;
+string $clavicleFollowTorsoGrp;
+
+string $shoulderControl;
+string $autoShoulderOrientGrp;
+if (($shoulderTypeCheck == 1) || ($shoulderTypeCheck == 2))
+	{
+	//If standard shoulder...
+	if ($shoulderTypeCheck == 1)
+		{
+		//CREATE THE CLAVICLE (SHOULDER) CONTROL. CALL dwCreateFKControl TO BUILD CONSTRAINTS AND CONTROL OBJ.
+		$standardShoulderControlOrientGrp = dwCreateFKControl ($clavicleJoint, 
+								$bindingShoulder, 
+								0, 
+								1, 
+								"orientConstrainRotations", 
+								1, 
+								0, 
+								$standardShoulderControlType, 
+								($armLengthValue/1.5),
+								2,
+								$prefix,
+								"SHOULDER_CONTROL");
+		
+		$shoulderControl = ($prefix + "SHOULDER_CONTROL");
+		if ($controlColor > 1)
+			{
+			setAttr ($shoulderControl + ".overrideEnabled") 1;
+			setAttr ($shoulderControl + ".overrideColor") ($controlColor - 1);
+			}
+		//ADD GROUP NODE AND PARENT FOR FKCONTROLS.
+		if ($FKArmControlType > 1)
+			{
+			//OLD NAME: $clavicleOrientGrp = `group -em -n ($prefix + "Clavicle_OrientGrp")`;
+			$clavicleOrientGrp = `group -em -n ($prefix + "Shldr_FKArm_Clavicle_OrientGrp")`;
+			pointConstraint $clavicleJoint $clavicleOrientGrp;
+			orientConstraint $clavicleJoint $clavicleOrientGrp;
+			
+			//OLD NAME: $clavicleCompensateGrp = `group -em -n ($prefix + "Clavicle_CompensateGrp")`;
+			$clavicleCompensateGrp = `group -em -n ($prefix + "Shldr_FKArm_Clavicle_CompensateGrp")`;
+			parent $clavicleCompensateGrp $clavicleOrientGrp;
+			makeIdentity $clavicleCompensateGrp;
+				
+			parent $fkShoulderOrientGrp $clavicleCompensateGrp;
+			}
+			
+		
+		//ADD GROUP NODE POINT/ORIENT-CONSTRAINED TO TORSO, WHICH WILL ALLOW CLAVICLE TO FOLLOW TORSO.
+		$clavicleFollowTorsoGrp = `group -em -n ($prefix + $clavicleJoint + "_FollowGrp")`;
+		pointConstraint $torsoJoint $clavicleFollowTorsoGrp;
+		orientConstraint $torsoJoint $clavicleFollowTorsoGrp;
+			
+		dwLockHideAttributes (0, 0, $clavicleFollowTorsoGrp, "tx ty tz rx ry rz sx sy sz v");
+			
+		parent $standardShoulderControlOrientGrp $clavicleFollowTorsoGrp;
+		
+		//Lock and hide attrs on clavicle compensate groups.
+		dwLockHideAttributes (0, 0, $standardShoulderControlOrientGrp, "tx ty tz rx ry rz sx sy sz v");
+		
+		//Lock and hide $shoulderControl control obj translate values.
+		dwLockHideAttributes (0, 0, $shoulderControl, "tx ty tz");
+		}
+		
+	//Else if auto-shoulder...
+	else if ($shoulderTypeCheck == 2)
+		{
+		$autoShoulderOrientGrp = dwCreateAutoShoulder ($prefix, $sideFlagInt, 1, $clavicleJoint, $ikHandleIKArm[0], $controlColor);
+		
+		//Add group node and parent for FKControls.
+		if ($FKArmControlType > 1)
+			{
+			$clavicleOrientGrp = `group -em -n ($prefix + "Clavicle_OrientGrp")`;
+			pointConstraint $clavicleJoint $clavicleOrientGrp;
+			orientConstraint $clavicleJoint $clavicleOrientGrp;
+			
+			$clavicleCompensateGrp = `group -em -n ($prefix + "Clavicle_CompensateGrp")`;
+			parent $clavicleCompensateGrp $clavicleOrientGrp;
+			makeIdentity $clavicleCompensateGrp;
+				
+			parent $fkShoulderOrientGrp $clavicleCompensateGrp;
+			}
+		}
+	}
+
+
+
+
+
+
+//CLEANUP: PARENT ALL EXTRA CONTOL OBJECTS UNDER ONE LOCKED GROUP.
+string $cleanUpGrp = `group -em -n ($prefix + "Arm_Controls")`;
+dwLockHideAttributes (0, 0, $cleanUpGrp, "tx ty tz rx ry rz sx sy sz v");
+
+if (($shoulderTypeCheck == 1) || ($shoulderTypeCheck == 2))
+	{
+	if ($shoulderTypeCheck == 1)
+		{
+		if ($FKArmControlType > 1)
+			{
+			parent $clavicleOrientGrp $cleanUpGrp;
+			parent $FKshoulderFreeOrientGrp $cleanUpGrp;
+			
+			}	
+		parent $clavicleFollowTorsoGrp $cleanUpGrp;
+		}
+	
+	else if ($shoulderTypeCheck == 2)
+		{
+		if ($FKArmControlType > 1)
+			{
+			parent $clavicleOrientGrp $cleanUpGrp;
+			parent $FKshoulderFreeOrientGrp $cleanUpGrp;
+			}
+		parent $autoShoulderOrientGrp $cleanUpGrp;	
+		}
+	}
+
+else if ((! $shoulderTypeCheck) || ($shoulderTypeCheck == 3))
+		{
+		if ($FKArmControlType > 1)
+			parent $fkShoulderOrientGrp $cleanUpGrp;
+		}
+
+parent $wristAutoOrientGrp1 
+	$wristOrientGrp
+	$poleVectorIKArmCompensateGrp
+	$hand2LocOrientGrp
+	$ikWristControl
+	$cleanUpGrp;
+
+
+
+//Turn cycleCheck back on.
+cycleCheck -e 1;
+
+select -r $ikWristControl;
+print ("\n" + "\n" + $prefix + "arm setup complete. " + 
+	$poleVectorIKArmCompensateGrp + " may need to be repositioned.\n" + 
+	"Control objects can be resized by translating or scaling their CVs.\n");
+
+} //END OF PROCEDURE.

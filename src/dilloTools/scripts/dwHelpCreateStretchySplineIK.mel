@@ -1,0 +1,69 @@
+//Title:	dwHelpCreateStretchySplineIK.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date:		March 31, 2004
+//
+//PROCEDURE THAT CREATES BACKBONE HELP WINDOW.
+global proc dwHelpCreateStretchySplineIK()
+{
+if (`window -ex dwHelpCreateStretchySplineIKUI`)
+	deleteUI dwHelpCreateStretchySplineIKUI;
+
+window -t "Create Stretchy Spline IK Help" -wh 490 330 dwHelpCreateStretchySplineIKUI;
+	string $form = `formLayout`;
+		string $scroll = `scrollLayout`;
+			columnLayout;
+				
+				rowColumnLayout -nc 2 -cw 1 100 -cw 2 200;
+					text -label "Author: " -font boldLabelFont;
+					text -label "David Walden";
+					text -label "";
+					text -label "www.davidwalden.com";
+					text -label "";
+					text -label "dwalden74@hotmail.com";
+					setParent..;
+				
+				text -label "" -h 30;
+				
+				text -label "   About: " -font boldLabelFont;
+				string $aboutText = "  Creates a stretchy spline IK setup.\n";
+				$aboutText += "   \n";
+				
+				text -label $aboutText -align left;
+				
+				text -label "   Notes: " -font boldLabelFont;
+				string $noteText = "   User must specify start and ending joints, as well as a unique naming prefix which will precede \n";
+				$noteText += "   the names of all nodes created. All spline IK options can be accessed in the \"Advanced\" settings.\n";
+				$noteText += "   \n";
+				$noteText += "   \n";
+				
+				text -label $noteText -align left;
+				
+				
+				
+				text -label "" -h 10;
+				
+				
+				 
+				
+				setParent..;
+			setParent..;
+		string $closeButton = `button -label "Close Window" -c "deleteUI dwHelpCreateStretchySplineIKUI"`;
+		setParent..;
+	
+	formLayout -e
+		-attachForm $scroll left 0
+		-attachForm $scroll top 0
+		-attachForm $scroll right 0
+		-attachControl $scroll bottom 0 $closeButton
+		
+		-attachForm $closeButton left 0
+		-attachNone $closeButton top
+		-attachForm $closeButton right 0
+		-attachForm $closeButton bottom 0
+		$form;
+		
+showWindow dwHelpCreateStretchySplineIKUI;
+}

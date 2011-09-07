@@ -1,0 +1,109 @@
+//Title:	dwHelpIKFKArm.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+
+//PROCEDURE THAT CREATES IKFKARM HELP WINDOW.
+global proc dwHelpIKFKArm()
+{
+if (`window -ex dwHelpIKFKArmUI`)
+	deleteUI dwHelpIKFKArmUI;
+
+window -t "Arm/Shoulder Help" -wh 560 550 dwHelpIKFKArmUI;
+	string $form = `formLayout`;
+		string $scroll = `scrollLayout`;
+			columnLayout;
+				rowColumnLayout -nc 2 -cw 1 100 -cw 2 200;
+					text -label "Author: " -font boldLabelFont;
+					text -label "David Walden";
+					text -label "";
+					text -label "www.davidwalden.com";
+					text -label "";
+					text -label "dwalden74@hotmail.com";
+					setParent..;
+				
+				text -label "" -h 30;
+				
+				text -label "Usage:" -font boldLabelFont -align left -w 150;
+				text -label "  Make sure all UI elements are selected correctly according to binding arm joint hierarchy.";
+				text -label "  Click \"Create Arm/Shoulder Rig\" at bottom of UI.";
+				
+				text -label "" -h 25;
+				
+				text -label "Note: Do the following before executing this script:" -align left -font boldLabelFont -w 350;
+				text -label "  1) Create the binding arm hierarchy with at least shoulder->elbow->wrist->hand joints." -align left;
+				text -label "  2) Shoulder joint must be the child of a parent joint (i.e., clavicle, neck, etc.)." -align left;
+				text -label "     and this parent shoulder be child of some torso joint(in other words, connected to the body)." -align left;
+				text -label "  3) Create the binding arm initially such that all joints from shoulder to hand lie on a" -align left;
+				text -label "       straight line. After creation, the joints can be moved to fit the geometry by" -align left;
+				text -label "       rotating the shoulder or elbow joints, or by scaling any of the joints along their X axis." -align left;
+				text -label "       Any upper arm split, forearm split, or wrist joints should NOT be rotated to fit the geometry." -align left;
+				text -label "  4) Freeze all joint transformations." -align left;
+				text -label "  5) Orient joints with XYZ orientation (see \"Orient Joints\" in the Tools section)." -align left;
+				text -label "  6) Make sure local rotation axises are aligned correctly." -align left;
+				text -label "  7) Set a preferred angle on elbow joint." -align left;
+				text -label "" -h 10;
+				text -label "  **For an example skeleton see \"Create Biped Skeleton\" in the" -align left -font boldLabelFont -w 400;
+				text -label "    tools section."  -align left -font boldLabelFont -w 350;
+				 
+				text -label "" -h 25;
+				
+				text -label " About:" -font boldLabelFont;
+				string $aboutText = "This script takes an existing binding arm joint hierarchy and creates an arm control rig based \n";
+				$aboutText += " on user input. User has option of creating an IK rig, an FK rig, or a blended IK-FK arm rig. \n";
+				$aboutText += " The IK-FK rig is built by creating a first control arm, and then weighting (constraining)this control\n";
+				$aboutText += " arm between an IK arm and an FK arm. \n";
+				$aboutText += "\n";
+				$aboutText += " When choosing to build an IK-FK rig, the script creates an \"IKFK_Blend\" attribute on the Hand_Control \n";
+				$aboutText += " object. Attributes are added to the IKArm_Control object which are connected to the visibility\n";
+				$aboutText += " attributes of the FKArm and the IKArm. Attributes are also added to control the stretching and \n";
+				$aboutText += " orientation of the wrist. By default the wrist will auto-orient itself with the movement of the\n";
+				$aboutText += " arm, although the user can also rotate the hand control object freely. With \"Free_Orient\" set \n";
+				$aboutText += " to a value of 1, the wrist will no longer follow the arm, but will be \"globally\" oriented to the \n";
+				$aboutText += " locator object created (Hand_Orient_Locator). However, the wrist control object itself still\n";
+				$aboutText += " can be freely rotated as desired. \n";
+				$aboutText += "\n";
+				$aboutText += " When building an IK rig with stretchy joints, user can limit the amount of stretching by adjusting \n";
+				$aboutText += " the IKStretchAmount attribute on the IKArm_Control object.\n";
+				$aboutText += "\n";
+				$aboutText += " A pole vector object (implicit sphere) is also created for the IK arm, placed at the elbow´s position. Its\n";
+				$aboutText += " parent - PoleVector_IKArm_CompensateGrp - will need to be repositioned after setup is performed.\n";
+				$aboutText += "\n";
+				$aboutText += " The user also has the option of choosing between a standard shoulder (FK control), an auto-shoulder (orients \n";
+				$aboutText += " itself automatically according to the ikHandle), or no shoulder control. The auto-shoulder technique \n";
+				$aboutText += " was taken from the Alias Wavefront training DVD, \"Integrating a Creature Animation Rig within a Production\n";
+				$aboutText += " Pipeline\", with some modifications.\n";
+				
+				text -label $aboutText -align left;
+				
+				text -label "";
+				
+				text -label "  Limitations:" -font boldLabelFont;
+				string $bugsText = " Maya sometimes gives a warning after script execution stating that a cycle exists on \n";
+				$bugsText += "  Wrist_IKArm.translateX. This message does not always occur, and seems to be a Maya bug. \n";
+				$bugsText += "  This message does not affect rig performance, although I am looking for a way to remove it.\n";
+				$bugsText += "\n";
+				text -label $bugsText -align left;
+				
+				text -label "" -h 15;
+				
+				setParent..;		
+				setParent..;
+			setParent..;
+		string $closeButton = `button -label "Close Window" -c "deleteUI dwHelpIKFKArmUI"`;
+		setParent..;
+	
+	formLayout -e
+		-attachForm $scroll left 0
+		-attachForm $scroll top 0
+		-attachForm $scroll right 0
+		-attachControl $scroll bottom 0 $closeButton
+		
+		-attachForm $closeButton left 0
+		-attachNone $closeButton top
+		-attachForm $closeButton right 0
+		-attachForm $closeButton bottom 0
+		$form;
+		
+showWindow dwHelpIKFKArmUI;
+}

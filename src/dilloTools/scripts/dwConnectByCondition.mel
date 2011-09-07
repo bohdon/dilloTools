@@ -1,0 +1,137 @@
+//Title:	dwConnectByCondition.mel
+//Author:	David Walden
+//		www.davidwalden.com
+//		dwalden@hotmail.com
+//
+//Date: January 2003
+//
+//Updated: March 18, 2004: Added clamp node, which is driven by an objAttr and controls the amount of IK stretching.
+//
+//Updated: March 29, 2004: Added another multiply node which allows user to control stretch for each joint individually.
+//
+//Updated: April 1, 2004: Fixed a mistake where clamp node큦 min value was set to 1. This is now set to $originalValue.
+//
+//Description: Tests the condition of 2 values. Connects this to a clamp node (used as on/off switch),  
+//which is then connected to a multiplication node, and in turn finally connected to an attribute. Simply put,
+//this calculates either the joints� lengths or the scale values for a stretchy IK setup. Joints are stretched
+//once the ik handle reaches a length greater than the length of the joints themselves; additionally, user
+//has control over the stretch amount in each invidual joint in the IK chain.+
+
+global proc dwConnectByCondition(string $conditionNodeName, 		//1
+					int $conditionOperation, 	//2
+					string $conditionFirstTerm, 	//3
+					float $conditionSecondTerm, 	//4
+					string $conditionIfTrueR, 	//5
+					float $conditionIfFalseR, 	//6
+					string $multiplyNode1Name, 	//7
+					string $multiplyNode2Name, 	//8
+					float $originalValue, 		//9
+					string $targetObj, 		//10
+					string $targetAttr,		//11
+					int $clampCheck,		//12 - Just an extra feature- "To clamp or not to clamp..."
+					string $clampNodeName,		//13
+					string $clampControlObj,	//14
+					string $attrSetRangeNodeName)	//15
+{
+//WE NEED TO CHECK IF THE NODES EXIST ALREADY, BECAUSE OFTEN WE WILL USE THE SAME NODE NETWORK TO DRIVE MULTIPLE JOINTS.
+
+//IF IT DOESN큈 ALREADY EXIST, CREATE CONDITION NODE AND CONNECT/SET ATTRIBUTES.
+if (! `objExists $conditionNodeName`)
+	{
+	createNode -n $conditionNodeName condition;
+
+	//Set condition operation.
+	setAttr ($conditionNodeName + ".operation") $conditionOperation;
+
+	//Connect firstTerm of condition. Use setAttr to set secondTerm.
+	connectAttr $conditionFirstTerm ($conditionNodeName + ".firstTerm");
+	setAttr ($conditionNodeName + ".secondTerm") $conditionSecondTerm;
+
+	//Connect colorIfTrueR. Use setAttr to set colorIfFalseR.
+	connectAttr $conditionIfTrueR ($conditionNodeName + ".colorIfTrueR");
+	setAttr ($conditionNodeName + ".colorIfFalseR") $conditionIfFalseR;
+	}
+
+
+
+//CREATE MULTIPLY NODE 1 IF IT DOESN큈 ALREADY EXIST.
+if (! `objExists $multiplyNode1Name`)
+	{
+	createNode -n $multiplyNode1Name multiplyDivide;
+	setAttr ($multiplyNode1Name + ".operation") 1;
+	}
+//If multiply node is not already connected, then connect it.
+if (! `isConnected ($conditionNodeName + ".outColorR") ($multiplyNode1Name + ".input1X")`)
+	{connectAttr ($conditionNodeName + ".outColorR") ($multiplyNode1Name + ".input1X");}
+//Set "input2X" to $originalValue.
+setAttr ($multiplyNode1Name + ".input2X") $originalValue;
+
+
+//CREATE MULTIPLY NODE 2 IF IT DOESN큈 ALREADY EXIST. WE NEED THIS FOR CONTROLLING STRETCH ON INDIVIDUAL JOINTS.
+if (! `objExists $multiplyNode2Name`)
+	{
+	createNode -n $multiplyNode2Name multiplyDivide;
+	setAttr ($multiplyNode2Name + ".operation") 1;
+	}
+//If multiply node is not already connected, then connect it.
+if (! `isConnected ($multiplyNode1Name + ".outputX") ($multiplyNode2Name + ".input1X")`)
+	{connectAttr ($multiplyNode1Name + ".outputX") ($multiplyNode2Name + ".input1X");}
+
+//Set "input2X" to 1 - we큞l connect this to an objAttr below.
+setAttr ($multiplyNode2Name + ".input2X") 1;
+
+
+//Create clamp node.
+if ($clampCheck)
+	{
+	if (! `objExists $clampNodeName`)
+		{
+		createNode -n $clampNodeName clamp;
+		//Set min value to $originalValue. Set max to a default 1 value. 
+		//Later we큞l connect another multiplyDivide to the max value.
+		setAttr ($clampNodeName + ".minR") $originalValue;
+		setAttr ($clampNodeName + ".maxR") 1;
+		}
+	//Connect multiply to clamp.
+	if (! `isConnected ($multiplyNode2Name + ".outputX") ($clampNodeName + ".inputR")`)
+		connectAttr ($multiplyNode2Name + ".outputX") ($clampNodeName + ".inputR");
+	}
+
+
+//Now create the attr on $clampControlObj and make connections. This allows user to adjust the amount of stretching.
+//A setRange node is created here, placed between the objAttr and the conditionClamp node.
+if ($clampCheck)
+	{
+	if (! `attributeExists "IKStretch_Control" $clampControlObj`)
+		addAttr -k true -ln "IKStretch_Control" -at double  -min 0 -max 10 -dv 10 $clampControlObj;
+	if (! `objExists $attrSetRangeNodeName`)
+		{
+		createNode -n $attrSetRangeNodeName setRange;
+		setAttr ($attrSetRangeNodeName + ".minX") $originalValue;
+		setAttr ($attrSetRangeNodeName + ".maxX") ($originalValue * 10);
+		setAttr ($attrSetRangeNodeName + ".oldMinX") 0;
+		setAttr ($attrSetRangeNodeName + ".oldMaxX") 10;
+		}
+	if (! `isConnected ($clampControlObj + ".IKStretch_Control") ($attrSetRangeNodeName + ".valueX")`)
+		connectAttr ($clampControlObj + ".IKStretch_Control") ($attrSetRangeNodeName + ".valueX");
+	
+	if (! `isConnected ($attrSetRangeNodeName + ".outValueX") ($clampNodeName + ".maxR")`)
+		connectAttr ($attrSetRangeNodeName + ".outValueX") ($clampNodeName + ".maxR");
+	
+	//Now add individual stretch attrs for upper and lower.
+	if (! `attributeExists ("Stretch_" + $targetObj) $clampControlObj`)
+		addAttr -k true -ln ("Stretch_" + $targetObj) -at double  -dv 1 $clampControlObj;
+	if (! `isConnected ($clampControlObj + ".Stretch_" + $targetObj) ($multiplyNode2Name + ".input2X")`)
+		connectAttr ($clampControlObj + ".Stretch_" + $targetObj) ($multiplyNode2Name + ".input2X");
+	}
+
+
+
+
+
+//Connect clamp node큦 output to $targetObj.$targetAttr.
+if ($clampCheck)
+	connectAttr ($clampNodeName + ".outputR") ($targetObj + "." + $targetAttr);
+else
+	connectAttr ($multiplyNode2Name+ ".outputX") ($targetObj + "." + $targetAttr);
+}

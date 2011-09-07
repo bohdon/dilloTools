@@ -1,0 +1,129 @@
+/*
+	Mirror Geometry with Crease
+	0.6
+	
+	Copyright (c) 2010 Bohdon Sayre
+	All Rights Reserved.
+	bo@bohdon.com
+	
+	unique prefix: bMGC
+	
+	Description:
+		Mirrors the selected geometry across an axis while maintaining creases.
+    
+    Instructions:
+        boMirrorGeometryCrease;
+	
+	Version 0.2:
+		this version uses a simply polyBevel with 0 offset to remove creases,
+		next version will include a GUI due to the long time it takes to bevel large objects,
+		a full crease removal will be a part of that GUI
+	
+	Feel free to email me with any bugs, comments, or requests!
+*/
+
+global proc boMirrorGeometryCrease()
+{
+
+	//window name
+	string $bMGCWin = "bMGCWin";
+	
+	//check for pre-existing window
+	if (`window -exists $bMGCWin`) deleteUI -window $bMGCWin;
+	
+	//create window
+	window -t "Mirror Geometry with Crease" -w 240 -h 50 -s true -rtf true $bMGCWin;
+
+	//generate main form layout
+	formLayout mainFormLayout;
+	
+	columnLayout -adjustableColumn true bMGCColumn_01;
+		//xyz section
+		separator -h 10 -style "none";
+		frameLayout -label "Settings" -cl false -mw 5 -borderStyle "etchedIn" bMGCFrame_01;
+			columnLayout -rs 3;
+				radioButtonGrp -nrb 2 -l "Mirror Direction" -cw 1 100 -cal 1 "right" -labelArray2 " +/- X" "+/- Z" -sl 1 axisRadioGrp;
+		
+			setParent bMGCColumn_01;
+
+		//close button
+		separator -h 20 -style "none";
+		text -label "This script will delete history and freeze transforms on your geometry";
+		separator -h 10 -style "none";
+		rowLayout -nc 2 -cw2 156 156 -cl2 "center" "center";
+			button -w 150 -h 25 -c bMGCFunction -l "Mirror" mirrorBtn;
+			button -w 150 -h 25 -c ("deleteUI -window " + $bMGCWin) -l "Close" bMGCCloseBtn;
+
+	showWindow $bMGCWin;
+}
+
+
+
+global proc bMGCFunction() {
+	int $isLoaded = `pluginInfo -q -l "decomposeMatrix.mll"`;
+	if (!$isLoaded)
+		loadPlugin "decomposeMatrix.mll";
+
+	
+	string $selList[] = `ls -sl`;
+	int $count = size($selList);
+	
+	$axis = `radioButtonGrp -q -sl axisRadioGrp` - 1; //0=x, 1=z
+	$axisX = 1;
+	$axisY = 1;
+	$axisZ = 1;
+	
+	if ($axis == 0) {
+		$axisX = -1;
+	} else if ($axis == 1) {
+		$axisZ = -1;
+		$axis = 2; // for z mirroring
+	}
+	
+	$thresh = .25;
+	
+	if (size($selList) > 1) {
+		warning ("please select only one object at a time\n");
+		return;
+	}
+	
+	string $obj = $selList[0];
+		
+	// find objects true worldspace (to determine mirroring origin)
+	float $objPos[] = `xform -q -ws -rp $obj`;
+
+	$obj2 = `duplicate`;
+	float $scaleX = $axisX*`getAttr($obj+".scaleX")`;
+	float $scaleY = $axisY*`getAttr($obj+".scaleY")`;
+	float $scaleZ = $axisZ*`getAttr($obj+".scaleZ")`;
+	scale $scaleX $scaleY $scaleZ;
+	
+	$newObj = `polyUnite $obj $obj2`;
+	delete -ch $newObj;
+	rename $obj;
+	
+	int $vtxCount[] = `polyEvaluate -v $obj`;
+	int $vtx = 0;
+	
+	select -cl;
+	
+	for ($vtx=0; $vtx < $vtxCount[0]; $vtx ++) {
+		float $vtxPos[] = `pointPosition ($obj+".vtx["+$vtx+"]")`;
+		if (abs($vtxPos[$axis]-$objPos[$axis]) < $thresh) {
+			select -add ($obj+".vtx["+$vtx+"]");
+		}
+	}
+		
+	string $selList[] = `ls -sl`;
+	if (size($selList) > 0) {
+		polyMergeVertex  -d 0.01 -am 0 -ch 1;
+	}
+	
+	select -r $obj;
+	xform -cp;
+	
+	//window name
+	string $bMGCWin = "bMGCWin";
+	
+	if (`window -exists $bMGCWin`) deleteUI -window $bMGCWin;
+}

@@ -1,0 +1,74 @@
+//Title:	dwHelpFKControlRig.mel
+//Author: 	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+
+//PROCEDURE THAT CREATES CHARACTER SET HELP WINDOW.
+global proc dwHelpFKControlRig()
+{
+if (`window -ex dwHelpFKControlRigUI`)
+	deleteUI dwHelpFKControlRigUI;
+
+window -t "FK Control Rig Help" -wh 490 510 dwHelpFKControlRigUI;
+	string $form = `formLayout`;
+		string $scroll = `scrollLayout`;
+			columnLayout;
+				
+				rowColumnLayout -nc 2 -cw 1 100 -cw 2 200;
+					text -label " Author: " -font boldLabelFont;
+					text -label "David Walden";
+					text -label "";
+					text -label "www.davidwalden.com";
+					text -label "";
+					text -label "dwalden74@hotmail.com";
+					text -label "Created:" -font boldLabelFont;
+					text -label "May 7, 2004";
+					text -label "Updated:" -font boldLabelFont;
+					text -label "June 2, 2004";
+					setParent..;
+				
+				text -label "" -h 30;
+				
+				
+				
+				text -label "   About: " -font boldLabelFont;
+				string $noteText;
+				$noteText += "  Creates an FK control rig on given joints, based on one of three spline types. User has the option \n";
+				$noteText += "  of either creating a control hierarchy (default method), or parenting the control shapes directly \n";
+				$noteText += "  to the joints themselves (via \"Parent control shapes to joints\"). The default method provides  \n";
+				$noteText += "  more flexibility for animation. When the default method is used, and the user chooses to control  \n";
+				$noteText += "  joint orientation by \"Orient Constraints\", a series of \"_FreeOrientGRP\" nodes are created, one  \n";
+				$noteText += "  for each joint. These group nodes allow for the control objects to be oriented independently of one \n";
+				$noteText += "  another, and should be parented under one global control object. Joint orientations are controlled \n";
+				$noteText += "  either by orient constraining the joint to the control object, or by directly connecting the \n";
+				$noteText += "  rotations of the control object to the joint. User can also choose to stretch joints.\n";
+				$noteText += "   \n";
+				$noteText += "  Note that when building a control setup for joints that have multiple child joints, orientation problems \n";
+				$noteText += "  can occur in the control object. To avoid this, make sure the *first* child joint is always the next joint \n";
+				$noteText += "  being controlled in the FK setup (re-parent all child joints starting with this next joint first). \n";
+				text -label $noteText -align left;
+				
+				text -label "" -h 10;
+				
+				
+				 
+				
+				setParent..;
+			setParent..;
+		string $closeButton = `button -label "Close Window" -c "deleteUI dwHelpFKControlRigUI"`;
+		setParent..;
+	
+	formLayout -e
+		-attachForm $scroll left 0
+		-attachForm $scroll top 0
+		-attachForm $scroll right 0
+		-attachControl $scroll bottom 0 $closeButton
+		
+		-attachForm $closeButton left 0
+		-attachNone $closeButton top
+		-attachForm $closeButton right 0
+		-attachForm $closeButton bottom 0
+		$form;
+		
+showWindow dwHelpFKControlRigUI;
+}

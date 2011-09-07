@@ -1,0 +1,189 @@
+////////////////////////////////////////////////////////////////////////////////
+//
+//  $RCSfile$
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS FILE HERE.
+//
+//  CREATED BY
+//      Jayme Wilkinson
+//
+//  CREATTION DATE
+//      Tue Jul 03 01:01:21 EDT 2007
+//
+//  HISTORY
+//      $Log$
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  Copyright (c) 1999 - 2007 Jayme Wilkinson.
+//
+//  The software and information contained herein are proprietary to, and
+//  comprise valuable trade secrets of, Jayme Wilkinson, which intends
+//  to preserve as trade secrets such software and information. This software
+//  and information or any other copies thereof may not be provided or
+//  otherwise made available to any other person or organization.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//  global proc createFocusScreen()
+//
+////////////////////////////////////////////////////////////////////////////////
+//
+//  DESCRIPTION
+//      ENTER A DESCRIPTION OF THIS PROCEDURE/FUNCTION HERE.
+//
+//  ARGUMENTS
+//      None
+//
+//  RETURN
+//      ENTER A DESCRIPTION OF WHAT THIS PROCEDURE RETURNS HERE.
+//
+////////////////////////////////////////////////////////////////////////////////
+global proc createFocusScreen()
+{
+	string $camera; string $cameraShape;
+	string $temp[] = `ls -sl`;
+	if (`size($temp)` == 1)
+	{
+		//  Get the camera shape of this node.
+		$camera = $temp[0];
+		$temp = `listRelatives -s -type camera $camera`;
+		if (`size($temp)` != 1) error "Focus Screen: Camera shape not found.";
+	    $cameraShape = $temp[0];
+	}
+	else
+	{
+		 error "Focus Screen: Could not get a camera to attatch the focus screen to.";
+	}
+
+	//  Check to see if there is already a focus screen attached to this camera
+	for ($shape in `listRelatives $camera`)
+	{
+		if (startsWith($shape, "focusScreen"))
+		{
+			error "A Focus Screen seems to already exist on this camera.";
+		}
+	}
+
+	//	Create the curves that make up the parts of the focus screen
+	string $center[2], $centerShape[2];
+	for ($a = 0; $a < 2; $a++)
+	{
+		$center[$a] = `curve -d 3 -p 0.5 0 0 -p 0.5 0.5 0 -p 0.02 0.5 0 -p -0.5 0.5 0 -p -0.5 0.1 0 -p -0.5 -0.5 0 -p -0.1 -0.5 0 -p 0.5 -0.5 0 -k -2 -k -1 -k 0 -k 1 -k 2 -k 3 -k 4 -k 5 -k 6 -k 7 -n "center#"`;
+		closeCurve -ch 0 -ps 1 -rpo 1 -bb 0.5 -bki 0 -p 0.1 $center[$a];
+		setAttr -l true ($center[$a] + ".t"); setAttr -l true ($center[$a] + ".r"); setAttr -l true ($center[$a] + ".s"); setAttr -l true ($center[$a] + ".sh"); setAttr -l true ($center[$a] + ".ra");
+    	$temp = `listRelatives -s $center[$a]`; $centerShape[$a] = $temp[0];
+	}
+
+	//	Create the line for the center of the focus screen
+	string $line[2], $lineShape[2];
+	for ($a = 0; $a < 2; $a++)
+	{
+		$line[$a] = `curve -d 1 -p -0.5 0 0 -p 0.5 0 0 -k 0 -k 1 -n "line#"`;
+		setAttr -l true ($line[$a] + ".t"); setAttr -l true ($line[$a] + ".r"); setAttr -l true ($line[$a] + ".s");
+		setAttr -l true ($line[$a] + ".sh"); setAttr -l true ($line[$a] + ".ra");
+		$temp = `listRelatives -s $line[$a]`;
+		$lineShape[$a] = $temp[0];
+	}
+
+	//	Create the focus screen border
+	string $border = `curve -d 1 -p -0.5 0.5 0 -p 0.5 0.5 0 -p 0.5 -0.5 0 -p -0.5 -0.5 0 -k 0 -k 1 -k 2 -k 3 -n "border#"`;
+	closeCurve -ch 0 -ps 1 -rpo 1 -bb 0.5 -bki 0 -p 0.1 $border;
+	setAttr -l true ($border + ".t"); setAttr -l true ($border + ".r"); setAttr -l true ($border + ".s");
+	setAttr -l true ($border + ".sh"); setAttr -l true ($border + ".ra");
+	$temp = `listRelatives -s $border`; string $borderShape = $temp[0];
+
+	//	Create a group node to hold all this stuff in the heirarchy
+	string $parent = `group -r -em -p $camera -n "focusScreen#"`;
+	parent -r $border $parent;
+	parent -r $center $parent;
+	parent -r $line   $parent;
+
+	//	Add a control for the frustum onto the camera master node
+	if (!`attributeExists "FocusScreen" $camera`) addAttr -ln "FocusScreen" -at bool $camera;
+//	if (!`attributeExists "DepthOfField" $camera`) addAttr -ln "DepthOfField" -at bool $camera;
+	setAttr ($camera + ".FocusScreen") true;
+
+	//	Connect a couple of attributes to help with camera control
+    connectAttr ($camera + ".FocusScreen") ($cameraShape + ".dof");
+	connectAttr ($camera + ".FocusScreen") ($parent + ".visibility");
+	connectAttr ($cameraShape + ".focusDistance") ($cameraShape + ".centerOfInterest");
+
+	//	Set the color of the curves we just created
+	int $color = `displayColor -q headsUpDisplayLabels`;
+	setAttr ($parent + ".overrideEnabled") true;
+	setAttr ($parent + ".overrideColor") $color;
+	setAttr ($parent + ".template") true;
+
+	//	Build the expression that will control the focus screen
+	string $exp;
+	$exp += "////////////////////////////////////////////////////////////////////////////////\r";
+	$exp += "//\r";
+	$exp += "//	 This expression is machince generated. Do not manually edit this expression.\r";
+	$exp += "//\r";
+	$exp += "////////////////////////////////////////////////////////////////////////////////\r";
+	$exp += "float $hfov = (" + $cameraShape + ".horizontalFilmAperture * 0.5 ) / (" + $cameraShape + ".focalLength  *  0.03937 ) * " + $cameraShape + ".lensSqueezeRatio;\r";
+	$exp += "float $vfov = (" + $cameraShape + ".verticalFilmAperture * 0.5 ) / (" + $cameraShape + ".focalLength * 0.03937 );\r";
+	$exp += "float $dist = " + $cameraShape + ".centerOfInterest;\r";
+	$exp += "\r";
+	$exp += "//	Adjust the size of the border of the screen\r";
+	$exp += $borderShape + ".cp[0].xv = -$dist * $hfov;\r";
+	$exp += $borderShape + ".cp[0].yv =  $dist * $vfov;\r";
+	$exp += $borderShape + ".cp[0].zv = -$dist;\r";
+    $exp += "\r";
+	$exp += $borderShape + ".cp[1].xv =  $dist * $hfov;\r";
+	$exp += $borderShape + ".cp[1].yv =  $dist * $vfov;\r";
+	$exp += $borderShape + ".cp[1].zv = -$dist;\r";
+	$exp += "\r";
+	$exp += $borderShape + ".cp[2].xv =  $dist * $hfov;\r";
+	$exp += $borderShape + ".cp[2].yv = -$dist * $vfov;\r";
+	$exp += $borderShape + ".cp[2].zv = -$dist;\r";
+	$exp += "\r";
+	$exp += $borderShape + ".cp[3].xv = -$dist * $hfov;\r";
+	$exp += $borderShape + ".cp[3].yv = -$dist * $vfov;\r";
+	$exp += $borderShape + ".cp[3].zv = -$dist;\r";
+	$exp += "\r";
+	$exp += "//	Adjust each circle in the list.\r";
+	$exp += "float $ang = 45;\r";
+	for ($a = 0; $a < 2; $a++)
+	{
+		$exp += "float $amp = 0.05 * $dist * $hfov * (" + ($a + 1) + ");\r";
+		$exp += "//	Adjust the position of each point on this circle curve\r";
+		for ($b = 0; $b < 8; $b++)
+		{
+			$exp += $centerShape[$a] + ".cp[" + $b + "].xv = $amp * sind(" + $b  + " * $ang);\r";
+			$exp += $centerShape[$a] + ".cp[" + $b + "].yv = $amp * cosd(" + $b  + " * $ang);\r";
+			$exp += $centerShape[$a] + ".cp[" + $b + "].zv = -$dist;\r";
+		}
+		$exp += "\r";
+	}
+	$exp += "//  Create the hash mark bisecting the center circles\r";
+	for ($a = 0; $a < 2; $a++)
+	{
+		int $s = -1; if ($a % 2) $s = 1;
+		$exp += $lineShape[0] + ".cp[" + $a + "].xv = " + (-1 * $s) + " * $dist * $hfov;\r";
+		$exp += $lineShape[0] + ".cp[" + $a + "].yv = " + ( 1 * $s) + " * $dist * $vfov;\r";
+		$exp += $lineShape[0] + ".cp[" + $a + "].zv = -$dist;\r";
+	}
+	$exp += "\r";
+	$exp += "//  Create the other hash mark bisecting the center circles\r";
+	for ($a = 0; $a < 2; $a++)
+	{
+		int $s = -1; if ($a % 2) $s = 1;
+		$exp += $lineShape[1] + ".cp[" + $a + "].xv = " + (1 * $s) + " * $dist * $hfov;\r";
+		$exp += $lineShape[1] + ".cp[" + $a + "].yv = " + (1 * $s) + " * $dist * $vfov;\r";
+		$exp += $lineShape[1] + ".cp[" + $a + "].zv = -$dist;\r";
+	}
+	$exp += "\r";
+
+	expression -n "focusScreen" -alwaysEvaluate false -unitConversion false -s $exp;
+
+	select -cl;
+}
+
+

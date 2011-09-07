@@ -1,0 +1,390 @@
+//Title:	dwCreateFKSpine.mel
+//Author:	David Walden 
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date:		Sept. 2-3 2003
+//
+//See "About dwRiggingTools in main UI "Help" menu for detailed update descriptions.
+//
+//Updateed Sept. 30 2003: Set "Free_Orient" attr to a default value of 1.
+//
+//Updated Oct. 23 2003: Connected "Stretch" attributes to bones´ scaleX (and the inverse to scaleY and scaleZ).
+//
+//Feb. 24, 2004: Parent "freeOrient" groups to COG controller (if created).
+//
+//DESCRIPTION: MAIN PROCEDURE TO CREATE FK SPINE SETUP.
+global proc dwCreateFKSpine (string $rootJoint, 
+				string $lowerTorsoJoint, 
+				string $upperTorsoJoint,
+				int $neckCheck,
+				string $neckJoint,
+				int $headCheck,
+				string $headJoint,
+				int $stretchOnOff,
+				int $controlType,
+				int $controlColor,
+				int $COGCheck,
+				string $prefix)
+{
+//Report errors if input arguments are missing.
+if (($rootJoint == "") || ($rootJoint == " ") || (! (`objExists $rootJoint`)))
+	error "Root joint unspecified or mispelled in UI.";
+if (($lowerTorsoJoint == "") || ($lowerTorsoJoint == " ") || (! (`objExists $lowerTorsoJoint`)))
+	error "Lower torso unspecified or mispelled in UI.";
+if (($upperTorsoJoint == "") || ($upperTorsoJoint == " ") || (! (`objExists $upperTorsoJoint`)))
+	error "Upper torso unspecified or mispelled in UI.";
+if ((($neckJoint == "") || ($neckJoint == " ") || (! (`objExists $neckJoint`))) && ($neckCheck))
+	error "Neck joint unspecified or mispelled in UI.";
+if ((($headJoint == "") || ($headJoint == " ") || (! (`objExists $headJoint`))) && ($headCheck))
+	error "Head joint unspecified or mispelled in UI.";	
+
+//Report error if naming prefix is invalid.
+if (! `dwRTValidateName $prefix`)
+	error "Naming prefix invalid. Remove special characters and try again.";
+		
+//Find current selection to be restored later.
+string $selection[] = `ls -sl`;	
+	
+//GET POSITIONS OF JOINTS.
+float $rootPosition[] = `xform -q -ws -t $rootJoint`;
+float $lowerTorsoPosition[] = `xform -q -ws -t $lowerTorsoJoint`;
+float $upperTorsoPosition[] = `xform -q -ws -t $upperTorsoJoint`;
+float $neckPosition[];
+float $headPosition[];
+if ($neckCheck)
+	$neckPosition = `xform -q -ws -t $neckJoint`;
+if ($headCheck)
+	$headPosition = `xform -q -ws -t $headJoint`;
+
+//CREATE CONTROL OBJECTS. POINT CONSTRAIN $HIPCONTROL AND $LOWERTORSOCONTROL TO CORRECT JOINTS.
+//GET A SIZE VALUE WITH WHICH TO BUILD THE SPLINE CONTROL OBJECTS.
+float $controlObjSize;
+if ($neckCheck)
+	$controlObjSize = ((dwRTGetDistance ($rootJoint, $neckJoint))/2.5);
+else if ($headCheck)
+	$controlObjSize = ((dwRTGetDistance ($rootJoint, $headJoint))/3);
+else
+	$controlObjSize = dwRTGetDistance ($rootJoint, $upperTorsoJoint);
+// = `getAttr ($upperTorsoJoint + ".tx")`;
+
+string $hipControl = dwCreateControlObject(2, ($controlObjSize * 1.75), ($prefix + "HIP_CONTROL"), 2, 2);
+setAttr ($hipControl + ".rotateOrder") 2;
+move -a -wd $rootPosition[0] $rootPosition[1] $rootPosition[2] $hipControl;
+makeIdentity -apply true -t 1 $hipControl;
+pointConstraint $hipControl $rootJoint;
+
+string $lowerTorsoControl = dwCreateControlObject($controlType, $controlObjSize, ($prefix + "LOWER_TORSO_CONTROL"), 2, 2);
+setAttr ($lowerTorsoControl + ".rotateOrder") 2;
+move -a -wd $lowerTorsoPosition[0] $lowerTorsoPosition[1] $lowerTorsoPosition[2] $lowerTorsoControl;
+makeIdentity -apply true -t 1 $lowerTorsoControl;
+pointConstraint $lowerTorsoJoint $lowerTorsoControl;
+
+//UPPER TORSO WILL GIVE THE OPTION OF ORIENTING TO LOWERTORSO, OR TO A NEUTRAL GROUP OBJECT (VIA A "FREE" ATTRIBUTE).
+string $upperTorsoControl = dwCreateControlObject($controlType, $controlObjSize, ($prefix + "UPPER_TORSO_CONTROL"), 2, 2);
+setAttr ($upperTorsoControl + ".rotateOrder") 2;
+move -a -wd $upperTorsoPosition[0] $upperTorsoPosition[1] $upperTorsoPosition[2] $upperTorsoControl;
+//CREATE "FREE ORIENT" GROUP AND POINT CONSTRAIN IT TO $UPPERTORSOJOINT.
+string $upperTorsoFreeOrientGrp = `group -n ($prefix + "upperTorsoFreeOrient_Grp") -em`;
+pointConstraint $upperTorsoJoint $upperTorsoFreeOrientGrp;
+//CREATE "UPPER_TORSO_ORIENT_GRP" WHICH WILL BLEND BETWEEN THE TWO ORIENTATIONS.
+string $upperTorsoOrientGrp = `group -n ($prefix + "Upper_Torso_Orient_Grp") -em`;
+pointConstraint $upperTorsoJoint $upperTorsoOrientGrp;
+parent $upperTorsoControl $upperTorsoOrientGrp;
+makeIdentity -apply true -t 1 $upperTorsoControl;
+
+//CREATE ORIENT CONSTRAINT BLEND.
+string $upperTorsoOrientConstraint[] = `orientConstraint $lowerTorsoControl $upperTorsoFreeOrientGrp $upperTorsoOrientGrp`;
+dwBlendByReverse ($upperTorsoControl, 
+			"Free_Orient", 
+			($prefix + "Upper_Torso_Reverse"), 
+			($upperTorsoOrientConstraint[0] + "." + $upperTorsoFreeOrientGrp + "W1"),
+			($upperTorsoOrientConstraint[0] + "." + $lowerTorsoControl + "W0"), 
+			1);
+float $mayaVersion = `dwRT_GetMayaVersion`;
+if ($mayaVersion >= 5.0)
+	setAttr ($upperTorsoOrientConstraint[0] + ".interpType") 2;
+
+//DO THE SAME FOR THE NECK CONTROL.
+string $neckControl;
+string $neckFreeOrientGrp;
+string $neckOrientGrp;
+string $neckOrientConstraint[];
+if ($neckCheck)
+	{
+	$neckControl = dwCreateControlObject($controlType, ($controlObjSize/2), ($prefix + "NECK_CONTROL"), 2, 2);
+	setAttr ($neckControl + ".rotateOrder") 2;
+	move -a -wd $neckPosition[0] $neckPosition[1] $neckPosition[2] $neckControl;
+	//CREATE "FREE ORIENT" GROUP AND POINT CONSTRAIN IT TO $neckJoint.
+	$neckFreeOrientGrp = `group -n ($prefix + "neckFreeOrient_Grp") -em`;
+	pointConstraint $neckJoint $neckFreeOrientGrp;
+	//CREATE "NECK_ORIENT_GRP" WHICH WILL BLEND BETWEEN THE TWO ORIENTATIONS.
+	$neckOrientGrp = `group -n ($prefix + "Neck_Orient_Grp") -em`;
+	pointConstraint $neckJoint $neckOrientGrp;
+	parent $neckControl $neckOrientGrp;
+	makeIdentity -apply true -t 1 $neckControl;
+	//CREATE ORIENT CONSTRAINT BLEND.
+	$neckOrientConstraint = `orientConstraint $upperTorsoControl $neckFreeOrientGrp $neckOrientGrp`;
+	dwBlendByReverse ($neckControl, 
+				"Free_Orient", 
+				($prefix + "Neck_Reverse"), 
+				($neckOrientConstraint[0] + "." + $neckFreeOrientGrp + "W1"),
+				($neckOrientConstraint[0] + "." + $upperTorsoControl + "W0"), 
+				1);
+	if ($mayaVersion >= 5.0)
+		setAttr ($neckOrientConstraint[0] + ".interpType") 2;
+	}
+	
+//DO THE SAME FOR THE HEAD CONTROL.
+string $headControl;
+string $headFreeOrientGrp;
+string $headOrientGrp;
+string $headOrientConstraint[];
+if ($headCheck)
+	{
+	//CREATE THE CONTROL OBJECT.
+	$headControl = dwCreateControlObject($controlType, ($controlObjSize/1.5), ($prefix + "HEAD_CONTROL"), 0, 2);
+	setAttr ($headControl + ".rotateOrder") 2;
+	move -a -wd $headPosition[0] $headPosition[1] $headPosition[2] $headControl;
+	//CREATE "FREE ORIENT" GROUP AND POINT CONSTRAIN IT TO $headJoint.
+	$headFreeOrientGrp = `group -n ($prefix + "headFreeOrient_Grp") -em`;
+	pointConstraint $headJoint $headFreeOrientGrp;
+	//CREATE "HEAD_ORIENT_GRP" WHICH WILL BLEND BETWEEN THE TWO ORIENTATIONS.
+	$headOrientGrp = `group -n ($prefix + "Head_Orient_Grp") -em`;
+	pointConstraint $headJoint $headOrientGrp;
+	parent $headControl $headOrientGrp;
+	makeIdentity -apply true -t 1 $headControl;
+	//CREATE ORIENT CONSTRAINT BLEND.
+	if ($neckCheck)
+		{
+		$headOrientConstraint = `orientConstraint $neckControl $headFreeOrientGrp $headOrientGrp`;
+		dwBlendByReverse ($headControl, 
+					"Free_Orient", 
+					($prefix + "Head_Reverse"), 
+					($headOrientConstraint[0] + "." + $headFreeOrientGrp + "W1"),
+					($headOrientConstraint[0] + "." + $neckControl + "W0"), 
+					1);
+		}
+	
+	else if (! $neckCheck)
+		{
+		$headOrientConstraint = `orientConstraint $upperTorsoControl $headFreeOrientGrp $headOrientGrp`;
+		dwBlendByReverse ($headControl, 
+					"Free_Orient", 
+					($prefix + "Head_Reverse"), 
+					($headOrientConstraint[0] + "." + $headFreeOrientGrp + "W1"),
+					($headOrientConstraint[0] + "." + $upperTorsoControl + "W0"), 
+					1);
+		}
+	
+	if ($mayaVersion >= 5.0)
+		setAttr ($headOrientConstraint[0] + ".interpType") 2;
+	}
+
+
+dwLockHideAttributes (0, 0, $hipControl, "sx sy sz v");
+dwLockHideAttributes (0, 0, $lowerTorsoControl, "tx ty tz sx sy sz v");
+dwLockHideAttributes (0, 0, $upperTorsoControl, "tx ty tz sx sy sz v");
+if ($neckCheck)
+	dwLockHideAttributes (0, 0, $neckControl, "tx ty tz sx sy sz v");
+if ($headCheck)
+	dwLockHideAttributes (0, 0, $headControl, "tx ty tz sx sy sz v");
+
+//ADD OVERRIDE COLOR SCHEME TO CONTROLS.
+if ($controlColor > 1)
+	{
+	setAttr ($hipControl + ".overrideEnabled") 1;
+	setAttr ($hipControl + ".overrideColor") ($controlColor - 1);
+	
+	setAttr ($lowerTorsoControl + ".overrideEnabled") 1;
+	setAttr ($lowerTorsoControl + ".overrideColor") ($controlColor - 1);
+	
+	setAttr ($upperTorsoControl + ".overrideEnabled") 1;
+	setAttr ($upperTorsoControl + ".overrideColor") ($controlColor - 1);
+	
+	if ($neckCheck)
+		{
+		setAttr ($neckControl + ".overrideEnabled") 1;
+		setAttr ($neckControl + ".overrideColor") ($controlColor - 1);
+		}
+	
+	if ($headCheck)
+		{
+		setAttr ($headControl + ".overrideEnabled") 1;
+		setAttr ($headControl + ".overrideColor") ($controlColor - 1);
+		}
+	}
+
+
+//CREATE COMPENSATE GROUPS WHICH WILL BE PARENTED UNDER CONTROL OBJECTS. ORIENT JOINTS TO THESE.
+string $hipCompGrp = `group -n ($prefix + "hip_Compensate_Grp") -em`;
+move -a -wd $rootPosition[0] $rootPosition[1] $rootPosition[2] $hipCompGrp;
+parent $hipCompGrp $hipControl;
+string $orientConstraintTemp[] = `orientConstraint $rootJoint $hipCompGrp`;
+delete $orientConstraintTemp;
+orientConstraint $hipCompGrp $rootJoint;
+
+string $lowerTorsoCompGrp = `group -n ($prefix + "lower_Torso_Compensate_Grp") -em`;
+move -a -wd $lowerTorsoPosition[0] $lowerTorsoPosition[1] $lowerTorsoPosition[2] $lowerTorsoCompGrp;
+parent $lowerTorsoCompGrp $lowerTorsoControl;
+$orientConstraintTemp = `orientConstraint $lowerTorsoJoint $lowerTorsoCompGrp`;
+delete $orientConstraintTemp;
+orientConstraint $lowerTorsoCompGrp $lowerTorsoJoint;
+
+string $upperTorsoCompGrp = `group -n ($prefix + "upper_Torso_Compensate_Grp") -em`;
+move -a -wd $upperTorsoPosition[0] $upperTorsoPosition[1] $upperTorsoPosition[2] $upperTorsoCompGrp;
+parent $upperTorsoCompGrp $upperTorsoControl;
+$orientConstraintTemp = `orientConstraint $upperTorsoJoint $upperTorsoCompGrp`;
+delete $orientConstraintTemp;
+orientConstraint $upperTorsoCompGrp $upperTorsoJoint;
+
+if ($neckCheck)
+	{
+	string $neckCompGrp = `group -n ($prefix + "neck_Compensate_Grp") -em`;
+	move -a -wd $neckPosition[0] $neckPosition[1] $neckPosition[2] $neckCompGrp;
+	parent $neckCompGrp $neckControl;
+	$orientConstraintTemp = `orientConstraint $neckJoint $neckCompGrp`;
+	delete $orientConstraintTemp;
+	orientConstraint $neckCompGrp $neckJoint;
+	}
+
+if ($headCheck)
+	{
+	string $headCompGrp = `group -n ($prefix + "head_Compensate_Grp") -em`;
+	move -a -wd $headPosition[0] $headPosition[1] $headPosition[2] $headCompGrp;
+	parent $headCompGrp $headControl;
+	$orientConstraintTemp = `orientConstraint $headJoint $headCompGrp`;
+	delete $orientConstraintTemp;
+	orientConstraint $headCompGrp $headJoint;
+	}
+
+
+//If $stretchOnOff is true, add "Stretch" attribute on control and connect with to scaling respective joint.
+if ($stretchOnOff)
+	{
+	//Add "Stretch" attribute to $lowerTorsoControl.
+	addAttr -ln "Stretch" -defaultValue 1 -at double -k true $lowerTorsoControl;
+	addAttr -ln "Stretch" -defaultValue 1 -at double -k true $upperTorsoControl;
+	if ($neckCheck)
+		addAttr -ln "Stretch" -defaultValue 1 -at double -k true $neckControl;
+	
+	connectAttr ($lowerTorsoControl + ".Stretch") ($lowerTorsoJoint + ".sx");
+	string $divideNode = `shadingNode -asUtility -n ($prefix + "LowerTorso_Stretch_Divide") multiplyDivide`;
+	setAttr ($divideNode + ".operation") 2;
+	setAttr ($divideNode + ".input1X") 1;
+	connectAttr ($lowerTorsoControl + ".Stretch") ($divideNode + ".input2X");
+	connectAttr ($divideNode + ".outputX") ($lowerTorsoJoint + ".sy");
+	connectAttr ($divideNode + ".outputX") ($lowerTorsoJoint + ".sz");
+	
+	connectAttr ($upperTorsoControl + ".Stretch") ($upperTorsoJoint + ".sx");
+	$divideNode = `shadingNode -asUtility -n ($prefix + "UpperTorso_Stretch_Divide") multiplyDivide`;
+	setAttr ($divideNode + ".operation") 2;
+	setAttr ($divideNode + ".input1X") 1;
+	connectAttr ($upperTorsoControl + ".Stretch") ($divideNode + ".input2X");
+	connectAttr ($divideNode + ".outputX") ($upperTorsoJoint + ".sy");
+	connectAttr ($divideNode + ".outputX") ($upperTorsoJoint + ".sz");
+	
+	if ($neckCheck)
+		{
+		connectAttr ($neckControl + ".Stretch") ($neckJoint + ".sx");
+		$divideNode = `shadingNode -asUtility -n ($prefix + "Neck_Stretch_Divide") multiplyDivide`;
+		setAttr ($divideNode + ".operation") 2;
+		setAttr ($divideNode + ".input1X") 1;
+		connectAttr ($neckControl + ".Stretch") ($divideNode + ".input2X");
+		connectAttr ($divideNode + ".outputX") ($neckJoint + ".sy");
+		connectAttr ($divideNode + ".outputX") ($neckJoint + ".sz");
+		}
+	
+	/* OLD: connected stretch to joint´s transX.
+	//Create MultiplyDivide node, and connect stretch attribute to first input, 
+	//length of joint to second input, and have this value drive the translate.
+	string $multiplyLengthNode = `shadingNode -asUtility -n ("lowerTorsoStretchLength_Multiply") multiplyDivide`;
+		setAttr ($multiplyLengthNode + ".operation") 1;
+	connectAttr ($lowerTorsoControl + ".Stretch") ($multiplyLengthNode + ".input1X");
+	setAttr ($multiplyLengthNode + ".input2X") `getAttr ($upperTorsoJoint + ".tx")`;
+	connectAttr ($multiplyLengthNode + ".outputX") ($upperTorsoJoint + ".tx");
+	
+	
+	//Do the same for $upperTorsoControl.
+	addAttr -ln "Stretch" -defaultValue 1 -at double -k true $upperTorsoControl;
+	$multiplyLengthNode = `shadingNode -asUtility -n ("upperTorsoStretchLength_Multiply") multiplyDivide`;
+		setAttr ($multiplyLengthNode + ".operation") 1;
+	connectAttr ($upperTorsoControl + ".Stretch") ($multiplyLengthNode + ".input1X");
+	setAttr ($multiplyLengthNode + ".input2X") `getAttr ($neckJoint + ".tx")`;
+	connectAttr ($multiplyLengthNode + ".outputX") ($neckJoint + ".tx");
+	
+	//Do the same for $neckControl.
+	addAttr -ln "Stretch" -defaultValue 1 -at double -k true $neckControl;
+	$multiplyLengthNode = `shadingNode -asUtility -n ("neckStretchLength_Multiply") multiplyDivide`;
+		setAttr ($multiplyLengthNode + ".operation") 1;
+	connectAttr ($neckControl + ".Stretch") ($multiplyLengthNode + ".input1X");
+	setAttr ($multiplyLengthNode + ".input2X") `getAttr ($headJoint + ".tx")`;
+	connectAttr ($multiplyLengthNode + ".outputX") ($headJoint + ".tx");
+	*/
+	}
+
+//Clean up: group controls under one group node.
+string $cleanUpGroup = `group -em -n ($prefix + "Spine_Controls")`;
+dwLockHideAttributes (0, 0, $cleanUpGroup, "tx ty tz rx ry rz sx sy sz v");
+
+parent $hipControl 
+	$lowerTorsoControl 
+	$upperTorsoOrientGrp 
+	$upperTorsoFreeOrientGrp
+	$cleanUpGroup;
+
+if ($neckCheck)
+	{	
+	parent $neckOrientGrp
+		$neckFreeOrientGrp
+		$cleanUpGroup;
+	}
+
+if ($headCheck)
+	{
+	parent $headOrientGrp
+		$headFreeOrientGrp
+		$cleanUpGroup;
+	}
+
+//If user wants a COG controller, create extra spline square and parent back controls to this.
+if ($COGCheck)
+	{
+	string $COGControl = dwCreateControlObject(3, ($controlObjSize * 2), ($prefix + "COG_CONTROL"), 2, 1);
+	if ($controlColor > 1)
+		{
+		setAttr ($COGControl + ".overrideEnabled") 1;
+		setAttr ($COGControl + ".overrideColor") ($controlColor - 1);
+		}
+		
+	setAttr ($COGControl + ".rotateOrder") 2;
+
+	move -a -wd $rootPosition[0] $rootPosition[1] $rootPosition[2] $COGControl;
+	
+	//Parent to clean-up group and freeze transforms.
+	parent $COGControl $cleanUpGroup;
+	makeIdentity -apply true -t 1 $COGControl;
+	
+	//Lock and hide attrs on both $COGControl and $hipControl.
+	dwLockHideAttributes (0, 0, $COGControl, "sx sy sz v");
+	dwLockHideAttributes (0, 0, $hipControl, "tx ty tz");
+	
+	//Parent other controls to this.
+	parent $hipControl
+		$lowerTorsoControl
+		$upperTorsoOrientGrp
+		//Added Feb 24, 2004: parent freeOrient groups to COG.
+		$upperTorsoFreeOrientGrp
+		$COGControl;
+				
+	if ($neckCheck)
+		parent $neckOrientGrp $neckFreeOrientGrp $COGControl;
+	if ($headCheck)
+		parent $headOrientGrp $headFreeOrientGrp $COGControl;
+
+	//rename $hipControl "Hip_Rotate";
+	}
+
+print ("FK Spine setup completed.\n");
+select -r $selection;
+}//END OF PROCEDURE.

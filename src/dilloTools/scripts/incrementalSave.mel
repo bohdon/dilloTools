@@ -1,0 +1,83 @@
+/*  This file downloaded from Highend3d.com
+''  
+''  Highend3d.com File Information:
+''  
+''    Script Name: incrementalSave v1.0
+''    Author: David S. Gladstein
+''    Last Updated: June 10, 2004
+''    Update/Change this file at:
+''    http://www.highend3d.com/maya/mel/?section=project#2969
+''  
+''  Please do not alter any information above this line
+''  it is generated dynamically by Highend3d.com and will
+''  be changed automatically on any updates.
+*/
+
+/* incrementalSave 
+	(C) 2004 David S. Gladstein. Use it in good health.
+
+    Saves your file with an automatically-incremented serial number added.
+    Usage: incrementalSave;
+    Examples:
+    foo.mb -> foo001.mb          adds a 3-digit serial # automatically if you don't have one
+    foo00000.mb -> foo00001.mb   any REASONABLE size serial # is OK (keep it below 2 billion)
+    foo9.ma -> foo10.ma          if your serial # overflows and needs more digits, that's fine too
+*/
+
+global proc incrementalSave () {
+    int $DEBUG = 0; // make this 1 for debugging only
+
+    // get the current filename	
+    string $fname = `file -q -sn`; 
+    if ($DEBUG) print ($fname + "\n");
+
+    // make sure filename ends with .ma or .mb 
+    int $len = `size $fname`;
+    if ($DEBUG) print ($len + "\n");
+    string $suffix = `substring $fname ($len-2) $len`;
+    if ($DEBUG) print ($suffix + "\n");
+    if (! ($suffix == ".ma" || $suffix == ".mb")) {
+	error ("filename doesn't end with .ma or .mb\n");
+    }
+
+    // extract the main part of the filename, before the suffix
+    string $suffixless = `substring $fname 1 ($len - 3)`;
+    if ($DEBUG) print ($suffixless + "\n");
+
+    // extract any digits at the end of the filename
+    string $digits = `match "[0-9]*$" $suffixless`; 
+    if ($DEBUG) print ("digits: " + $digits + "\n");
+
+    // if there are no digits, tack on "000" and go around again.
+    if ($digits == "") {
+	string $newname = $suffixless + "000" + $suffix;
+	if ($DEBUG) print ("no digits at end of name, renaming to " + $newname + "\n");
+	file -rn $newname;
+	incrementalSave;
+    } else {
+
+    // if there are serial number digits, calculate the new serial number
+	int $n = (int) $digits;
+	int $nextn = $n + 1;
+	string $newdigits = (string) $nextn;
+
+	// pad the serial number with "0" on the left as needed 
+	int $ndigits = `size $digits`;
+	int $nnewdigits = `size $newdigits`;
+	if ($DEBUG) print ($newdigits + "\n");
+	while ($ndigits > $nnewdigits) {
+	    $newdigits = "0" + $newdigits;
+	    $nnewdigits++;
+	}
+	if ($DEBUG) print ($newdigits + "\n");
+
+	// put the new filename together, rename, and save
+	int $lengthwithoutdigits = `size $suffixless` - `size $digits`;
+	string $stringwithoutdigits = `substring $suffixless 1 $lengthwithoutdigits`;
+	string $newname = $stringwithoutdigits + $newdigits + $suffix;
+	if ($DEBUG) print ($newname + "\n");
+	file -rn $newname;
+	file -save;
+    }
+}
+

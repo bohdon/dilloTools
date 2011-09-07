@@ -1,0 +1,24 @@
+//Title:	dwToggleJointsLocalAxis.mel
+//Author:	David Walden
+//		www.davidwalden.com
+//		dwalden74@hotmail.com
+//
+//Date: Jan. 2003
+//
+//Description: Toggles visibility of local rotation axis for all joint below and including the cuurrently
+//selected joint. Works only with "joint" objects.
+
+global proc dwToggleJointsLocalAxis()
+{
+string $rootSelection[] = `ls -sl -type "joint"`;
+if (size($rootSelection) == 0)
+	error "Select the root joint and retry.";
+
+string $childJointsInHierarchy[] = `listRelatives -type "joint" -ad -pa $rootSelection[0]`;
+
+string $allJoints[] = `stringArrayCatenate $rootSelection $childJointsInHierarchy`;
+
+
+toggle -localAxis $allJoints;
+
+}
