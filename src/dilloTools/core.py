@@ -3,11 +3,12 @@ Dillo Tools - core
 """
 
 
-import dilloTools
 from pymel.core import *
+import dilloTools
+import logging
 
 
-LOG = dilloTools.getLog('core')
+LOG = logging.getLogger('dilloTools')
 
 
 class DilloTools(object):

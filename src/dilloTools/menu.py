@@ -4,10 +4,11 @@ Dillo Tools - menu
 
 
 import dilloTools
+import logging
 from pymel.core import *
 
 
-LOG = dilloTools.getLog('menu')
+LOG = logging.getLogger('dilloTools')
 
 
 __MENU_NAME__ = 'dilloToolsMenu'

@@ -36,7 +36,7 @@ import os
 import dilloTools
 
 #path to the pencil exe
-__PENCIL_PATH__ = os.path.join(dilloTools.getDilloDir(), 'programs/Pencil/Pencil.exe')
+__PENCIL_PATH__ = os.path.join(dilloTools.DILLO_DIR, 'programs/Pencil/Pencil.exe')
 defaultRes = [853, 480]
 __version__ = '1.1.3'
 

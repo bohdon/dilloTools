@@ -4,10 +4,11 @@ Dillo Tools - shelf
 
 
 import dilloTools
+import logging
 from pymel.core import *
 
 
-LOG = dilloTools.getLog('shelf')
+LOG = logging.getLogger('dilloTools')
 
 
 __SHELF_NAME__ = 'DilloTools'

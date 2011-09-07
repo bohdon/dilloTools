@@ -32,22 +32,16 @@ import dilloTools.userPaths
 import dilloTools.tools as tools
 from pymel.core import mel
 
-
-__DILLO_DIR__ = os.path.normpath(os.path.dirname(__file__))
-__IMAGES_DIR__ = os.path.normpath(os.path.join(__DILLO_DIR__, 'images'))
-__SCRIPTS_DIR__ = os.path.normpath(os.path.join(__DILLO_DIR__, 'scripts')).replace('\\', '/')
-__PLUGIN_DIR__ = os.path.normpath(os.path.join(__DILLO_DIR__, 'plugins')).replace('\\', '/')
-__LOG_LEVEL__ = logging.INFO
-__VERSION__ = (3, 0, 34)
-__MAIN_VERSION__ = '.'.join([ str(__VERSION__[0]), str(__VERSION__[1]) ])
-__version__ = '.'.join([str(n) for n in __VERSION__])
+__version__ = '3.0.34'
 __author__ = 'Bohdon Sayre'
 
-def getLog(name):
-    fullName = '{0} : {1}'.format('Dillo Tools', name)
-    log = logging.getLogger(fullName)
-    log.setLevel(__LOG_LEVEL__)
-    return log
+DILLO_DIR = os.path.normpath(os.path.dirname(__file__))
+IMAGES_DIR = os.path.normpath(os.path.join(DILLO_DIR, 'images'))
+SCRIPTS_DIR = os.path.normpath(os.path.join(DILLO_DIR, 'scripts')).replace('\\', '/')
+PLUGIN_DIR = os.path.normpath(os.path.join(DILLO_DIR, 'plugins')).replace('\\', '/')
+
+log = logging.getLogger('dilloTools')
+log.setLevel(logging.INFO)
 
 
 def init():
@@ -74,17 +68,11 @@ def getTools():
 
 def getDilloImage(image):
     """Return the full path to a dillo tools image"""
-    fullImage = os.path.normpath(os.path.join(__IMAGES_DIR__, image))
+    fullImage = os.path.normpath(os.path.join(IMAGES_DIR, image))
     return fullImage
-
-def getDilloDir():
-    return __DILLO_DIR__
 
 def getVersion():
     return __version__
-
-def getMainVersion():
-    return __MAIN_VERSION__
 
 def createWindow():
     getInstance().createWindow()
@@ -97,9 +85,8 @@ def deleteShelf():
 
 
 #extension of userSetup, dilloTools must be imported during maya startup
-dilloTools.userPaths.addScript([__SCRIPTS_DIR__])
-if os.environ.has_key('MAYA_PLUG_IN_PATH'):
-        os.environ['MAYA_PLUG_IN_PATH'] += ';{0}'.format(__PLUGIN_DIR__)
+dilloTools.userPaths.addScript(SCRIPTS_DIR)
+dilloTools.userPaths.addPlugin(PLUGIN_DIR)
 mel.eval("source boRightClickManager")
 
 

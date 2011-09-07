@@ -4,10 +4,11 @@ Dillo Tools - window
 
 
 import dilloTools
+import logging
 from pymel.core import *
 
 
-LOG = dilloTools.getLog('window')
+LOG = logging.getLogger('dilloTools')
 
 
 __WIN_NAME__ = 'dilloToolsWin'
