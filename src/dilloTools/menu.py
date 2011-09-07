@@ -17,7 +17,7 @@ def createMenu(tools, p=None):
     """Create and populate the Dillo Tools menu.
     This menu can be created in alternate locations by
     passing a menu or window to the p parameter"""
-    LOG.debug('Building...')
+    LOG.debug('Building Menu...')
     if p is None:
         p = melGlobals['gMainWindow']
     
@@ -35,27 +35,27 @@ def createMenu(tools, p=None):
 
 def createMenuTools(tools):
     for cat in tools['[cats]']:
-        LOG.debug('submenu: {0}'.format(cat))
+        LOG.debug('  Adding Submenu: {0}'.format(cat))
         with menuItem(l=cat, subMenu=True, to=True):
             for tool in tools[cat]['[tools]']:
                 toolData = tools[cat][tool]
                 stp = toolData['sourceType']
                 itemKargs = {
                     'ann':toolData['annotation'],
-                    'c':toolData['command'],
-                    'i':toolData['image'],
-                    'l':tool,
+                    'command':toolData['command'],
+                    'image':toolData['image'],
+                    'label':tool,
                 }
-                LOG.debug('tool: {0}'.format(tool))
+                LOG.debug('    Adding Tool: {0}'.format(tool))
                 dilloMenuItem(stp, itemKargs)
 
 
-def dilloMenuItem(stp, itemKargs):
+def dilloMenuItem(stp, kwargs):
     """Create a menu item using mel or python depending on stp."""
-    if stp == 'python':
-        menuItem(**itemKargs)
-    elif stp == 'mel':
-        mel.menuItem(**itemKargs)
+    if stp == 'mel':
+        kwargs['command'] = 'mel.eval("{0}")'.format(kwargs['command'])
+        print('newCommand: {0}'.format(kwargs['command']))
+    menuItem(**kwargs)
 
 
 def createGuiShortcuts():

@@ -1,11 +1,8 @@
-"""
-Dillo Tools - core
-"""
 
-
-from pymel.core import *
-import dilloTools
+ 
+from dilloTools import getDilloImage, menu, shelf, window
 import logging
+import pymel.core as pm
 
 
 LOG = logging.getLogger('dilloTools')
@@ -69,7 +66,7 @@ class DilloTools(object):
         """Add a tool to the specificed category.
         sourceType is the script type (mel/python)"""
         if cat in self._tools.keys():
-            fullImage = dilloTools.getDilloImage(image)
+            fullImage = getDilloImage(image)
             self._tools[cat][title] = {'command':command, 'image':fullImage, 'sourceType':sourceType, 'annotation':annotation}
             self._tools[cat]['[tools]'].append(title) #to simulate an OrderedDict
     
@@ -100,32 +97,27 @@ class DilloTools(object):
     #GUI Creation
     def createMenu(self):
         """Create the Dillo Tools menu"""
-        import dilloTools.menu
-        evalDeferred( Callback(dilloTools.menu.createMenu, self._tools) )
+        pm.evalDeferred( pm.Callback(menu.createMenu, self._tools) )
     
     def createWindow(self):
         """Create an instance of the DilloToolsWindow class and call create() on it.
         Then add all categories and tools to the window."""
-        import dilloTools.window
-        dilloTools.window.createWindow(self._tools)   
+        window.createWindow(self._tools)   
     
     def createShelf(self):
         """Create the DilloTools shelf if it does not exist,
         Then clear/rebuild all shelf items. Prompt if clearing."""
-        import dilloTools.shelf
-        dilloTools.shelf.createShelf(self._tools)
+        shelf.createShelf(self._tools)
         
     def deleteShelf(self):
         """Create the DilloTools shelf if it does not exist,
         Then clear/rebuild all shelf items. Prompt if clearing."""
-        import dilloTools.shelf
-        dilloTools.shelf.deleteShelf()
+        shelf.deleteShelf()
     
     def checkShelfColors(self):
         """Update the DilloTools shelf button colors, since
         Maya always forgets them."""
-        import dilloTools.shelf
-        evalDeferred( Callback(dilloTools.shelf.checkShelfColors, self._tools) )
+        pm.evalDeferred( pm.Callback(shelf.checkShelfColors, self._tools) )
 
 
 

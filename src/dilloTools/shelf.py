@@ -31,7 +31,7 @@ def createShelf(tools):
 def createShelfTools(shelfName, tools):
     for cat in tools['[cats]']:
         catColor = tools[cat]['[color]']
-        shelfButton(l='{0} Separator'.format(cat), p=shelfName, i=os.path.join(dilloTools.__IMAGES_DIR__, 'separator.png'))
+        shelfButton(l='{0} Separator'.format(cat), p=shelfName, i=os.path.join(dilloTools.IMAGES_DIR, 'separator.png'))
         LOG.debug('category: {0}, color: {1}'.format(cat, catColor))
         for tool in tools[cat]['[tools]']:
             toolData = tools[cat][tool]

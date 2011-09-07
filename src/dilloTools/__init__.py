@@ -2,35 +2,23 @@
     Dillo Tools
     3.0
     
-    Copyright (C) 2010 Bohdon Sayre and Keith Osborn
+    Copyright (C) 2011 Ringling College
     All Rights Reserved.
     bsayre@c.ringling.edu
-    kosborn@c.ringling.edu
     
-    Description:
-        The Ringling College of Art and Design toolset.
-    
-    Version 3.0:
-        > Access Dillo Tools Window from a main menu in the Maya Window
-        > Build window or shelf version easily
-        > Easily add Mel and Python tools
-        > Easily add and change tool categories
-    
-    Instructions:
-        >>> import dilloTools
-        >>> dilloTools.doIt()
+    See the README or Dillo Tools Wiki for more information.
+    https://github.com/bohdon/dilloTools/wiki
     
     For Developers:
         The only necessity for scripts within dilloTools is to
-        use the dilloTools_getImage global procedure to acquire
+        use the dillo_getImage global procedure to acquire
         proper image locations.
 """
 
-
-import logging, os
-import dilloTools.userPaths
-import dilloTools.tools as tools
+from dilloTools import userPaths, tools
 from pymel.core import mel
+import logging
+import os
 
 __version__ = '3.0.34'
 __author__ = 'Bohdon Sayre'
@@ -53,13 +41,13 @@ def init():
     dillo.checkShelfColors()
 
 def reinit():
-    import dilloTools.core as core
+    from dilloTools import core
     core.DilloTools.delInstance()
     init()
 
 def getInstance():
     """Return the instance of DilloTools"""
-    import dilloTools.core as core
+    from dilloTools import core
     return core.DilloTools.getInstance()
 
 def getTools():
@@ -85,8 +73,8 @@ def deleteShelf():
 
 
 #extension of userSetup, dilloTools must be imported during maya startup
-dilloTools.userPaths.addScript(SCRIPTS_DIR)
-dilloTools.userPaths.addPlugin(PLUGIN_DIR)
+userPaths.addScript(SCRIPTS_DIR)
+userPaths.addPlugin(PLUGIN_DIR)
 mel.eval("source boRightClickManager")
 
 
