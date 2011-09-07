@@ -1,10 +1,11 @@
 """
     Dillo Tools
-    3.0
     
     Copyright (C) 2011 Ringling College
     All Rights Reserved.
     bsayre@c.ringling.edu
+    
+    See licenses of individual tools for more usage and copyright information.
     
     See the README or Dillo Tools Wiki for more information.
     https://github.com/bohdon/dilloTools/wiki
