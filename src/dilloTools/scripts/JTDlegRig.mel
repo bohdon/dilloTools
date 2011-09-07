@@ -1,0 +1,739 @@
+global proc int JTDlegRig(string $name, string $hip, string $knee, string $ankle, string $heel, string $ball, int $numRollJoints, int $leftRight, float $scale, string $world, string $primitive, int $pivotOption)
+{
+int $aimVector[] = {0,0,0};
+int $cnt = 0;
+string $toSkip = "x";
+string $lr = "l";
+string $aimAxis = JTDaimAxis($hip);
+string $aimCheck1, $aimCheck2, $upCheck1, $upCheck2;
+string $origName = $name;
+string $newChain[];
+
+if( ($name == "") || ($hip == "") || ($knee == "") || ($ankle == "") || ($ball == "") ) return 0;
+//if(! JTDisValidChain( {$hip, $knee, $ankle, $ball} ) ) //check over the chain
+//{
+//	error -sl true "in JTDlegRig: The joints you've input are not in a valid sequence or have branches";
+//	return 0;
+//}
+
+string $toe[] = `listRelatives -c -typ joint $ball`;
+if($toe[0] == "")
+{
+	error -sl true "in JTDlegRig: please place a toe joint under the ball joint";
+	return 0;
+}
+
+//iterate through the chain to make sure that the aim vectors are the same
+$child[0] = $hip;
+while($child[0] != $ball)
+{
+	$aimCheck1 = JTDaimAxis($child[0]);
+	$upCheck1 = JTDupAxis($child[0], {(float)0,(float)0,(float)1});
+	
+	$child = `listRelatives -c $child[0]`;
+	
+	$aimCheck2 = JTDaimAxis($child[0]);
+	$upCheck2 = JTDupAxis($child[0], {(float)0,(float)0,(float)1});
+	
+	//if($aimCheck1 != $aimCheck2) warning "in JTDlegRig: the leg joints do not have the same aim axis, please reorient";
+	//if($upCheck1 != $upCheck2) warning "in JTDlegRig: the leg joints do not have the same up axis, please reorient";
+	if(size($child) != 1) break;
+	if($child[0] == "") break;
+}
+
+if($aimCheck1 == "x") $aimVector[0] = 1;
+else if($aimCheck1 == "-x") $aimVector[0] = -1;
+else if($aimCheck1 == "y") $aimVector[1] = 1;
+else if($aimCheck1 == "-y") $aimVector[1] = -1;
+else if($aimCheck1 == "z") $aimVector[2] = 1;
+else if($aimCheck1 == "-z") $aimVector[2] = -1;
+
+$toSkip = endString($aimCheck1, 1); //so it doesnt return a negative value
+
+if($leftRight == 1) $lr = "l";
+if($leftRight == 2) $lr = "r";
+
+//see if there are already some roll joints
+int $foundUpRollJoints = JTDcountRollJoints($hip, $knee);
+int $foundLowRollJoints = JTDcountRollJoints($knee, $ankle);
+
+if($foundUpRollJoints != $foundLowRollJoints) //I dont support an unequal number of roll joints
+{
+	error -sl true "in JTDlegRig: There must be the same number of roll joints between the upper arm and the lower arm";
+	return 0;
+}
+
+if($foundUpRollJoints != 0) $numRollJoints = $foundUpRollJoints; //at this point, the number of up roll joints should equal the number of low roll joints
+
+$name = ($name+"_leg");
+
+//create a leg primitive node with info about each control
+string $nodes[] = `ls -typ script`;
+for($node in $nodes)
+{
+	if( startsWith($node,($name+"_Prim_")) ) $cnt++;
+}
+createNode script -n ($name+"_Prim_"+$cnt);
+
+addAttr -ln name -dt "string" ($name+"_Prim_"+$cnt);
+setAttr -type "string" ($name+"_Prim_"+$cnt+".name") $name;
+setAttr -l true ($name+"_Prim_"+$cnt+".name");
+
+addAttr -ln aimAxis -dt "string" ($name+"_Prim_"+$cnt);
+setAttr -type "string" ($name+"_Prim_"+$cnt+".aimAxis") $aimAxis;
+setAttr -l true ($name+"_Prim_"+$cnt+".aimAxis");
+
+addAttr -ln lr -dt "string" ($name+"_Prim_"+$cnt);
+setAttr -type "string" ($name+"_Prim_"+$cnt+".lr") $lr;
+setAttr -l true ($name+"_Prim_"+$cnt+".lr");
+
+addAttr -ln numRoll -dt "string" ($name+"_Prim_"+$cnt);
+setAttr -type "string" ($name+"_Prim_"+$cnt+".numRoll") $numRollJoints;
+setAttr -l true ($name+"_Prim_"+$cnt+".numRoll");
+
+addAttr -ln hip -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($hip+".message") ($name+"_Prim_"+$cnt+".hip");
+
+addAttr -ln knee -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($knee+".message") ($name+"_Prim_"+$cnt+".knee");
+
+addAttr -ln ankle -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($ankle+".message") ($name+"_Prim_"+$cnt+".ankle");
+
+//insert roll joints to the original chain if they're not already there
+if($foundUpRollJoints == 0)
+{
+	JTDinsertRollJoints($hip, $knee, $numRollJoints);
+	JTDinsertRollJoints($knee, $ankle, $numRollJoints);
+}
+
+//first duplicate the joints so they can be connected to the originals
+$newChain = JTDprepareChain( {$hip, $knee, $ankle, $heel, $ball, $toe[0]}, "rig_", $origName);
+
+//we're actually going to be rigging the duplicate and then connecting it to the original later
+$hip = ("rig_"+$hip);
+$knee = ("rig_"+$knee);
+$ankle = ("rig_"+$ankle);
+if($heel != "") $heel = ("rig_"+$heel);
+$ball = ("rig_"+$ball);
+
+//do the normal IKFK leg Rig
+string $SWchain[] = JTDIKFKLeg($name,$hip,$knee,$ankle,$heel,$ball,$numRollJoints,$aimAxis,$leftRight,$scale,$world, $pivotOption);
+//now there's an extra gimble node that won't do anything for the leg...
+
+//constrain the chains to the original skeleton
+//rig the upper leg first
+string $bendyParent1 = JTDsplineSetup($hip, $knee, $SWchain[0], $SWchain[1], $aimAxis, $numRollJoints, $name, $scale, $world);
+
+//rig the lower leg
+string $bendyParent2 = JTDsplineSetup($knee, $ankle, $SWchain[1], $SWchain[2], $aimAxis, $numRollJoints, $name, $scale, $world);
+
+//make sure the ankle is attached and constrained
+parentConstraint -mo -weight 1 -n ($ankle+"_PrntCnstr") $SWchain[2] $ankle;
+orientConstraint -mo -weight 1 -n ($name+"_SWball_orCnstr") ($ball+"_SW") $ball;
+
+//add autoBending
+JTDautoBend($SWchain[1], $SWchain[2], $bendyParent1, $bendyParent2, $SWchain[6], $lr);
+
+//check the axis value returned by the switching setup
+int $upCntrl = -1;
+if(startsWith($SWchain[6], "-")) $upCntrl = 1;
+
+//place the switcher properly
+//get the CVs of the switcher
+string $switcherShape[] = `listRelatives -s $SWchain[2]`;
+int $numSpans = `getAttr ($switcherShape[0]+".spans")`;
+
+select -cl;
+select ($switcherShape[0]+".cv[0:"+$numSpans+"]");
+
+//rotate the switcher around the ankle so it looks good
+float $pos[] = `xform -q -ws -rp $ankle`;
+rotate -r -p $pos[0] $pos[1] $pos[2] -ws 0 0 ($upCntrl*90);
+select -cl;
+
+//a few more steps to enable the advanced twisting on the leg
+JTDgeneratePin(($hip+"_twist"), $scale);
+//find axis that points along the plane formed with the hip, knee and ankle
+float $planeNormal[] = JTDgetPlaneNormal($hip, $knee, $ankle);
+string $twistup = JTDupAxis($hip, $planeNormal);
+if(endsWith($twistup, "x")) setAttr ($hip+"_twist.rz") ($upCntrl*90); //now it points down the X axis
+if(endsWith($twistup, "y")) {if($upCntrl == 1) setAttr ($hip+"_twist.rx") 180;} //now it points down the Y axis
+if(endsWith($twistup, "z")) setAttr ($hip+"_twist.rx") ($upCntrl*90); //now it points down the Z axis
+makeIdentity -apply true -t 1 -r 1 -s 1 ($hip+"_twist");
+
+group -em -n ($hip+"_twist_Parent");
+parent ($hip+"_twist") ($hip+"_twist_Parent");
+
+float $pos[] = `xform -q -ws -rp $hip`;
+move -a -ws -rpr $pos[0] $pos[1] $pos[2] ($hip+"_twist_Parent");
+makeIdentity -apply true -t 1 -r 1 -s 1 ($hip+"_twist_Parent");
+JTDalignGroup(($hip+"_twist_Parent"), $SWchain[0]);
+connectAttr -f ($hip+"_twist.worldMatrix[0]") ($hip+"_splineIK.dWorldUpMatrix");
+orientConstraint -weight 1 -skip $toSkip -n ($hip+"_twist_OrConstr") $SWchain[0] ($hip+"_twist_Parent");  
+
+parent ($hip+"_twist_Parent") $SWchain[3]; //this variable is filled at the end of the switching setup proc
+
+string $pelvisCnstr[] = `listRelatives -typ pointConstraint $SWchain[0]`;
+
+if($pelvisCnstr[0] != "")
+{
+	string $pelvisEnd[] = `listConnections -s true -d false ($pelvisCnstr[0]+".target[0].targetParentMatrix")`;
+	delete $pelvisCnstr[0];
+
+	parentConstraint -mo -weight 1 -n ($pelvisEnd[0]+"_PrntCnstr") $pelvisEnd[0] $SWchain[3];
+}
+
+//addAttr -ln twist -at "message" ($name+"_armLegPrim_"+$cnt);
+//connectAttr -f ($hip+"_twist.message") ($name+"_armLegPrim_"+$cnt+".twist");
+
+//also change the up Vector depending on if its a L or R since the controls were mirrored and have different Y ups
+if($lr == "r")
+{
+float $WUV[] = getAttr ($hip+"_splineIK.dWorldUpVector");
+setAttr ($hip+"_splineIK.dWorldUpVector") ($WUV[0]*-1) ($WUV[1]*-1) ($WUV[2]*-1);
+$WUV = getAttr ($hip+"_splineIK.dWorldUpVectorEnd");
+setAttr ($hip+"_splineIK.dWorldUpVectorEnd") ($WUV[0]*-1) ($WUV[1]*-1) ($WUV[2]*-1);
+
+float $WUV[] = getAttr ($knee+"_splineIK.dWorldUpVector");
+setAttr ($knee+"_splineIK.dWorldUpVector") ($WUV[0]*-1) ($WUV[1]*-1) ($WUV[2]*-1);
+$WUV = getAttr ($knee+"_splineIK.dWorldUpVectorEnd");
+setAttr ($knee+"_splineIK.dWorldUpVectorEnd") ($WUV[0]*-1) ($WUV[1]*-1) ($WUV[2]*-1);
+}
+
+//inverse the aim vector for locking
+$aimVector[0] = JTDreverse($aimVector[0]);
+$aimVector[1] = JTDreverse($aimVector[1]);
+$aimVector[2] = JTDreverse($aimVector[2]);
+
+//lock and hide the twist control and its parent
+JTDlockAttrs(($hip+"_twist"), {1}, $aimVector, {1}, 0);
+JTDhideAttrs(($hip+"_twist"), {1}, $aimVector, {1}, 1);
+JTDlockAttrs(($hip+"_twist_Parent"), {1}, {1}, {1}, 0);
+JTDhideAttrs(($hip+"_twist_Parent"), {1}, {1}, {1}, 1);
+
+//add visibility switches for the twist handles and the bend handles
+addAttr -ln vizToggles -at bool $SWchain[2];
+setAttr -k true -l true ($SWchain[2]+".vizToggles");
+
+addAttr -ln bendHandles -at bool $SWchain[2];
+setAttr -k true ($SWchain[2]+".bendHandles");
+connectAttr ($SWchain[2]+".bendHandles") ($bendyParent1+".v");
+connectAttr ($SWchain[2]+".bendHandles") ($bendyParent2+".v");
+
+addAttr -ln twistFix -at bool $SWchain[2];
+setAttr -k true ($SWchain[2]+".twistFix");
+connectAttr ($SWchain[2]+".twistFix") ($hip+"_twist_Parent.v");
+
+//group the control under the rigXtras node
+//if(objExists(($name+"_RigXtras_"+$lr))) parent ($hip+"_twist_Parent") ($name+"_RigXtras_"+$lr);
+
+if($world != "") 
+{
+	if(objExists(($name+"_RigXtras_"+$lr)))
+	{
+		//parent ($name+"_RigXtras_"+$lr) $world;
+		parent $SWchain[(size($SWchain)-4)] $world; //original IK control
+	}
+	
+	
+	parent $SWchain[(size($SWchain)-3)] $world; //PV
+	parent $SWchain[(size($SWchain)-2)] $world; //new IK control
+}
+
+if(objExists(($name+"_RigXtras_"+$lr)))
+{
+	parent $hip ($name+"_RigXtras_"+$lr);
+	parent $knee ($name+"_RigXtras_"+$lr);
+	parent $ankle ($name+"_RigXtras_"+$lr);
+}
+
+///if a spine primitive was supplied, attach the leg to it
+if($primitive != "")
+{
+	string $parents[];
+	string $toAttach[];
+	string $target[] = `listConnections ($name+"_Prim_"+$cnt+".IKcntrl")`;
+	if( objExists(($primitive+".root")) ) $toAttach = `listConnections ($primitive+".root")`;
+	$parents[0] = $toAttach[0];
+	if($world != "") $parents[1] = $world;
+	else warning -sl true "in JTDarmSetup: you did not provide a world node, dynamic parenting will not work correctly";
+	JTDdynParent($target[0], $parents, 1, ""); //parent
+	if(objExists( ($target[0]+".Parent") )) catchQuiet(`setAttr ($target[0]+".Parent") 1`);
+	
+	$target = `listConnections ($name+"_Prim_"+$cnt+".FKup")`;
+	JTDdynParent($target[0], $parents, 2, "");
+	
+	$parents[0] = $toAttach[0];
+	$target = `listConnections ($name+"_Prim_"+$cnt+".IKcntrl")`;
+	$parents[1] = $target[0]; //the IK control will be a parent of the PV instead of the hips
+	if($world != "") $parents[2] = $world;
+	
+	$target = `listConnections ($name+"_Prim_"+$cnt+".PV")`;
+	JTDdynParent($target[0], $parents, 1, "");
+	
+	if( objExists(($primitive+".hipsCntrl")) ) 
+	{
+		$toAttach = `listConnections ($primitive+".hipsCntrl")`;
+		parent ($name+"_RigXtras_"+$lr) $toAttach[0];
+	}
+}
+
+//last minute visibility switches
+string $IKcntrl[] = `listConnections ($name+"_Prim_"+$cnt+".IKcntrl")`;
+
+addAttr -ln viz -at bool $IKcntrl[0];
+setAttr -l true -k true ($IKcntrl[0]+".viz");
+
+addAttr -ln gimbleHelper -at double -min 0 -max 1 -dv 0 $IKcntrl[0]; //IK leg control
+setAttr -l false -k true ($IKcntrl[0]+".gimbleHelper");
+connectAttr ($IKcntrl[0]+".gimbleHelper") ($SWchain[(size($SWchain)-1)]+".v");
+
+
+if(objExists(($SWchain[2]+".IKFK"))) setAttr ($SWchain[2]+".IKFK") 1;
+
+JTDconnectTo($origName);
+return 1;
+}
+
+
+global proc string[] JTDIKFKLeg(string $name, string $hip, string $knee, string $ankle, string $heel, string $ball, int $numRollJoints, string $aimAxis, int $leftRight, float $scale, string $world, int $pivotOption)
+{
+string $lr = "l";
+string $constraints[];
+float $absPos[];
+float $heelAdj[] = {0,0,0};
+float $cntrlSize[] = {1,1,1};
+float $radius;
+float $heelPos;
+int $cnt = 0;
+int $cntrl = 1;
+float $normal[] = {1,0,0};
+
+string $aim = substring($aimAxis, size($aimAxis), size($aimAxis)); //strip off the negative sign if there is one
+$heelPos = getAttr($ball+".t"+$aim);
+if(startsWith($aimAxis, "-")) $cntrl = -1;
+
+if($aim == "x")
+{
+	$normal[0] = 1;
+	$cntrlSize[0] = ($scale*$cntrl) + (`getAttr($ball+".t"+$aim)`-$cntrl);
+}
+if($aim == "y")
+{
+	$normal[1] = 1;
+	$cntrlSize[1] = ($scale*$cntrl) + (`getAttr($ball+".t"+$aim)`-$cntrl); 
+}
+if($aim == "z")
+{
+	$normal[2] = 1;
+	$cntrlSize[2] = ($scale*$cntrl) + (`getAttr($ball+".t"+$aim)`-$cntrl); 
+}
+
+if($leftRight == 1) $lr = "l";
+if($leftRight == 2) $lr = "r";
+string $SWchain[] = JTDswitchingSetup($hip, $knee, $ankle, $aimAxis, $lr, $name, $scale);
+string $IKCntrl[] = `listConnections ($SWchain[4]+".child")`; //we need this for later, plus $SWchain gets overwritten in the next step
+
+//correct the interpolation of the ankle joint
+//get the constraints
+clear $constraints;
+$constraints = `listRelatives -typ orientConstraint $SWchain[2]`;
+for($constraint in $constraints)
+{
+	//set it to shortest interpolation
+	setAttr ($constraint+".interpType") 2;
+}
+
+//add the foot joints back onto the switching setup
+string $startFootChain[] = `listRelatives -c -typ joint $ankle`;
+if($startFootChain[0] != $heel) warning "in JTDIKFKLeg: The heel is not a child of the ankle";
+
+string $dupChain[] = JTDdupFootChain($heel, "SW");
+parent $dupChain[0] $SWchain[2];
+
+//add the new joints to the array
+int $cnt = size($SWchain);
+for($duped in $dupChain)
+{
+$SWchain[$cnt] = $duped;
+$cnt++;
+}
+
+string $FKchain[] = JTDdupFootChain($heel, "FK");
+string $parent = substitute("SW",$SWchain[2],"FK"); //ankle
+parent $FKchain[0] $parent;
+
+string $IKchain[] = JTDdupFootChain($heel, "IK");
+$parent = substitute("SW",$SWchain[2],"IK"); //ankle
+parent $IKchain[0] $parent;
+
+$constraints = JTDconstrainChain({($ball+"_IK")}, {($ball+"_SW")}, 0);
+$constraints = JTDconstrainChain({($ball+"_FK")}, {($ball+"_SW")}, 0);
+
+//constrain the IK and FK ball joints to the SW chain and add it to the switcher
+createSwitch("IKFK", $SWchain[2], $constraints);
+
+
+//place reverse foot joints
+select -cl;
+
+string $dup[] = `duplicate -rc $ball`; //we duplicate because we want the heel joint to have the same axis as the ball joint
+if(size(`listRelatives -p $ball`) != 0) parent -w $dup[0];
+delete `listRelatives -c $dup[0]`;
+rename $dup[0] ($name+"_heel_Cntrl_"+$lr);
+
+if( ($heel != "") && (objExists($heel)) )
+{
+	$absPos = `xform -q -ws -rp $heel`;
+	move $absPos[0] $absPos[1] $absPos[2] ($name+"_heel_Cntrl_"+$lr);
+}
+
+orientConstraint -weight 1 -n ($lr+"_tempConstraint") ($ball+".rotateAxis") ($name+"_heel_Cntrl_"+$lr+".rotateAxis");
+delete ($lr+"_tempConstraint");
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_heel_Cntrl_"+$lr);
+$radius = getAttr ($ball+".radi");
+setAttr ($name+"_heel_Cntrl_"+$lr+".radius") $radius;
+
+$absPos = `joint -q -p -a $ball`;
+joint -p $absPos[0] $absPos[1] $absPos[2] -a -n ($name+"_ball_Cntrl_"+$lr);
+orientConstraint -weight 1 -n ($lr+"_tempConstraint") ($ball+".rotateAxis") ($name+"_ball_Cntrl_"+$lr+".rotateAxis");
+delete ($lr+"_tempConstraint");
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_ball_Cntrl_"+$lr);
+setAttr ($name+"_ball_Cntrl_"+$lr+".radius") $radius;
+
+$absPos = `joint -q -p -a $ankle`;
+joint -p $absPos[0] $absPos[1] $absPos[2] -a -n ($name+"_ankle_Cntrl_"+$lr);
+orientConstraint -weight 1 -n ($lr+"_tempConstraint") ($ankle+".rotateAxis") ($name+"_ankle_Cntrl_"+$lr+".rotateAxis");
+delete ($lr+"_tempConstraint");
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_ankle_Cntrl_"+$lr);
+$radius = getAttr ($ankle+".radi");
+setAttr ($name+"_ankle_Cntrl_"+$lr+".radius") $radius;
+
+toggle -template -state on ($name+"_heel_Cntrl_"+$lr);
+
+//create FK ball control
+circle -c 0 0 0 -nr $normal[0] $normal[1] $normal[2] -sw 360 -r $scale -d 3 -ut 0 -tol 0.01 -s 8 -ch 0 -n ($ball+"_TmpCntrl");
+parent -r -s `listRelatives -s ($ball+"_TmpCntrl")` ($ball+"_FK");
+delete ($ball+"_TmpCntrl"); //since it was shape parented it leaves an extra node behind that needs to be deleted
+
+//constrain the reverse foot to the IK joints
+//first break existing constraints
+string $temp[] = `listRelatives -c -typ orientConstraint ($ankle+"_IK")`; //$parent is the IK ankle
+delete $temp[0];
+orientConstraint -mo -weight 1 ($name+"_ball_Cntrl_"+$lr) ($ankle+"_IK");
+
+//then point constrain the IK handle to the ankle control
+//$temp = `listRelatives -p ($ankle+"_IK")`;
+//$temp = `listRelatives -c -typ ikEffector $temp[0]`;
+//$temp = `listConnections ($temp[0]+".handlePath")`;
+//finding the IK Cntrl object
+
+pointConstraint -weight 1 ($name+"_ankle_Cntrl_"+$lr) $IKCntrl[0];
+
+//lock the IK handle
+JTDlockAttrs($IKCntrl[0], {1}, {1}, {0}, 0);
+JTDhideAttrs($IKCntrl[0], {1}, {1}, {0}, 1);
+
+//create a circle and scale it according to the correct axis
+circle -c 0 0 0 -nr 0 1 0 -sw 360 -r $scale -d 3 -ut 0 -tol 0.01 -s 12 -ch 0 -n ($name+"_IKleg_Cntrl_"+$lr);
+if($pivotOption == 1)
+{
+	parent ($name+"_IKleg_Cntrl_"+$lr) $ball;
+	makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_IKleg_Cntrl_"+$lr);
+	scale `abs($cntrlSize[0])` `abs($cntrlSize[1])` `abs($cntrlSize[2])` ($name+"_IKleg_Cntrl_"+$lr);
+}
+else scale 1 1 (($scale*$cntrl) + (`getAttr($ball+".t"+$aim)`-$cntrl)) ($name+"_IKleg_Cntrl_"+$lr);
+
+group -em -n ($name+"_IKleg_Cntrl_Parent_"+$lr);
+parent ($name+"_IKleg_Cntrl_"+$lr) ($name+"_IKleg_Cntrl_Parent_"+$lr);
+addAttr -ln child -at "message" ($name+"_IKleg_Cntrl_Parent_"+$lr);
+connectAttr -f ($name+"_IKleg_Cntrl_"+$lr+".message") ($name+"_IKleg_Cntrl_Parent_"+$lr+".child");
+
+$absPos = `joint -q -p -a $ball`;
+move -rpr $absPos[0] $absPos[1] $absPos[2] ($name+"_IKleg_Cntrl_Parent_"+$lr);
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_IKleg_Cntrl_Parent_"+$lr);
+
+//move it's pivot to the ankle
+$absPos = `joint -q -p -a $ankle`;
+move $absPos[0] $absPos[1] $absPos[2] ($name+"_IKleg_Cntrl_"+$lr+".scalePivot") ($name+"_IKleg_Cntrl_"+$lr+".rotatePivot");
+
+//create a null object for snapping...gotta do this because snapping to the ankle will cause the control to rotate...it'll be added to the primitive later
+group -em -w -n ($name+"_IKleg_SnapPos_"+$lr);
+move $absPos[0] $absPos[1] $absPos[2] ($name+"_IKleg_SnapPos_"+$lr+".scalePivot") ($name+"_IKleg_SnapPos_"+$lr+".rotatePivot");
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_IKleg_SnapPos_"+$lr);
+
+//pt and orient constrain the null to the SW ankle with maintian offset for IK snapping
+pointConstraint -weight 1 -n ($name+"_IKleg_SnapPos_"+$lr+"_pntCnstr") $SWchain[2] ($name+"_IKleg_SnapPos_"+$lr);
+orientConstraint -mo -weight 1 -n ($name+"_IKleg_SnapPos_"+$lr+"_orCnstr") $SWchain[2] ($name+"_IKleg_SnapPos_"+$lr);
+
+//lock and hide the null's channels
+JTDlockAttrs(($name+"_IKleg_SnapPos_"+$lr), {1}, {1}, {1}, 1);
+JTDhideAttrs(($name+"_IKleg_SnapPos_"+$lr), {1}, {1}, {1}, 1);
+
+//group the null in the Xtras
+if(objExists(($name+"_RigXtras_"+$lr))) parent ($name+"_IKleg_SnapPos_"+$lr) ($name+"_RigXtras_"+$lr);
+
+//make sure the new control has the same visibility actions as the old control
+string $connect[] = `listConnections ($IKCntrl[0]+".v")`;
+connectAttr ($connect[0]+".outColorR") ($name+"_IKleg_Cntrl_"+$lr+".v");
+
+//make sure the new control has the same attributes as the old control and connect them up
+addAttr -ln autoStretch -at bool -min 0 -max 1 ($name+"_IKleg_Cntrl_"+$lr);
+setAttr ($name+"_IKleg_Cntrl_"+$lr+".autoStretch") on;
+setAttr -k true ($name+"_IKleg_Cntrl_"+$lr+".autoStretch");
+
+addAttr -ln stretch -at double ($name+"_IKleg_Cntrl_"+$lr);
+setAttr -k true ($name+"_IKleg_Cntrl_"+$lr+".stretch");
+
+addAttr -ln lockMid -at double -min 0 -max 1 -dv 0 ($name+"_IKleg_Cntrl_"+$lr);
+setAttr -k true ($name+"_IKleg_Cntrl_"+$lr+".lockMid");
+
+connectAttr ($name+"_IKleg_Cntrl_"+$lr+".autoStretch") ($IKCntrl[0]+".autoStretch");
+connectAttr ($name+"_IKleg_Cntrl_"+$lr+".stretch") ($IKCntrl[0]+".stretch");
+connectAttr ($name+"_IKleg_Cntrl_"+$lr+".lockMid") ($IKCntrl[0]+".lockMid");
+
+//hide the extraneous attributes of the new control
+JTDlockAttrs(($name+"_IKleg_Cntrl_"+$lr), {0}, {0}, {1}, 1);
+JTDhideAttrs(($name+"_IKleg_Cntrl_"+$lr), {0}, {0}, {1}, 1);
+
+//permanently hide the old control
+disconnectAttr ($connect[0]+".outColorR") ($IKCntrl[0]+".v");
+setAttr -l true -k false ($IKCntrl[0]+".v") 0;
+
+//constrain the IK toe to the heel for the foot roll
+orientConstraint -weight 1 -n ($name+"_"+$IKchain[1]+"_RollCnstr") ($name+"_heel_Cntrl_"+$lr) ($ball+"_IK");
+
+//edit the IK match button
+$connect = `listConnections ($IKCntrl[0]+".message")`;
+for($plug in $connect)
+{
+	if(objExists($plug+".IKcntrl")) connectAttr -f ($name+"_IKleg_Cntrl_"+$lr+".message") ($plug+".IKcntrl");
+	if(objExists($plug+".IKpos")) connectAttr -f ($name+"_IKleg_SnapPos_"+$lr+".message") ($plug+".IKpos");
+	if(objExists($plug+".child")) 
+	{
+		if(objExists(($name+"_RigXtras_"+$lr))) parent $plug ($name+"_RigXtras_"+$lr);
+	}
+
+	
+}
+
+//gimble helper
+JTDgenerateSphere(($name+"_GimbleCntrl_"+$lr), $scale);
+$absPos = `joint -q -p -a $ankle`;
+move $absPos[0] $absPos[1] $absPos[2] ($name+"_GimbleCntrl_"+$lr);
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_GimbleCntrl_"+$lr);
+
+//extra pivots 
+string $toeJoint[] = `listRelatives -c -typ joint $ball`;
+if($toeJoint[0] != "");
+{
+	group -em -w -n ($name+"_toePivot_"+$lr);
+	$absPos = `joint -q -p -a $toeJoint[0]`;
+	move $absPos[0] $absPos[1] $absPos[2] ($name+"_toePivot_"+$lr+".scalePivot") ($name+"_toePivot_"+$lr+".rotatePivot");
+	
+	group -em -w -n ($name+"_toePivot_Parent_"+$lr);
+	if($pivotOption == 1) JTDalignGroup(($name+"_toePivot_Parent_"+$lr), $toeJoint[0]);
+	else if($leftRight == 2) //for mirrored rotation
+	{
+		setAttr ($name+"_toePivot_Parent_"+$lr+".ry") 180;
+		setAttr ($name+"_toePivot_Parent_"+$lr+".rz") 180;
+		
+	}
+	move $absPos[0] $absPos[1] $absPos[2] ($name+"_toePivot_Parent_"+$lr+".scalePivot") ($name+"_toePivot_Parent_"+$lr+".rotatePivot");
+	parent ($name+"_toePivot_"+$lr) ($name+"_toePivot_Parent_"+$lr);
+	setAttr ($name+"_toePivot_"+$lr+".rx") 0;
+	setAttr ($name+"_toePivot_"+$lr+".ry") 0;
+	setAttr ($name+"_toePivot_"+$lr+".rz") 0;
+}
+
+group -em -w -n ($name+"_ballPivot_"+$lr);
+$absPos = `joint -q -p -a ($name+"_ball_Cntrl_"+$lr)`;
+move $absPos[0] $absPos[1] $absPos[2] ($name+"_ballPivot_"+$lr+".scalePivot") ($name+"_ballPivot_"+$lr+".rotatePivot");
+
+group -em -w -n ($name+"_ballPivot_Parent_"+$lr);
+if($pivotOption == 1) JTDalignGroup(($name+"_ballPivot_Parent_"+$lr), ($name+"_ball_Cntrl_"+$lr));
+else if($leftRight == 2) 
+	{
+		setAttr ($name+"_ballPivot_Parent_"+$lr+".ry") 180;
+		setAttr ($name+"_ballPivot_Parent_"+$lr+".rz") 180;
+	}
+move $absPos[0] $absPos[1] $absPos[2] ($name+"_ballPivot_Parent_"+$lr+".scalePivot") ($name+"_ballPivot_Parent_"+$lr+".rotatePivot");
+parent ($name+"_ballPivot_"+$lr) ($name+"_ballPivot_Parent_"+$lr);
+setAttr ($name+"_ballPivot_"+$lr+".rx") 0;
+setAttr ($name+"_ballPivot_"+$lr+".ry") 0;
+setAttr ($name+"_ballPivot_"+$lr+".rz") 0;
+
+group -em -w -n ($name+"_heelPivot_"+$lr);
+$absPos = `joint -q -p -a ($name+"_heel_Cntrl_"+$lr)`;
+move $absPos[0] $absPos[1] $absPos[2] ($name+"_heelPivot_"+$lr+".scalePivot") ($name+"_heelPivot_"+$lr+".rotatePivot");
+
+group -em -w -n ($name+"_heelPivot_Parent_"+$lr);
+if($pivotOption == 1) JTDalignGroup(($name+"_heelPivot_Parent_"+$lr), ($name+"_heel_Cntrl_"+$lr));
+else if($leftRight == 2) 
+	{
+		setAttr ($name+"_heelPivot_Parent_"+$lr+".ry") 180;
+		setAttr ($name+"_heelPivot_Parent_"+$lr+".rz") 180;
+		
+	}
+
+move $absPos[0] $absPos[1] $absPos[2] ($name+"_heelPivot_Parent_"+$lr+".scalePivot") ($name+"_heelPivot_Parent_"+$lr+".rotatePivot");
+parent ($name+"_heelPivot_"+$lr) ($name+"_heelPivot_Parent_"+$lr);
+setAttr ($name+"_heelPivot_"+$lr+".rx") 0;
+setAttr ($name+"_heelPivot_"+$lr+".ry") 0;
+setAttr ($name+"_heelPivot_"+$lr+".rz") 0;
+
+addAttr -ln pivots -at bool ($name+"_IKleg_Cntrl_"+$lr);
+setAttr -k true -lock true ($name+"_IKleg_Cntrl_"+$lr+".pivots");
+addAttr -ln heel_Pivot -at double  -min -10 -max 10 -dv 0 ($name+"_IKleg_Cntrl_"+$lr);
+setAttr -e -keyable true ($name+"_IKleg_Cntrl_"+$lr+".heel_Pivot");
+addAttr -ln ball_Pivot -at double  -min -10 -max 10 -dv 0 ($name+"_IKleg_Cntrl_"+$lr);
+setAttr -e -keyable true ($name+"_IKleg_Cntrl_"+$lr+".ball_Pivot");
+addAttr -ln toe_Pivot -at double  -min -10 -max 10 -dv 0 ($name+"_IKleg_Cntrl_"+$lr);
+
+addAttr -ln roll -at bool ($name+"_IKleg_Cntrl_"+$lr);
+setAttr -k true -lock true ($name+"_IKleg_Cntrl_"+$lr+".roll");
+setAttr -e -keyable true ($name+"_IKleg_Cntrl_"+$lr+".toe_Pivot");
+addAttr -ln foot_Roll -at double  -min -10 -max 10 -dv 0 ($name+"_IKleg_Cntrl_"+$lr);
+setAttr -e -keyable true ($name+"_IKleg_Cntrl_"+$lr+".foot_Roll");
+addAttr -ln ball_Roll -at double  -min -10 -max 10 -dv 0 ($name+"_IKleg_Cntrl_"+$lr);
+setAttr -e -keyable true ($name+"_IKleg_Cntrl_"+$lr+".ball_Roll");
+addAttr -ln toe_Roll -at double  -min -10 -max 10 -dv 0 ($name+"_IKleg_Cntrl_"+$lr);
+setAttr -e -keyable true ($name+"_IKleg_Cntrl_"+$lr+".toe_Roll");
+
+//first find the vector normal to the plane of these three joints: ankle, heel, ball - they form a triangle
+float $planeNormal[] = JTDgetPlaneNormal($ankle, $heel, $ball);
+
+//find which axis is closest to the plane normal, this is the roll axis
+string $rollAxis = JTDupAxis($ball, $planeNormal);
+
+//print ("\nroll: "+$rollAxis);
+string $offsetAxis = ".offsetY";
+int $rollCntrl = 1;
+if(startsWith($rollAxis, "-")) $rollCntrl = -1;
+if(endsWith($rollAxis, "x")) {$rollAxis = ".rx"; $offsetAxis = ".offsetX";}
+if(endsWith($rollAxis, "y")) {$rollAxis = ".ry"; $offsetAxis = ".offsetY";}
+if(endsWith($rollAxis, "z")) {$rollAxis = ".rz"; $offsetAxis = ".offsetZ";}
+
+//take the cross product of the plane vector and the aim axis
+//print ("\naim: "+$aimAxis);
+int $aimCntrl = 1;
+if(startsWith($aimAxis, "-")) $aimCntrl = -1;
+
+float $posA[] = `xform -q -ws -rp $heel`;
+float $posB[] = `xform -q -ws -rp $ball`;
+float $vectorAim[]; //a vector that aims down the bone
+$vectorAim[0] = $posA[0]-$posB[0];
+$vectorAim[1] = $posA[1]-$posB[1];
+$vectorAim[2] = $posA[2]-$posB[2];
+
+float $cross[] = `crossProduct $vectorAim $planeNormal 1 1`;
+
+//find which axis is closest to the coss product, this is the pivot axis
+string $pivotAxis = JTDupAxis($ball, $cross);
+//print ("\npivot: "+$pivotAxis);
+if(endsWith($pivotAxis, "x")) $pivotAxis = ".rx";
+if(endsWith($pivotAxis, "y")) $pivotAxis= ".ry";
+if(endsWith($pivotAxis, "z")) $pivotAxis = ".rz";
+
+if($pivotOption == 0) $pivotAxis = ".ry";
+
+//connect the pivot attribute to the pivot group rotation axis
+createNode "multiplyDivide" -n ($name+"_pivotMult_"+$lr);
+setAttr ($name+"_pivotMult_"+$lr+".input2X") 18;
+connectAttr -f ($name+"_IKleg_Cntrl_"+$lr+".heel_Pivot") ($name+"_pivotMult_"+$lr+".input1X");
+connectAttr -force ($name+"_pivotMult_"+$lr+".outputX") ($name+"_heelPivot_"+$lr+$pivotAxis);
+
+setAttr ($name+"_pivotMult_"+$lr+".input2Y") 18;
+connectAttr -f ($name+"_IKleg_Cntrl_"+$lr+".ball_Pivot") ($name+"_pivotMult_"+$lr+".input1Y");
+connectAttr -force ($name+"_pivotMult_"+$lr+".outputY") ($name+"_ballPivot_"+$lr+$pivotAxis);
+
+setAttr ($name+"_pivotMult_"+$lr+".input2Z") 18;
+connectAttr -f ($name+"_IKleg_Cntrl_"+$lr+".toe_Pivot") ($name+"_pivotMult_"+$lr+".input1Z");
+connectAttr -force ($name+"_pivotMult_"+$lr+".outputZ") ($name+"_toePivot_"+$lr+$pivotAxis);
+
+//for the toe roll
+createNode "multiplyDivide" -n ($name+"_rollMult_"+$lr);
+setAttr ($name+"_rollMult_"+$lr+".input2X") ($rollCntrl*18);
+connectAttr -f ($name+"_IKleg_Cntrl_"+$lr+".toe_Roll") ($name+"_rollMult_"+$lr+".input1X");
+if($pivotOption == 0) connectAttr -force ($name+"_rollMult_"+$lr+".outputX") ($name+"_toePivot_"+$lr+".rx"); //since it uses a group that's aligned to the world
+else connectAttr -force ($name+"_rollMult_"+$lr+".outputX") ($name+"_toePivot_"+$lr+$rollAxis);
+
+//grouping it all together
+parent ($name+"_GimbleCntrl_"+$lr) ($name+"_toePivot_"+$lr);
+makeIdentity -apply true -t 0 -r 1 -s 0 ($name+"_GimbleCntrl_"+$lr);
+
+parent ($name+"_toePivot_Parent_"+$lr) ($name+"_ballPivot_"+$lr);
+parent ($name+"_ballPivot_Parent_"+$lr) ($name+"_heelPivot_"+$lr);
+parent ($name+"_heel_Cntrl_"+$lr) ($name+"_GimbleCntrl_"+$lr);
+parent ($name+"_heelPivot_Parent_"+$lr) ($name+"_IKleg_Cntrl_"+$lr);
+
+//last minute gimble stuff, goes here because it has just been parented
+JTDlockAttrs(($name+"_GimbleCntrl_"+$lr), {1}, {0}, {1}, 0);
+JTDhideAttrs(($name+"_GimbleCntrl_"+$lr), {1}, {0}, {1}, 1);
+
+//do the reverse foot roll
+createNode "multiplyDivide" -n ($name+"_toeMult_"+$lr);
+setAttr ($name+"_toeMult_"+$lr+".input2X") ($rollCntrl*18);
+connectAttr -f ($name+"_IKleg_Cntrl_"+$lr+".ball_Roll") ($name+"_toeMult_"+$lr+".input1X");
+connectAttr -force ($name+"_toeMult_"+$lr+".outputX") ($name+"_"+$IKchain[1]+"_RollCnstr"+$offsetAxis);
+
+createNode "condition" -n ($name+"_footRoll_"+$lr);	
+connectAttr -force ($name+"_IKleg_Cntrl_"+$lr+".foot_Roll") ($name+"_footRoll_"+$lr+".firstTerm");
+setAttr ($name+"_footRoll_"+$lr+".secondTerm") 0;
+setAttr ($name+"_footRoll_"+$lr+".operation") 4;
+setAttr ($name+"_footRoll_"+$lr+".colorIfFalseG") 0;
+	
+setAttr ($name+"_toeMult_"+$lr+".input2Z") ($rollCntrl*18);
+connectAttr -f ($name+"_IKleg_Cntrl_"+$lr+".foot_Roll") ($name+"_toeMult_"+$lr+".input1Z");
+connectAttr -force ($name+"_toeMult_"+$lr+".outputY") ($name+"_footRoll_"+$lr+".colorIfFalseR");
+	
+setAttr ($name+"_toeMult_"+$lr+".input2Y") ($rollCntrl*18);
+connectAttr -f ($name+"_IKleg_Cntrl_"+$lr+".foot_Roll") ($name+"_toeMult_"+$lr+".input1Y");
+connectAttr -force ($name+"_toeMult_"+$lr+".outputZ") ($name+"_footRoll_"+$lr+".colorIfTrueG");
+
+connectAttr -force ($name+"_footRoll_"+$lr+".outColorR") ($name+"_ball_Cntrl_"+$lr+$rollAxis);
+connectAttr -force ($name+"_footRoll_"+$lr+".outColorG") ($name+"_heel_Cntrl_"+$lr+$rollAxis);
+
+$SWchain[size($SWchain)] = ($name+"_IK_Cntrl_Parent_"+$lr);
+$SWchain[size($SWchain)] = ($name+"_PV_Cntrl_Parent_"+$lr);
+$SWchain[size($SWchain)] = ($name+"_IKleg_Cntrl_Parent_"+$lr);
+$SWchain[size($SWchain)] = ($name+"_GimbleCntrl_"+$lr);
+
+return $SWchain;
+}
+
+global proc string[] JTDdupFootChain(string $start, string $postfix)
+{
+string $dupChain[] = `duplicate $start`; 
+string $path="";
+string $toReturn[];
+int $cnt=0;
+
+for($joints in $dupChain) 
+{
+	if($cnt==0) 
+	{
+		JTDlockAttrs($joints, {1}, {0}, {1}, 1);
+		JTDhideAttrs($joints, {1}, {0}, {1}, 1);
+		rename $joints ($start+"_"+$postfix);
+		$path += ($start+"_"+$postfix+"|");
+		$toReturn[$cnt] = ($start+"_"+$postfix);
+	}
+	else 
+	{
+		JTDlockAttrs(($path+$joints), {1}, {0}, {1}, 1);
+		JTDhideAttrs(($path+$joints), {1}, {0}, {1}, 1);
+		rename ($path+$joints) ($joints+"_"+$postfix);
+		$path += ($joints+"_"+$postfix+"|");
+		$toReturn[$cnt] = ($joints+"_"+$postfix);
+	}
+	$cnt++;
+	
+}
+
+
+
+
+return $toReturn;
+}

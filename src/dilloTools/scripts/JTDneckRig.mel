@@ -1,0 +1,362 @@
+global proc string JTDneckRig(string $name, string $startJoint, string $endJoint, float $scale, string $world, string $primitive)
+{
+string $tempJoint[];
+string $child[];
+string $lastJoint;
+string $handleNames[];
+string $toDelete[];
+string $aimAxis;
+string $aimCheck1, $aimCheck2, $upCheck1, $upCheck2;
+string $axis = "x";
+string $origName = $name;
+float $pos[];
+
+float $aim[] = {0,0,0}; //used to determine how the controls should be oriented
+float $cntrl = 1.0; //used to reverse an axis
+int $cnt =0;
+
+if( ($startJoint == "") || ($endJoint == "") ) return "";
+if($name == "") error "in JTDneckRig: Please specify a character name";
+
+if(! JTDisValidChain( {$startJoint, $endJoint} ) ) //check over the chain
+{
+	error -sl true "in JTDneckRig: The joints you've input are not in a valid sequence or have branches";
+	return "";
+}
+
+//iterate through the chain to make sure that the aim vectors are the same
+$child[0] = $startJoint;
+while($child[0] != $endJoint)
+{
+	$aimCheck1 = JTDaimAxis($child[0]);
+	$upCheck1 = JTDupAxis($child[0], {0,0,1});
+	
+	$child = `listRelatives -c $child[0]`;
+	
+	$aimCheck2 = JTDaimAxis($child[0]);
+	$upCheck2 = JTDupAxis($child[0], {0,0,1});
+	
+	if($aimCheck1 != "x") error "in JTDneckRig: the positive x axis is not the aim axis, for correct twisting please reorient";
+	//if($aimCheck1 != $aimCheck2) warning "in JTDneckRig: the neck joints do not have the same aim axis, please reorient";
+	//if($upCheck1 != $upCheck2) warning "in JTDneckRig: the neck joints do not have the same up axis, please reorient";
+	if(size($child) != 1) break;
+	if($child[0] == "") break;
+}
+
+//set the aim axis vector
+$aimAxis = JTDaimAxis($startJoint);
+
+if($aimCheck1 == "x") $aim[0] = 1;
+else if($aimCheck1 == "-x") $aim[0] = -1;
+else if($aimCheck1 == "y") $aim[1] = 1;
+else if($aimCheck1 == "-y") $aim[1] = -1;
+else if($aimCheck1 == "z") $aim[2] = 1;
+else if($aimCheck1 == "-z") $aim[2] = -1;
+
+$name = ($name+"_neck");
+
+//first duplicate the joints so they can be connected to the originals
+string $newChain[] = JTDprepareChain( {$startJoint, $endJoint}, "rig_", $origName);
+
+//we're actually going to be rigging the duplicate and then connecting it to the original later
+$startJoint = ("rig_"+$startJoint);
+$endJoint = ("rig_"+$endJoint);
+
+//setup the xtras group
+group -em -n ($name+"_"+$startJoint+"_RigXtras");
+parent $startJoint ($name+"_"+$startJoint+"_RigXtras");
+
+string $startChild[] = `listRelatives -c -typ joint $startJoint`;
+if($startChild[0] == $endJoint)  //there is only a start and End joint
+{
+	warning -sl true "in JTDneckRig: For best results, there should be at least one joint between the start and end of the neck";
+	
+	//create the neck base control curve
+	$pos = `xform -q -ws -rp $startJoint`;
+	circle -c $pos[0] $pos[1] $pos[2] -nr 0 1 0 -sw 360 -r ($scale*2) -d 3 -ut 0 -tol 0.01 -s 6 -ch 0 -n ($name+"_FK_Cntrl");
+	xform -cp ($name+"_FK_Cntrl");
+	
+	//create the neck end control curve
+	$pos = {0,0,0};
+	circle -c $pos[0] $pos[1] $pos[2] -nr 0 1 0 -sw 360 -r ($scale*4) -d 3 -ut 0 -tol 0.01 -s 6 -ch 0 -n ($startJoint+"_End");
+	xform -cp ($startJoint+"_End");
+
+	string $endEffector[] = `ikHandle -n ($name+"_IK_Cntrl") -shf false -sj $startJoint -ee $endJoint`;
+	parent -r -s `listRelatives -s ($startJoint+"_End")` ($name+"_IK_Cntrl");
+	makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_IK_Cntrl");
+	setAttr ($name+"_IK_Cntrl.stickiness") 1;
+	rename $endEffector[1] ($name+"_EE");
+	delete ($startJoint+"_End");
+	
+	//orient the head to the neck control
+	orientConstraint -mo -weight 1 -n ($startJoint+"_OrCnstr") ($name+"_IK_Cntrl") $endJoint;
+	
+	//make sure the head moves - and stretches - with the neck control
+	addAttr -ln autoStretch -at bool -min 0 -max 1 ($name+"_IK_Cntrl");
+	setAttr ($name+"_IK_Cntrl.autoStretch") on;
+	setAttr -k true ($name+"_IK_Cntrl.autoStretch");
+	
+	JTDFKstretch($startJoint, $axis, "none");
+	
+	float $startPos[] = `xform -q -ws -rp $startJoint`;
+	float $endPos[] = `xform -q -ws -rp $endJoint`;
+	
+	//make a curve so we can sample the arc length
+	curve -d 3 -p $startPos[0] $startPos[1] $startPos[2] -p $startPos[0] $startPos[1] $startPos[2] -p $endPos[0] $endPos[1] $endPos[2] -p $endPos[0] $endPos[1] $endPos[2] -k 0 -k 0 -k 0 -k 1 -k 1 -k 1 -n ($name+"_IK_Cntrl_StretchCurve");
+	
+	setAttr ($name+"_IK_Cntrl_StretchCurve.v") 0;
+	setAttr ($name+"_IK_Cntrl_StretchCurve.inheritsTransform") 0;
+	setAttr ($name+"_EE.v") 0;
+	
+	//cluster the control curve
+	string $cv[] = `cluster -rel ($name+"_IK_Cntrl_StretchCurve.cv[0]") ($name+"_IK_Cntrl_StretchCurve.cv[1]")`;
+	rename $cv[1] ($name+"_"+$startJoint+"_C1");
+		
+	$cv = `cluster -rel ($name+"_IK_Cntrl_StretchCurve.cv[2]") ($name+"_IK_Cntrl_StretchCurve.cv[3]")`;
+	rename $cv[1] ($name+"_"+$startJoint+"_C2");
+			
+	pointConstraint -weight 1 -n ($startJoint+"_stretchPtCnstr") $startJoint ($name+"_"+$startJoint+"_C1");
+	pointConstraint -weight 1 -n ($endJoint+"_stretchPtCnstr") ($name+"_IK_Cntrl") ($name+"_"+$startJoint+"_C2");
+
+	createNode curveInfo -n ($startJoint+"_Info");
+	connectAttr ($name+"_IK_Cntrl_StretchCurve.local") ($startJoint+"_Info.inputCurve");
+	
+	createNode plusMinusAverage -n ($startJoint+"_IKstretchCompare");
+	setAttr ($startJoint+"_IKstretchCompare.operation") 2; //subtract
+	connectAttr ($startJoint+"_Info.arcLength") ($startJoint+"_IKstretchCompare.input1D[0]");
+	setAttr ($startJoint+"_IKstretchCompare.input1D[1]") `getAttr ($startJoint+"_Info.arcLength")`;
+	
+	connectAttr ($startJoint+"_IKstretchCompare.output1D") ($startJoint+".stretch");
+	
+	parent ($name+"_"+$startJoint+"_C1") ($name+"_"+$startJoint+"_RigXtras");
+	parent ($name+"_"+$startJoint+"_C2") ($name+"_"+$startJoint+"_RigXtras");
+	parent ($name+"_IK_Cntrl_StretchCurve") ($name+"_"+$startJoint+"_RigXtras");
+	
+	JTDlockAttrs(($name+"_FK_Cntrl"), {1}, {0}, {1}, 1);
+	JTDhideAttrs(($name+"_FK_Cntrl"), {1}, {0}, {1}, 1);
+	
+	JTDlockAttrs(($name+"_IK_Cntrl"), {0}, {0}, {1}, 1);
+	JTDhideAttrs(($name+"_IK_Cntrl"), {0}, {0}, {1}, 1);
+	setAttr -l true -k false ($name+"_IK_Cntrl.pvx");
+	setAttr -l true -k false ($name+"_IK_Cntrl.pvy");
+	setAttr -l true -k false ($name+"_IK_Cntrl.pvz");
+	setAttr -l true -k false ($name+"_IK_Cntrl.twi");
+	setAttr -l true -k false ($name+"_IK_Cntrl.off");
+	setAttr -l true -k false ($name+"_IK_Cntrl.rol");
+	setAttr -l true -k false ($name+"_IK_Cntrl.ikb");
+}
+else
+{
+	//create the neck base control curve
+	$pos = `xform -q -ws -rp $startJoint`;
+	circle -c $pos[0] $pos[1] $pos[2] -nr 0 1 0 -sw 360 -r ($scale*2) -d 3 -ut 0 -tol 0.01 -s 6 -ch 0 -n ($name+"_FK_Cntrl");
+	xform -cp ($name+"_FK_Cntrl");
+	
+	//create the neck end control curve
+	$pos = `xform -q -ws -rp $endJoint`;
+	circle -c $pos[0] $pos[1] $pos[2] -nr 0 1 0 -sw 360 -r ($scale*4) -d 3 -ut 0 -tol 0.01 -s 6 -ch 0 -n ($name+"_IK_Cntrl");
+	xform -cp ($name+"_IK_Cntrl");
+
+	//disconnect the neck hierarchy
+	string $disconnected = JTDdisconnectJoint($startJoint);
+	
+	string $endChild[] = `listRelatives -c -typ joint $endJoint`;
+	if($endChild[0] != "") 
+	{
+		$lastJoint = JTDdisconnectJoint($endJoint);
+		$tempJoint = {$startJoint};
+	}
+	else $lastJoint = $endJoint;
+
+	//create the IK spline handles
+	$handleNames = `ikHandle -sol ikSplineSolver -pcv false -ns 2 -n ($startJoint+"_splineIK") -sj $startJoint -ee $lastJoint`;
+	rename $handleNames[1] ($startJoint+"_EE");
+	rename $handleNames[2] ($startJoint+"_IKcurve");
+	setAttr ($startJoint+"_splineIK.v") 0;
+	setAttr ($startJoint+"_IKcurve.v") 0;
+	setAttr ($startJoint+"_IKcurve.inheritsTransform") 0;
+	setAttr ($startJoint+"_EE.v") 0;
+
+	parent ($startJoint+"_IKcurve") ($name+"_"+$startJoint+"_RigXtras");
+	parent ($startJoint+"_splineIK") ($name+"_"+$startJoint+"_RigXtras");
+
+	//setup stretchy spline IK
+	JTDstretchSpline($name, ($startJoint+"_IKcurve"), $startJoint, $endJoint, $aimAxis, $world);
+	
+	//cluster the control curve
+	string $cv[] = `cluster ($startJoint+"_IKcurve.cv[0]") ($startJoint+"_IKcurve.cv[1]")`;
+	rename $cv[1] ($startJoint+"_C1");
+	setAttr ($startJoint+"_C1.v") 0;
+	
+	$cv = `cluster ($startJoint+"_IKcurve.cv[2]")`;
+	rename $cv[1] ($startJoint+"_C2");
+	setAttr ($startJoint+"_C2.v") 0;
+	
+	$cv = `cluster ($startJoint+"_IKcurve.cv[3]") ($startJoint+"_IKcurve.cv[4]")`;
+	rename $cv[1] ($startJoint+"_C3");
+	setAttr ($startJoint+"_C3.v") 0;
+
+	//put the clusters under the control curve
+	//pointConstraint -mo -weight 1 -n ($startJoint+"_PtCnstr") $disconnected ($startJoint+"_C1");
+	parent ($startJoint+"_C3") ($name+"_IK_Cntrl");
+
+
+	//constrain the middle cluster to the start and end controls
+	//pointConstraint -mo -weight 1 -n ($startJoint+"_C2_PntCnstr") $disconnected ($startJoint+"_C2");
+	parentConstraint -mo -weight 1 -n ($startJoint+"_C2_PrntCnstr") ($name+"_IK_Cntrl") ($startJoint+"_C2");
+	
+	//break the connection of the last joint to the stretch attribute
+	//$toDelete = `listConnections -p true -type multiplyDivide ($endJoint+".t"+$axis)`;
+	//JTDlockAttrs($endJoint, {1}, {0}, {0}, 0);
+	//if($toDelete[0] != "") disconnectAttr $toDelete[0] ($endJoint+".t"+$axis);
+
+	//constrain the shoulder joint to the shoulder control
+	//parentConstraint -mo -weight 1 -n ($endJoint+"_PrntCnstr") ($name+"_IK_Cntrl") $endJoint;
+	
+	//make sure the last joint will get attached
+	string $neckConnection[] = `listConnections ($endJoint+".connectTo")`;
+	addAttr -ln connectTo -at "message" ($name+"_IK_Cntrl");
+	connectAttr -f ($neckConnection[0]+".message") ($name+"_IK_Cntrl.connectTo");
+	deleteAttr ($endJoint+".connectTo");
+	
+	addAttr -ln charName -dt "string" ($name+"_IK_Cntrl");
+	setAttr -type "string" ($name+"_IK_Cntrl.charName") $origName;
+	setAttr -l true ($name+"_IK_Cntrl.charName");
+	
+	//setup the advanced twist
+	setAttr ($startJoint+"_splineIK.dTwistControlEnable") 1;
+	setAttr ($startJoint+"_splineIK.dWorldUpAxis") 3;
+	setAttr ($startJoint+"_splineIK.dWorldUpType") 4;
+	setAttr ($startJoint+"_splineIK.dWorldUpVectorY") 0;
+	setAttr ($startJoint+"_splineIK.dWorldUpVectorEndY") 0;
+	setAttr ($startJoint+"_splineIK.dWorldUpVectorZ") 1;
+	setAttr ($startJoint+"_splineIK.dWorldUpVectorEndZ") 1;
+	connectAttr ($name+"_FK_Cntrl.worldMatrix[0]") ($startJoint+"_splineIK.dWorldUpMatrix");
+	connectAttr ($name+"_IK_Cntrl.worldMatrix[0]") ($startJoint+"_splineIK.dWorldUpMatrixEnd");
+	
+	//constrain the clusters to the neck control;
+	if($startChild[0] != $endJoint)
+	{
+		pointConstraint -mo -weight 1 -n ($startJoint+"_C1_PtCnstr") ($name+"_FK_Cntrl") ($startJoint+"_C1");
+		parentConstraint -mo -weight 1 -n ($startJoint+"_C2_PrntCnstr") ($name+"_FK_Cntrl") ($startJoint+"_C2");
+	}
+	
+	//group
+	parent ($startJoint+"_C1") ($name+"_"+$startJoint+"_RigXtras");
+	parent ($startJoint+"_C2") ($name+"_"+$startJoint+"_RigXtras");
+}
+
+if( ($world != "") && objExists($world) )
+{
+	parent ($name+"_IK_Cntrl") $world;
+	parent ($name+"_"+$startJoint+"_RigXtras") $world;
+}
+	
+//create a neck primitive node with info about each control
+string $nodes[] = `ls -typ script`;
+for($node in $nodes)
+{
+	if( startsWith($node,($name+"_Prim_")) ) $cnt++;
+}
+createNode script -n ($name+"_Prim_"+$cnt);
+
+addAttr -ln name -dt "string";
+setAttr -type "string" ($name+"_Prim_"+$cnt+".name") $name;
+setAttr -l true ($name+"_Prim_"+$cnt+".name");
+
+addAttr -ln start -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($startJoint+".message") ($name+"_Prim_"+$cnt+".start");
+
+addAttr -ln end -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($endJoint+".message") ($name+"_Prim_"+$cnt+".end");
+
+addAttr -ln neckFKCntrl -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($name+"_FK_Cntrl.message") ($name+"_Prim_"+$cnt+".neckFKCntrl");
+
+addAttr -ln neckIKCntrl -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($name+"_IK_Cntrl.message") ($name+"_Prim_"+$cnt+".neckIKCntrl");
+
+string $parents[];
+string $toAttach[];
+string $target[] = `listConnections ($name+"_Prim_"+$cnt+".neckIKCntrl")`;
+
+//if a primitive was supplied, attach the neck to it
+if( ($primitive != "") && (objExists($primitive)) )
+{
+$parents[0] = ($name+"_FK_Cntrl");
+
+if( objExists(($primitive+".shoulderCntrl")) )
+{
+	$toAttach = `listConnections ($primitive+".shoulderCntrl")`;
+	$parents[1] = $toAttach[0];
+	$toAttach = `listConnections ($primitive+".root")`;
+	$parents[2] = $toAttach[0];
+	
+	//group the rigXtras under the shoulder Control
+	parent ($name+"_"+$startJoint+"_RigXtras") $parents[1];
+	
+	//put the neckCntrl under the shoulder Control
+	parent ($name+"_FK_Cntrl") $parents[1];
+}
+
+if($world != "") $parents[3] = $world;
+else warning -sl true "in JTDneckSetup: you did not provide a world node, dynamic parenting will not work correctly";
+
+JTDdynParent($target[0], $parents, 3, ""); //parent and follow
+
+}
+else
+{
+	$parents[0] = ($name+"_FK_Cntrl");
+	$parents[1] = ($name+"_"+$startJoint+"_RigXtras");
+	JTDdynParent($target[0], $parents, 3, ""); //parent and follow
+}
+
+
+//locking and hiding
+if($startChild[0] == $endJoint)
+{
+	JTDlockAttrs(($name+"_"+$startJoint+"_C1"), {1}, {1}, {1}, 1);
+	JTDhideAttrs(($name+"_"+$startJoint+"_C1"), {1}, {1}, {1}, 1);
+	
+	JTDlockAttrs(($name+"_"+$startJoint+"_C2"), {1}, {1}, {1}, 1);
+	JTDhideAttrs(($name+"_"+$startJoint+"_C2"), {1}, {1}, {1}, 1);
+	
+	JTDlockAttrs(($name+"_IK_Cntrl_StretchCurve"), {1}, {1}, {1}, 1);
+	JTDhideAttrs(($name+"_IK_Cntrl_StretchCurve"), {1}, {1}, {1}, 1);
+	
+	JTDlockAttrs(($name+"_EE"), {1}, {1}, {1}, 1);
+	JTDhideAttrs(($name+"_EE"), {1}, {1}, {1}, 1);
+}
+else
+{
+	JTDlockAttrs(($name+"_IK_Cntrl"), {0}, {0}, {1}, 1);
+	JTDhideAttrs(($name+"_IK_Cntrl"), {0}, {0}, {1}, 1);
+	
+	JTDlockAttrs(($name+"_FK_Cntrl"), {1}, {0}, {1}, 1);
+	JTDhideAttrs(($name+"_FK_Cntrl"), {1}, {0}, {1}, 1);
+	
+	JTDlockAttrs(($startJoint+"_splineIK"), {0}, {0}, {1}, 1);
+	JTDhideAttrs(($startJoint+"_splineIK"), {0}, {0}, {1}, 1);
+
+	JTDlockAttrs(($startJoint+"_C1"), {1}, {1}, {1}, 1);
+	JTDhideAttrs(($startJoint+"_C1"), {1}, {1}, {1}, 1);
+	
+	JTDlockAttrs(($startJoint+"_C2"), {1}, {1}, {1}, 1);
+	JTDhideAttrs(($startJoint+"_C2"), {1}, {1}, {1}, 1);
+	
+	JTDlockAttrs(($startJoint+"_C3"), {1}, {1}, {1}, 1);
+	JTDhideAttrs(($startJoint+"_C3"), {1}, {1}, {1}, 1);
+	
+	JTDlockAttrs(($startJoint+"_IKcurve"), {1}, {1}, {1}, 1);
+	JTDhideAttrs(($startJoint+"_IKcurve"), {1}, {1}, {1}, 1);
+	
+	JTDlockAttrs(($startJoint+"_EE"), {1}, {1}, {1}, 1);
+	JTDhideAttrs(($startJoint+"_EE"), {1}, {1}, {1}, 1);
+}
+
+
+JTDconnectTo($origName);
+return ($name+"_Prim_"+$cnt);
+}
+

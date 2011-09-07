@@ -1,0 +1,2479 @@
+
+global proc string JTDarmRig(string $name, string $clavicle, string $shoulder, string $elbow, string $wrist, int $numRollJoints, int $leftRight, float $scale, string $world, string $primitive)
+{
+int $aimVector[] = {0,0,0};
+string $child[];
+string $newChain[];
+string $parents[];
+string $toAttach[];
+string $target[];
+string $toSkip = "x";
+string $aimAxis;
+string $aimCheck1, $aimCheck2, $shoulderCheck1, $shoulderCheck2;
+string $lr = "l";
+string $origName = $name;
+int $cnt = 0;
+
+if( ($shoulder == "") || ($elbow == "") || ($wrist == "") ) return "";
+if($name == "") error "in JTDarmRig: Please specify a character name";
+
+//warn if the world node does not have frozen transformations
+if((objExists($world)) && ($world != "")) 
+{
+float $check = `getAttr ($world+".tx")`;
+$check += `getAttr ($world+".ty")`; //should add 0
+$check += `getAttr ($world+".tz")`;
+$check += `getAttr ($world+".rx")`;
+$check += `getAttr ($world+".ry")`;
+$check += `getAttr ($world+".rz")`;
+$check += `getAttr ($world+".sx")`; //should add 1
+$check += `getAttr ($world+".sy")`; //should add 1
+$check += `getAttr ($world+".sz")`; //should add 1
+if($check != 3) error "Please freeze transformations on the world node";
+}
+
+if(! JTDisValidChain( {$shoulder, $elbow, $wrist} ) ) //check over the chain
+{
+	error -sl true "in JTDarmRig: The joints you've input are not in a valid sequence or have branches";
+	return "";
+}
+
+//iterate through the chain to make sure that the aim vectors are the same
+$child[0] = $shoulder;
+while($child[0] != $wrist)
+{
+	$aimCheck1 = JTDaimAxis($child[0]);
+	$shoulderCheck1 = JTDupAxis($child[0], {(float)0,(float)1,(float)0});
+	
+	$child = `listRelatives -c $child[0]`;
+	
+	$aimCheck2 = JTDaimAxis($child[0]);
+	$shoulderCheck2 = JTDupAxis($child[0], {(float)0,(float)1,(float)0});
+	
+	if($aimCheck1 != $aimCheck2) warning "in JTDarmRig: the arm joints do not have the same aim axis, please reorient";
+	if($shoulderCheck1 != $shoulderCheck2) warning "in JTDarmRig: the arm joints do not have the same up axis, please reorient";
+	if(size($child) != 1) break;
+	if($child[0] == "") break;
+}
+
+//set the aim axis vector
+$aimAxis = JTDaimAxis($shoulder);
+
+if($aimCheck1 == "x") $aimVector[0] = 1;
+else if($aimCheck1 == "-x") $aimVector[0] = -1;
+else if($aimCheck1 == "y") $aimVector[1] = 1;
+else if($aimCheck1 == "-y") $aimVector[1] = -1;
+else if($aimCheck1 == "z") $aimVector[2] = 1;
+else if($aimCheck1 == "-z") $aimVector[2] = -1;
+
+$toSkip = endString($aimCheck1, 1); //so it doesnt return a negative value
+
+if($leftRight == 1) $lr = "l";
+if($leftRight == 2) $lr = "r";
+
+//see if there are already some roll joints
+int $foundUpRollJoints = JTDcountRollJoints($shoulder, $elbow);
+int $foundLowRollJoints = JTDcountRollJoints($elbow, $wrist);
+
+if($foundUpRollJoints != $foundLowRollJoints) //I dont support an unequal number of roll joints
+{
+	error -sl true "in JTDarmRig: There must be the same number of roll joints between the upper arm and the lower arm";
+	return "";
+}
+
+if($foundUpRollJoints != 0) $numRollJoints = $foundUpRollJoints; //at this point, the number of up roll joints should equal the number of low roll joints
+
+//modify the name 
+$name = ($name+"_arm");
+
+//create an arm primitive node with info about each control
+string $nodes[] = `ls -typ script`;
+for($node in $nodes)
+{
+	if( startsWith($node,($name+"_Prim_")) ) $cnt++;
+}
+createNode script -n ($name+"_Prim_"+$cnt);
+
+addAttr -ln name -dt "string" ($name+"_Prim_"+$cnt);
+setAttr -type "string" ($name+"_Prim_"+$cnt+".name") $name;
+setAttr -l true ($name+"_Prim_"+$cnt+".name");
+
+addAttr -ln aimAxis -dt "string" ($name+"_Prim_"+$cnt);
+setAttr -type "string" ($name+"_Prim_"+$cnt+".aimAxis") $aimAxis;
+setAttr -l true ($name+"_Prim_"+$cnt+".aimAxis");
+
+addAttr -ln lr -dt "string" ($name+"_Prim_"+$cnt);
+setAttr -type "string" ($name+"_Prim_"+$cnt+".lr") $lr;
+setAttr -l true ($name+"_Prim_"+$cnt+".lr");
+
+addAttr -ln numRoll -dt "string" ($name+"_Prim_"+$cnt);
+setAttr -type "string" ($name+"_Prim_"+$cnt+".numRoll") $numRollJoints;
+setAttr -l true ($name+"_Prim_"+$cnt+".numRoll");
+
+addAttr -ln up -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($shoulder+".message") ($name+"_Prim_"+$cnt+".up");
+
+addAttr -ln mid -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($elbow+".message") ($name+"_Prim_"+$cnt+".mid");
+
+addAttr -ln low -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($wrist+".message") ($name+"_Prim_"+$cnt+".low");
+
+//insert roll joints to the original chain if they're not already there
+if($foundUpRollJoints == 0)
+{
+	JTDinsertRollJoints($shoulder, $elbow, $numRollJoints);
+	JTDinsertRollJoints($elbow, $wrist, $numRollJoints);
+}
+
+//first duplicate the joints so they can be connected to the originals
+if( ($clavicle != "") && (objExists($clavicle)) )
+{
+	$newChain = JTDprepareChain( {$clavicle, $shoulder, $elbow, $wrist}, "rig_", $origName);
+	$clavicle = ("rig_"+$clavicle);
+}
+else 
+{
+	$newChain = JTDprepareChain( {$shoulder, $elbow, $wrist}, "rig_", $origName);
+}
+
+//we're actually going to be rigging the duplicate and then connecting it to the original later
+$shoulder = ("rig_"+$shoulder);
+$elbow = ("rig_"+$elbow);
+$wrist = ("rig_"+$wrist);
+
+//setup the traditional three chain IK FK controls
+string $SWchain[] = JTDswitchingSetup($shoulder, $elbow, $wrist, $aimAxis, $lr, $name, $scale);
+
+//rig the upper arm/leg first
+string $bendyParent1 = JTDsplineSetup($shoulder, $elbow, $SWchain[0], $SWchain[1], $aimAxis, $numRollJoints, $name, $scale, $world);
+
+//rig the lower arm/leg
+string $bendyParent2 = JTDsplineSetup($elbow, $wrist, $SWchain[1], $SWchain[2], $aimAxis, $numRollJoints, $name, $scale, $world);
+
+//add autoBending
+JTDautoBend($SWchain[1], $SWchain[2], $bendyParent1, $bendyParent2, $SWchain[6], $lr);
+
+//make sure the clavicle is set up if it was provided
+if( ($clavicle != "") && (objExists($clavicle)) )
+{
+//place the control object
+float $pos[] = `xform -q -ws -rp $clavicle`;
+JTDgenerateDoublePin(($clavicle+"_FK_Cntrl"), $scale);
+rotate -a -ws 90 0 0 ($clavicle+"_FK_Cntrl");
+makeIdentity -apply true -t 1 -r 1 -s 1 ($clavicle+"_FK_Cntrl");
+
+group -em -n ($clavicle+"_FK_Cntrl_Parent"); //create empty group for the clav control
+parent ($clavicle+"_FK_Cntrl") ($clavicle+"_FK_Cntrl_Parent"); //put the clav control under the group
+
+move -a -ws -rpr $pos[0] $pos[1] $pos[2] ($clavicle+"_FK_Cntrl_Parent"); //move it to the clavicle joint
+parent ($clavicle+"_FK_Cntrl_Parent") $clavicle; //parent it under the joint
+setAttr ($clavicle+"_FK_Cntrl_Parent.r") 0 0 0; //zero the rotations so it aligns to the joint
+parent -w ($clavicle+"_FK_Cntrl_Parent"); //unparent it
+setAttr ($clavicle+"_FK_Cntrl_Parent.ry") 0; //zero out the y rotations so it points straight
+
+//the clavicle should have been disconnected when the arm was rigged, if it has a child, that's what we need
+string $clavChild[] = `listRelatives -c -typ joint $clavicle`;
+
+if( $clavChild[0] == ($clavicle+"_End_0") )
+{
+	//place an IK handle from the clavicle to the clav end
+	ikHandle -s off -sj $clavicle -ee $clavChild[0] -n ($clavicle+"_IK_Cntrl");
+	
+	//turn the snap enable off or it will cycle !!??
+	setAttr ($clavicle+"_IK_Cntrl.snapEnable") 0;
+	
+	//put the ikhandle under the FK control 
+	parent ($clavicle+"_IK_Cntrl") ($clavicle+"_FK_Cntrl"); 
+		
+	//generate the IK clav control
+	JTDgeneratePlusPin(($clavicle+"_Tmp_Cntrl"), $scale);
+	makeIdentity -apply true -t 1 -r 1 -s 1 ($clavicle+"_Tmp_Cntrl"); //have to freexe or the scale will go to 1 when we shape parent to the IK handle
+	
+	parent -r -s ($clavicle+"_Tmp_CntrlShape") ($clavicle+"_IK_Cntrl");
+	makeIdentity -apply true -t 1 -r 1 -s 1 ($clavicle+"_IK_Cntrl");
+	delete ($clavicle+"_Tmp_Cntrl");
+	
+	//setup the stretch attribute
+	JTDFKstretch($clavicle, $aimAxis, $lr);
+	
+	//attach the arm to the clavicle
+	pointConstraint -weight 1 -n ($clavicle+"_clav_PtConstr") $clavChild[0] $SWchain[3];
+	
+	//measure the distance for stretchy clavicles
+	group -em -n ($clavicle+"_aimGrp"); //create empty group
+	$constraint = `pointConstraint -weight 1 -n ($clavicle+"_aimGrpConstr") $clavicle ($clavicle+"_aimGrp")`; //constrain it to the start joint
+	group -em -p ($clavicle+"_aimGrp") -n ($clavicle+"_grpReader"); //create empty group under the previous joint
+	$constraint = `aimConstraint -weight 1 -aimVector 1 0 0 -upVector 0 1 0 -worldUpType "vector" -worldUpVector 0 1 0 -n ($clavicle+"_stretchDistAimConstr") ($clavicle+"_IK_Cntrl") ($clavicle+"_aimGrp")`; //aiming along the x axis
+	$constraint = `pointConstraint -weight 1 -n ($clavicle+"_stretchDistPtConstr") ($clavicle+"_IK_Cntrl") ($clavicle+"_grpReader")`;
+	
+	//takes the adjusted rest length and subtracts it from the measured distance between start and end joints
+	createNode plusMinusAverage -n ($clavicle+"_stretchCompare");
+	setAttr ($clavicle+"_stretchCompare.operation") 2;
+	connectAttr ($clavicle+"_grpReader.tx") ($clavicle+"_stretchCompare.input1D[0]");
+	setAttr ($clavicle+"_stretchCompare.input1D[1]") `getAttr ($clavicle+"_grpReader.tx")`;
+	connectAttr ($clavicle+"_stretchCompare.output1D") ($clavicle+".stretch");
+	
+}
+
+parent ($clavicle+"_aimGrp")($name+"_RigXtras_"+$lr);
+parent ($clavicle+"_FK_Cntrl_Parent") ($name+"_RigXtras_"+$lr);
+parent $clavicle ($name+"_RigXtras_"+$lr);
+
+JTDlockAttrs(($clavicle+"_FK_Cntrl"), {1}, {0}, {1}, 1);
+JTDhideAttrs(($clavicle+"_FK_Cntrl"), {1}, {0}, {1}, 1);
+
+JTDlockAttrs(($clavicle+"_IK_Cntrl"), {0}, {1}, {1}, 0);
+JTDhideAttrs(($clavicle+"_IK_Cntrl"), {0}, {1}, {1}, 0);
+
+setAttr -lock true -keyable false ($clavicle+"_IK_Cntrl.pvx");
+setAttr -lock true -keyable false ($clavicle+"_IK_Cntrl.pvy");
+setAttr -lock true -keyable false ($clavicle+"_IK_Cntrl.pvz");
+setAttr -lock true -keyable false ($clavicle+"_IK_Cntrl.off");
+setAttr -lock true -keyable false ($clavicle+"_IK_Cntrl.rol");
+setAttr -lock true -keyable false ($clavicle+"_IK_Cntrl.twi");
+setAttr -lock true -keyable false ($clavicle+"_IK_Cntrl.ikb");
+}
+
+//make sure the last joint is attached
+string $wristConnection[] = `listConnections ($wrist+".connectTo")`;
+addAttr -ln connectTo -at "message" $SWchain[2];
+connectAttr -f ($wristConnection[0]+".message") ($SWchain[2]+".connectTo");
+deleteAttr ($wrist+".connectTo");
+
+//need a few extra steps for the upper arm/leg adv twist
+JTDgeneratePin(($shoulder+"_twist"), $scale);
+group -em -n ($shoulder+"_twist_Parent");
+parent ($shoulder+"_twist") ($shoulder+"_twist_Parent");
+
+addAttr -ln child -at "message" ($shoulder+"_twist_Parent");
+connectAttr -f ($shoulder+"_twist.message") ($shoulder+"_twist_Parent.child");
+
+//align the pin
+float $pos[] = `xform -q -ws -rp $shoulder`;
+move -a -ws -rpr $pos[0] $pos[1] $pos[2] ($shoulder+"_twist_Parent");
+makeIdentity -apply true -t 1 -r 1 -s 1 ($shoulder+"_twist_Parent");
+parent ($shoulder+"_twist_Parent") $SWchain[0];
+makeIdentity -apply true -t 1 -r 1 -s 1 ($shoulder+"_twist_Parent");
+parent -w ($shoulder+"_twist_Parent");
+connectAttr -f ($shoulder+"_twist.worldMatrix[0]") ($shoulder+"_splineIK.dWorldUpMatrix");
+orientConstraint -weight 1 -skip $toSkip -n ($shoulder+"_twist_OrConstr") $SWchain[0] ($shoulder+"_twist_Parent");  
+
+parent ($shoulder+"_twist_Parent") $SWchain[3]; //this variable is filled at the end of the switching setup proc
+
+addAttr -ln twist -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($shoulder+"_twist.message") ($name+"_Prim_"+$cnt+".twist");
+
+//also change the up Vector depending on if its a L or R since the controls were mirrored and have different Y ups
+if($lr == "r")
+{
+float $WUV[] = getAttr ($shoulder+"_splineIK.dWorldUpVector");
+setAttr ($shoulder+"_splineIK.dWorldUpVector") ($WUV[0]*-1) ($WUV[1]*-1) ($WUV[2]*-1);
+$WUV = getAttr ($shoulder+"_splineIK.dWorldUpVectorEnd");
+setAttr ($shoulder+"_splineIK.dWorldUpVectorEnd") ($WUV[0]*-1) ($WUV[1]*-1) ($WUV[2]*-1);
+
+float $WUV[] = getAttr ($elbow+"_splineIK.dWorldUpVector");
+setAttr ($elbow+"_splineIK.dWorldUpVector") ($WUV[0]*-1) ($WUV[1]*-1) ($WUV[2]*-1);
+$WUV = getAttr ($elbow+"_splineIK.dWorldUpVectorEnd");
+setAttr ($elbow+"_splineIK.dWorldUpVectorEnd") ($WUV[0]*-1) ($WUV[1]*-1) ($WUV[2]*-1);
+}
+
+//inverse the aim vector for locking
+$aimVector[0] = JTDreverse($aimVector[0]);
+$aimVector[1] = JTDreverse($aimVector[1]);
+$aimVector[2] = JTDreverse($aimVector[2]);
+
+//lock and hide the twist control and its parent
+JTDlockAttrs(($shoulder+"_twist"), {1}, $aimVector, {1}, 0);
+JTDhideAttrs(($shoulder+"_twist"), {1}, $aimVector, {1}, 1);
+JTDlockAttrs(($shoulder+"_twist_Parent"), {1}, {1}, {1}, 0);
+JTDhideAttrs(($shoulder+"_twist_Parent"), {1}, {1}, {1}, 1);
+
+//add visibility switches for the twist handles and the bend handles
+addAttr -ln vizToggles -at bool $SWchain[2];
+setAttr -k true -l true ($SWchain[2]+".vizToggles");
+
+addAttr -ln bendHandles -at bool $SWchain[2];
+setAttr -k true ($SWchain[2]+".bendHandles");
+connectAttr ($SWchain[2]+".bendHandles") ($bendyParent1+".v");
+connectAttr ($SWchain[2]+".bendHandles") ($bendyParent2+".v");
+
+addAttr -ln twistFix -at bool $SWchain[2];
+setAttr -k true ($SWchain[2]+".twistFix");
+connectAttr ($SWchain[2]+".twistFix") ($shoulder+"_twist_Parent.v");
+
+//add visibility switches for the gimble control
+string $IKcntrl[] = `listConnections ($SWchain[4]+".child")`;
+
+addAttr -ln viz -at bool $IKcntrl[0];
+setAttr -l true -k true ($IKcntrl[0]+".viz");
+
+addAttr -ln gimbleHelper -at double -min 0 -max 1 -dv 0 $IKcntrl[0]; //IK arm control
+setAttr -l false -k true ($IKcntrl[0]+".gimbleHelper");
+connectAttr ($IKcntrl[0]+".gimbleHelper") ($SWchain[7]+".v");
+
+//add the duplicated joints to the rig Xtras
+parent $shoulder ($name+"_RigXtras_"+$lr);
+parent $elbow ($name+"_RigXtras_"+$lr);
+
+if($world != "") 
+{
+	//if(objExists(($name+"_RigXtras_"+$lr)) parent ($name+"_RigXtras_"+$lr) $world;
+	parent $SWchain[4] $world;
+	parent $SWchain[5] $world;
+}
+
+//if a spine primitive was supplied, attach the arm to it with dynamic parenting
+if($primitive != "")
+{
+$target = `listConnections ($name+"_Prim_"+$cnt+".IKcntrl")`;
+if( objExists(($primitive+".shoulderCntrl")) ) 
+{
+	$toAttach = `listConnections ($primitive+".shoulderCntrl")`;
+	//parentConstraint -mo -weight 1 -skipRotate x -skipRotate y -skipRotate z $toAttach[0] $SWchain[3]; 
+	parent ($name+"_RigXtras_"+$lr) $toAttach[0];
+}
+
+$parents[0] = $toAttach[0];
+if( objExists(($primitive+".hipsCntrl")) ) $toAttach = `listConnections ($primitive+".hipsCntrl")`;
+$parents[1] = $toAttach[0];
+if($world != "") $parents[2] = $world;
+else warning -sl true "in JTDarmSetup: you did not provide a world node, dynamic parenting will not work correctly";
+JTDdynParent($target[0], $parents, 1, ""); //parent
+if(objExists( ($target[0]+".Parent") )) catchQuiet(`setAttr ($target[0]+".Parent") 1`);
+
+clear $parents;
+if( objExists(($primitive+".shoulderCntrl")) ) $toAttach = `listConnections ($primitive+".shoulderCntrl")`;
+$parents[0] = $toAttach[0];
+if($world != "") $parents[1] = $world; //the IK control will be a parent of the PV instead of the hips
+$target = `listConnections ($name+"_Prim_"+$cnt+".PV")`;
+JTDdynParent($target[0], $parents, 1, "");
+
+if( ($clavicle != "") && (objExists($clavicle)) )
+{
+	clear $parents;
+	$parents[0] = ($clavicle+"_FK_Cntrl");
+	if($world != "") $parents[1] = $world;
+	$target = `listConnections ($name+"_Prim_"+$cnt+".FKup")`;
+	JTDdynParent($target[0], $parents, 2, "");
+	if(objExists( ($target[0]+".Parent") )) catchQuiet(`setAttr ($target[0]+".Parent") 1`);
+}
+else
+{
+	clear $parents;
+	if(($primitive != "") && ( objExists(($primitive+".shoulderCntrl")) )) $toAttach = `listConnections ($primitive+".shoulderCntrl")`;
+	$parents[0] = $toAttach[0];
+	if($world != "") $parents[1] = $world;
+	$target = `listConnections ($name+"_Prim_"+$cnt+".FKup")`;
+	JTDdynParent($target[0], $parents, 2, "");
+}
+}
+
+
+JTDlockAttrs(($name+"_RigXtras_"+$lr), {1}, {1}, {1}, 1);
+JTDhideAttrs(($name+"_RigXtras_"+$lr), {1}, {1}, {1}, 1);
+
+JTDconnectTo($origName); //connect the rig to the original skeleton
+return ($name+"_Prim_"+$cnt);
+}
+
+global proc string JTDaimAxis(string $name)
+{
+float $Xvec[];
+float $Yvec[];
+float $Zvec[];
+float $pos[];
+float $comparePos[];
+string $childOrParent[];
+string $toReturn;
+
+//make sure it's a joint
+if(nodeType($name) != "joint") error -sl true "in JTDaimAxis: the object is not a joint";
+
+//make sure it has a child
+$childOrParent = `listRelatives -c -typ joint $name`;
+
+//if it doesnt have a child make sure it has a parent
+if($childOrParent[0] == "") 
+{
+	$childOrParent = `listRelatives -p -typ joint $name`;
+	if($childOrParent[0] == "") error -sl true "in JTDaimAxis: the joint must have a child or parent";
+}
+
+//get vector from childOrParent to the joint
+$pos = `xform -q -ws -rp $name`;
+$comparePos = `xform -q -ws -rp $childOrParent[0]`;
+$comparePos[0] = $comparePos[0] - $pos[0];
+$comparePos[1] = $comparePos[1] - $pos[1];
+$comparePos[2] = $comparePos[2] - $pos[2];
+normalize($comparePos);
+
+//create locator
+spaceLocator -p 0 0 0 -n JTDaxisTest;
+move -r $pos[0] $pos[1] $pos[2];
+
+//group locator under the joint name
+parent JTDaxisTest $name;
+makeIdentity -apply true -t 1 -r 1 -s 1 JTDaxisTest;
+
+//move locator one unit in X
+move -r -os -wd 1 0 0 JTDaxisTest;
+
+//store the vector from joint to the locator
+$Xvec = `xform -q -ws -rp JTDaxisTest`;
+$Xvec[0] = $Xvec[0] - $pos[0]; 
+$Xvec[1] = $Xvec[1] - $pos[1]; 
+$Xvec[2] = $Xvec[2] - $pos[2];
+normalize($Xvec);
+setAttr JTDaxisTest.tx 0;
+
+//move locator one unit in Y
+move -r -os -wd 0 1 0 JTDaxisTest;
+//store the vector from joint to the locator
+$Yvec = `xform -q -ws -rp JTDaxisTest`;
+$Yvec[0] = $Yvec[0] - $pos[0]; 
+$Yvec[1] = $Yvec[1] - $pos[1]; 
+$Yvec[2] = $Yvec[2] - $pos[2];
+normalize($Yvec);
+setAttr JTDaxisTest.ty 0;
+
+//move locator one unit in Z
+move -r -os -wd 0 0 1 JTDaxisTest;
+//store the vector from joint to the locator
+$Zvec = `xform -q -ws -rp JTDaxisTest`;
+$Zvec[0] = $Zvec[0] - $pos[0]; 
+$Zvec[1] = $Zvec[1] - $pos[1]; 
+$Zvec[2] = $Zvec[2] - $pos[2];
+normalize($Zvec);
+setAttr JTDaxisTest.tz 0;
+
+//delete locator
+delete JTDaxisTest;
+
+//compare the vector against the XYZ vectors
+if(  (equivalentTol($Xvec[0], $comparePos[0], 0.01)) && (equivalentTol($Xvec[1], $comparePos[1], 0.01)) && (equivalentTol($Xvec[2], $comparePos[2], 0.01)) ) $toReturn = "x";
+else if( (equivalentTol((-1*$Xvec[0]), $comparePos[0], 0.01)) && (equivalentTol((-1*$Xvec[1]), $comparePos[1], 0.01)) && (equivalentTol((-1*$Xvec[2]), $comparePos[2], 0.01)) ) $toReturn = "-x"; 
+else if( (equivalentTol($Yvec[0], $comparePos[0], 0.01)) && (equivalentTol($Yvec[1], $comparePos[1], 0.01)) && (equivalentTol($Yvec[2], $comparePos[2], 0.01)) ) $toReturn = "y";
+else if( (equivalentTol((-1*$Yvec[0]), $comparePos[0], 0.01)) && (equivalentTol((-1*$Yvec[1]), $comparePos[1], 0.01)) && (equivalentTol((-1*$Yvec[2]), $comparePos[2], 0.01)) ) $toReturn = "-y";
+else if( (equivalentTol($Zvec[0], $comparePos[0], 0.01)) && (equivalentTol($Zvec[1], $comparePos[1], 0.01)) && (equivalentTol($Zvec[2], $comparePos[2], 0.01)) ) $toReturn = "z";
+else if( (equivalentTol((-1*$Zvec[0]), $comparePos[0], 0.01)) && (equivalentTol((-1*$Zvec[1]), $comparePos[1], 0.01)) && (equivalentTol((-1*$Zvec[2]), $comparePos[2], 0.01)) ) $toReturn = "-z";
+else 
+{	
+	//do an angle comparison to find the closest match
+	$angleX = abs(rad_to_deg(`angle <<$Xvec[0], $Xvec[1], $Xvec[2]>> <<$comparePos[0], $comparePos[1], $comparePos[2]>>`));
+	$negAngleX = abs(rad_to_deg(`angle <<-1*$Xvec[0], -1*$Xvec[1], -1*$Xvec[2]>> <<$comparePos[0], $comparePos[1], $comparePos[2]>>`));
+	$angleY = abs(rad_to_deg(`angle <<$Yvec[0], $Yvec[1], $Yvec[2]>> <<$comparePos[0], $comparePos[1], $comparePos[2]>>`));
+	$negAngleY = abs(rad_to_deg(`angle <<-1*$Yvec[0], -1*$Yvec[1], -1*$Yvec[2]>> <<$comparePos[0], $comparePos[1], $comparePos[2]>>`));
+	$angleZ = abs(rad_to_deg(`angle <<$Zvec[0], $Zvec[1], $Zvec[2]>> <<$comparePos[0], $comparePos[1], $comparePos[2]>>`));
+	$negAngleZ = abs(rad_to_deg(`angle <<-1*$Zvec[0], -1*$Zvec[1], -1*$Zvec[2]>> <<$comparePos[0], $comparePos[1], $comparePos[2]>>`));
+	
+	$smallest = min($angleX, $negAngleX);
+	$smallest = min($smallest, $angleY);
+	$smallest = min($smallest, $negAngleY);
+	$smallest = min($smallest, $angleZ);
+	$smallest = min($smallest, $negAngleZ);
+	
+	if($angleX == $smallest) $toReturn = "x";
+	if($negAngleX == $smallest) $toReturn = "-x";
+	if($angleY == $smallest) $toReturn = "y";
+	if($negAngleY == $smallest) $toReturn = "-y";
+	if($angleZ == $smallest) $toReturn = "z";
+	if($negAngleZ == $smallest) $toReturn = "-z";
+}
+
+//whichever matches is the aim axis
+return $toReturn;
+}
+
+global proc string JTDupAxis(string $joint, float $worldCompare[])
+{
+//make sure it's a joint
+if(nodeType($joint) != "joint") error -sl true "in JTDupAxis: the object is not a joint";
+
+float $pos[] = `xform -q -ws -rp $joint`;
+
+//create two locators snapped to the joint's position
+spaceLocator -p 0 0 0 -n JTDworldLoc;
+spaceLocator -p 0 0 0 -n JTDlocalLoc;
+
+move -r $pos[0] $pos[1] $pos[2] JTDworldLoc; 
+makeIdentity -apply true -t 1 -r 1 -s 1 JTDworldLoc;
+move -r $pos[0] $pos[1] $pos[2] JTDlocalLoc; 
+
+//make the local locator a child of the joint
+parent JTDlocalLoc $joint;
+makeIdentity -apply true -t 1 -r 1 -s 1 JTDlocalLoc;
+
+//move the world locator one unit in the direction of worldCompare
+move -r $worldCompare[0] $worldCompare[1] $worldCompare[2] JTDworldLoc;
+
+//move the second locator in all axis, positive and negative
+//check the angle between the first and second locator with the joint as the origin
+move -r -os -wd 1 0 0 JTDlocalLoc; //positive x axis
+float $pXAngle = JTDangle($joint, "JTDworldLoc", "JTDlocalLoc");
+setAttr JTDlocalLoc.tx 0;
+
+move -r -os -wd -1 0 0 JTDlocalLoc; //negative x axis
+float $nXAngle = JTDangle($joint, "JTDworldLoc", "JTDlocalLoc");
+setAttr JTDlocalLoc.tx 0;
+
+move -r -os -wd 0 1 0 JTDlocalLoc; //positive y axis
+float $pYAngle = JTDangle($joint, "JTDworldLoc", "JTDlocalLoc");
+setAttr JTDlocalLoc.ty 0;
+
+move -r -os -wd 0 -1 0 JTDlocalLoc; //negative y axis
+float $nYAngle = JTDangle($joint, "JTDworldLoc", "JTDlocalLoc");
+setAttr JTDlocalLoc.ty 0;
+
+move -r -os -wd 0 0 1 JTDlocalLoc; //positive z axis
+float $pZAngle = JTDangle($joint, "JTDworldLoc", "JTDlocalLoc");
+setAttr JTDlocalLoc.tz 0;
+
+move -r -os -wd 0 0 -1 JTDlocalLoc; //negative z axis
+float $nZAngle = JTDangle($joint, "JTDworldLoc", "JTDlocalLoc");
+setAttr JTDlocalLoc.tz 0;
+
+delete JTDworldLoc;
+delete JTDlocalLoc;
+
+//whichever axis has the smallest angle is the local axis closest to the worldCompare
+float $list[] = sort({$pXAngle, $nXAngle, $pYAngle, $nYAngle, $pZAngle, $nZAngle}); //put them in ascending order
+
+if( $pXAngle == $list[0]) return "x";
+else if( $nXAngle == $list[0]) return "-x";
+else if( $pYAngle == $list[0]) return "y";
+else if( $nYAngle == $list[0]) return "-y";
+else if( $pZAngle == $list[0]) return "z";
+else if( $nZAngle == $list[0]) return "-z";
+else return "";
+
+
+}
+
+global proc int JTDcountRollJoints(string $up, string $low)
+{
+int $cnt;
+string $child[] = `listRelatives -c -typ joint $up`;
+if($child[0] == $low) return 0;
+
+while(1)
+{
+	$cnt++;
+	$child = `listRelatives -c -typ joint $child[0]`;
+	if(size($child) > 1) 
+	{
+		error -sl true "in JTDcountRollJoints: The joints you've input have branches";
+		return 0;
+	}
+	if( ($child[0] == "") || ($child[0] == $low) ) break;
+}
+return $cnt;
+}
+
+global proc string[] JTDprepareChain(string $chain[], string $prefix, string $name)
+{
+string $toReturn[];
+string $toRemove[];
+string $children[];
+string $allDescendants[];
+int $keepIt = 0;
+//duplicate it
+duplicate -n ($prefix+$chain[0]) -rc $chain[0];
+
+//move the duplicate chain under the world only if it's not already
+if(size(`listRelatives -p ($prefix+$chain[0])`) != 0) parent -w ($prefix+$chain[0]);
+
+select -hi ($prefix+$chain[0]);
+string $dup[] = `ls -sl`;
+select -hi $chain[0];
+string $orig[] = `ls -sl`;
+select -cl;
+
+//iterate through the chain, renaming objects
+for($i=0;$i<size($dup);$i++)
+{
+	if(nodeType($dup[$i]) == "joint")
+	{
+		$toReturn[$i] = `rename $dup[$i] ($prefix+$orig[$i])`;
+		if(!objExists(($prefix+$orig[$i]+".connectTo"))) 
+		{
+			addAttr -ln connectTo -at "message" ($prefix+$orig[$i]);
+			connectAttr -f ($orig[$i]+".message") ($prefix+$orig[$i]+".connectTo");
+			
+			addAttr -ln charName -dt "string" ($prefix+$orig[$i]);
+			setAttr -type "string" ($prefix+$orig[$i]+".charName") $name;
+			setAttr -l true ($prefix+$orig[$i]+".charName");
+		}
+		
+		if($orig[$i] == $chain[size($chain)-1])
+		{
+			$toRemove = `listRelatives -c -typ joint $toReturn[$i]`;
+			for($joint in $toRemove)
+			{
+				if(objExists($joint))
+				{
+					delete $joint;
+				}
+			}
+			break;
+		}
+	}
+}
+
+//check to see if there is more than one child of the start of the chain, then get rid of them
+$children = `listRelatives -c -typ joint ($prefix+$chain[0])`;
+if(size($children) > 1)
+{
+	for($i=0;$i<size($children);$i++)
+	{
+		$allDescendants = `listRelatives -ad -typ joint $children[$i]`;
+		
+		for($j=0;$j<size($allDescendants);$j++)
+		{
+			if($allDescendants[$j] == ($prefix+$chain[size($chain)-1]) ) //one of the joints in this chain we want to keep
+			{
+				$keepIt = 1;
+				break;
+			}
+			else $keepIt = 0;
+			
+		}
+		if($keepIt != 1) delete $children[$i];
+	}
+}
+
+return $toReturn;
+}
+
+global proc JTDconnectTo(string $name)
+{
+string $target[];
+string $ptConstrs[];
+string $orConstrs[];
+string $allobjs[] = {""};
+int $pt, $or = 0;
+
+$allobjs = `ls -o "*.connectTo"`;
+
+for($obj in $allobjs)
+{
+	if( ($name == "") || (`getAttr($obj+".charName")` == $name) )
+	{
+		$target = listConnections ($obj+".connectTo");
+		if( ($target[0] == "") && (objExists($obj+".connectName")) )
+		{
+			$target[0] = getAttr($obj+".connectName");
+			if(objExists($target[0])) connectAttr ($target[0]+".message") ($obj+".connectTo");
+		}
+		if($target[0] != "") 
+		{
+		
+			//if(!isConnected(($obj+".r"), ($target[0]+".r"))) connectAttr ($obj+".r") ($target[0]+".r");
+			//if(!isConnected(($obj+".t"), ($target[0]+".t"))) connectAttr ($obj+".t") ($target[0]+".t");
+		
+		
+			$ptConstrs = `listRelatives -typ pointConstraint $target`;
+			for($cnstr in $ptConstrs)
+			{
+				if(gmatch($cnstr, "*_ptCnstrTo_*")) 
+				{
+				$pt = 1;
+				}
+			}
+			if($pt == 0) pointConstraint -weight 1 -n ($target[0]+"_ptCnstrTo_"+$obj) $obj $target[0];
+			
+			$orConstrs = `listRelatives -typ orientConstraint $target`;
+			for($cnstr in $orConstrs)
+			{
+				if(gmatch($cnstr, "*_orCnstrTo_*")) $or = 1;
+			}
+			if($or == 0) orientConstraint -mo -weight 1 -n ($target[0]+"_orCnstrTo_"+$obj) $obj $target[0];
+			$pt = 0;
+			$or = 0;
+			if(objectType($obj) == "joint")
+			{
+				//scaleConstraint -weight 1 -n ($target[0]+"_scCnstrTo_"+$obj) $obj $target[0];
+			}
+			
+		}
+	}
+}
+}
+
+global proc JTDdisconnectFrom(string $name)
+{
+string $allobjs[];
+if($name != "") $allobjs = `ls ("*"+$name+"*")`;
+else $allobjs = `ls`;
+
+string $target[];
+string $toRemove[];
+
+for($obj in $allobjs)
+{
+	if(objExists($obj+".connectTo"))
+	{
+		$target = listConnections ($obj+".connectTo");
+		if($target[0] != "") $toRemove = `listRelatives -typ pointConstraint $target[0]`;
+		for($cnstr in $toRemove)
+		{
+			if( ($cnstr != "") && (gmatch($cnstr, "*_ptCnstrTo_*")) )
+			{
+				if(!objExists($obj+".connectName"))
+				{
+					addAttr -ln connectName -dt "string" $obj;
+					setAttr -type "string" ($obj+".connectName") $target[0];
+				}
+			}
+			delete $cnstr;
+		}
+		
+		if($target[0] != "") $toRemove = `listRelatives -typ orientConstraint $target[0]`;
+		for($cnstr in $toRemove)
+		{
+			if( ($cnstr != "") && (gmatch($cnstr, "*_orCnstrTo_*")) )
+			{
+				if(!objExists($obj+".connectName"))
+				{
+					addAttr -ln connectName -dt "string" $obj;
+					setAttr -type "string" ($obj+".connectName") $target[0];
+				}
+			}
+			delete $cnstr;
+		}
+		
+		if($target[0] != "") $toRemove = `listRelatives -typ scaleConstraint $target[0]`;
+		for($cnstr in $toRemove)
+		{
+			if( ($cnstr != "") && (gmatch($cnstr, "*_scCnstrTo_*")) )
+			{
+				if(!objExists($obj+".connectName"))
+				{
+					addAttr -ln connectName -dt "string" $obj;
+					setAttr -type "string" ($obj+".connectName") $target[0];
+				}
+			}
+			delete $cnstr;
+		}
+	}
+}
+}
+
+global proc int JTDisValidChain(string $chain[])
+{
+int $cnt, $i, $j = 0;
+string $child[];
+string $children[] = `listRelatives -ad -typ joint $chain[$i]`;
+string $toRemove[] = `listRelatives -ad -typ joint $chain[size($chain)-1]`;
+string $aimCheck1;
+string $aimCheck2;
+
+$children = stringArrayCatenate({$chain[0]}, $children); //so the first joint gets considered
+$children = stringArrayRemove($toRemove, $children);
+
+for($i=0;$i<size($chain);$i++)
+{
+	for($j=0;$j<size($children);$j++)
+	{
+		if($chain[$i] == $children[$j]) $cnt++;
+		
+		$child = `listRelatives -c -typ joint $children[$j]`;
+		if( (size($child) > 1) && ($children[$j] != $chain[size($chain)-1]) )return 0; //if there's more than one child, it's an invalid chain
+	}
+}
+if($cnt == size($chain)) return 1;
+else return 0;
+
+}
+
+//send it the pole vector axis instead of the aim axis
+global proc JTDautoBend(string $driver, string $bendCntrl, string $bendyParent1, string $bendyParent2, string $PVmove, string $lr)
+{
+string $driverRotAxis = ".ry";
+string $bendTransAxis = ".tz";
+string $aimAxis = JTDaimAxis($driver);
+string $IKhandle[];
+string $rotAxis;
+string $up[], $mid[], $low[];
+float $planeNormal[];
+int $cntrl = 1;
+
+if( ($PVmove == "x") || ($PVmove == "-x") ) $bendTransAxis = ".tx";
+if( ($PVmove == "y") || ($PVmove == "-y") ) $bendTransAxis = ".ty";
+if( ($PVmove == "z") || ($PVmove == "-z") ) $bendTransAxis = ".tz";
+
+//find the vector that the elbow rotate around
+if(objExists(($bendCntrl+".FKup"))) $up = `listConnections ($bendCntrl+".FKup")`;
+if(objExists(($bendCntrl+".FKmid"))) $mid = `listConnections ($bendCntrl+".FKmid")`;
+if(objExists(($bendCntrl+".FKlow"))) $low = `listConnections ($bendCntrl+".FKlow")`;
+if( ($up[0] != "") && ($mid[0] != "") && ($low[0] != "") ) $planeNormal = JTDgetPlaneNormal($up[0], $mid[0], $low[0]);
+
+$rotAxis = JTDupAxis($driver, $planeNormal);
+
+if( !startsWith($rotAxis, "-") && !startsWith($PVmove, "-") )  $cntrl = -1;
+if( startsWith($rotAxis, "-") && startsWith($PVmove, "-") )  $cntrl = -1;
+
+if( ($aimAxis == "x") || ($aimAxis == "-x") )
+{
+	if( ($PVmove == "y") || ($PVmove == "-y") ) $driverRotAxis = ".rz";
+	if( ($PVmove == "z") || ($PVmove == "-z") ) $driverRotAxis = ".ry";
+}
+
+if( ($aimAxis == "y") || ($aimAxis == "-y") )
+{
+	if( ($PVmove == "x") || ($PVmove == "-x") ) $driverRotAxis = ".rz";
+	if( ($PVmove == "z") || ($PVmove == "-z") ) $driverRotAxis = ".rx";
+}
+
+if( ($aimAxis == "z") || ($aimAxis == "-z") )
+{
+	if( ($PVmove == "x") || ($PVmove == "-x") ) $driverRotAxis = ".ry";
+	if( ($PVmove == "y") || ($PVmove == "-y") ) $driverRotAxis = ".rx";
+}
+
+addAttr -ln "bend" -at double -min 0 -max 1 -dv 0 $bendCntrl;
+setAttr -e -keyable true ($bendCntrl+".bend");
+	
+createNode multiplyDivide -n ($driver+"_BendyDiv");
+setAttr ($driver+"_BendyDiv.operation") 2;
+connectAttr ($driver+$driverRotAxis) ($driver+"_BendyDiv.input1X");
+setAttr ($driver+"_BendyDiv.input2X") ($cntrl*30);
+	
+createNode multiplyDivide -n ($driver+"_BendyMult");
+connectAttr ($bendCntrl+".bend") ($driver+"_BendyMult.input1X");
+connectAttr ($driver+"_BendyDiv.outputX") ($driver+"_BendyMult.input2X");
+
+createNode plusMinusAverage -n ($bendyParent1+"_BendyOffset");
+connectAttr ($driver+"_BendyMult.outputX") ($bendyParent1+"_BendyOffset.input1D[0]");
+setAttr ($bendyParent1+"_BendyOffset.input1D[1]") `getAttr ($bendyParent1+$bendTransAxis)`;
+
+createNode plusMinusAverage -n ($bendyParent2+"_BendyOffset");
+connectAttr ($driver+"_BendyMult.outputX") ($bendyParent2+"_BendyOffset.input1D[0]");
+setAttr ($bendyParent2+"_BendyOffset.input1D[1]") `getAttr ($bendyParent2+$bendTransAxis)`;
+
+connectAttr ($bendyParent1+"_BendyOffset.output1D") ($bendyParent1+$bendTransAxis);
+connectAttr ($bendyParent2+"_BendyOffset.output1D") ($bendyParent2+$bendTransAxis);
+
+}
+
+global proc string JTDsplineSetup(string $startJoint, string $endJoint, string $startCntrlJoint, string $endCntrlJoint, string $aimAxis, int $numRollJoints, string $name, float $scale, string $world)
+{
+string $rollJoints[];
+string $startRollJoint;  //this will be filled after the chain is broken up
+string $lastRollJoint;  //this will be filled after the chain is broken up
+string $tempJoint[] = {$startJoint};
+string $child[];
+string $skipAxis1 = "y";
+string $skipAxis2 = "z";
+float $aim[] = {0,0,0}; //used to determine how the controls should be oriented
+float $cntrl = 1.0; //used to reverse an axis
+int $cnt = 0; //use for the primitive
+
+//set the aim axis vector
+if(startsWith($aimAxis, "-")) $cntrl = -1.0;
+if( (endsWith($aimAxis,"x")) || (endsWith($aimAxis,"X")) )	
+{
+	$aim[0] = $cntrl;
+	$skipAxis1 = "y";
+	$skipAxis2 = "z";
+}
+else if( (endsWith($aimAxis,"y")) || (endsWith($aimAxis,"Y")) )	
+{
+	$aim[1] = $cntrl;
+	$skipAxis1 = "x";
+	$skipAxis2 = "z";
+}
+else if( (endsWith($aimAxis,"z")) || (endsWith($aimAxis,"Z")) )	
+{
+	$aim[2] = $cntrl;
+	$skipAxis1 = "x";
+	$skipAxis2 = "y";
+}
+else	warning -sl true "in JTDsplineSetup: Please specify the axis that aims down the bone, assuming X axis";
+
+//disconnect the upper joint in case it's a clavicle
+string $startParent[] = `listRelatives -p -typ joint $startJoint`;
+if($startParent[0] != "") 
+{
+	JTDdisconnectJoint($startJoint);
+}
+
+string $endChild[] = `listRelatives -c -typ joint $endJoint`;
+if($endChild[0] != "") 
+{
+	$lastRollJoint = JTDdisconnectJoint($endJoint);
+	deleteAttr ($lastRollJoint+".connectTo"); //we dont want the last roll joints to connect to anything if it was originally in the middle of the chain
+	//make sure the wrist is attached
+	//parentConstraint -mo -weight 1 -n ($endJoint+"_PrntCnstr") $endCntrlJoint $endJoint;
+}
+else $lastRollJoint = $endJoint;
+
+//insert the roll joints
+//check to see if it needs a rollChain or if it already has one
+int $foundRollJoints = JTDcountRollJoints($startJoint, $endJoint);
+
+if($foundRollJoints == 0) 
+{
+	$rollJoints = JTDcreateRollChain($startJoint, $endJoint, $numRollJoints);
+	//the roll joints need to be reoriented;
+	//JTDorientJoint({$rollJoints[0], $rollJoints[size($rollJoints)-1]}, 1, 2, 2, 0, 0);
+}
+else 
+{
+	select -hi $startJoint;
+	string $toOrient[] = `ls -sl -typ joint`;
+	select -cl;
+	JTDorientJoint($toOrient, 1, 2, 2, 0, 0, 0);
+}
+
+
+//create the control curves and IK spline handles
+$handleNames = `ikHandle -sol ikSplineSolver -pcv false -ns 1 -n ($startJoint+"_splineIK") -sj $startJoint -ee $lastRollJoint`;
+rename $handleNames[1] ($startJoint+"_EE");
+rename $handleNames[2] ($startJoint+"_IKcurve");
+setAttr ($startJoint+"_splineIK.v") 0;
+setAttr ($startJoint+"_IKcurve.v") 0;
+setAttr ($startJoint+"_IKcurve.inheritsTransform") 0;
+setAttr ($startJoint+"_EE.v") 0;
+
+//setup the advanced twist
+setAttr ($startJoint+"_splineIK.dTwistControlEnable") 1;
+setAttr ($startJoint+"_splineIK.dWorldUpType") 4;
+connectAttr ($startCntrlJoint+".worldMatrix[0]") ($startJoint+"_splineIK.dWorldUpMatrix");
+connectAttr ($endCntrlJoint+".worldMatrix[0]") ($startJoint+"_splineIK.dWorldUpMatrixEnd");
+
+//setup stretchy spline IK
+JTDstretchSpline($name, ($startJoint+"_IKcurve"), $startJoint, $endJoint, $aimAxis, $world);
+
+//cluster the control curve
+string $cv[] = `cluster ($startJoint+"_IKcurve.cv[0]")`;
+rename $cv[1] ($startJoint+"_C1");
+setAttr ($startJoint+"_C1.v") 0;
+
+$cv = `cluster ($startJoint+"_IKcurve.cv[1]") ($startJoint+"_IKcurve.cv[2]")`;
+rename $cv[1] ($startJoint+"_C2");
+setAttr ($startJoint+"_C2.v") 0;
+
+$cv = `cluster ($startJoint+"_IKcurve.cv[3]")`;
+rename $cv[1] ($startJoint+"_C3");
+setAttr ($startJoint+"_C3.v") 0;
+
+//group the clusters and the IK handle under the control skeleton
+parent ($startJoint+"_C1") $startCntrlJoint;
+parent ($startJoint+"_C3") $endCntrlJoint;
+parent ($startJoint+"_splineIK") $startCntrlJoint;
+
+
+//make sure that the middle cluster will stay between the other two when it is stretched
+float $pos[] = `xform -q -ws -rp ($startJoint+"_C2")`;
+circle -c $pos[0] $pos[1] $pos[2] -nr $aim[0] $aim[1] $aim[2] -sw 360 -r (0.7*$scale) -d 1 -ut 0 -tol 0.01 -s 6 -ch 0 -n ($startJoint+"_Bendy");
+xform -cp ($startJoint+"_Bendy");
+group -n ($startJoint+"_Bendy_Parent") ($startJoint+"_Bendy");
+
+addAttr -ln child -at "message" ($startJoint+"_Bendy_Parent");
+connectAttr -f ($startJoint+"_Bendy.message") ($startJoint+"_Bendy_Parent.child");
+
+JTDalignGroup(($startJoint+"_Bendy_Parent"), $startCntrlJoint);
+
+parent ($startJoint+"_C2") ($startJoint+"_Bendy");
+parent ($startJoint+"_Bendy_Parent") $startCntrlJoint;
+pointConstraint -weight 1 -skip $skipAxis1 -skip $skipAxis2 -n ($startJoint+"_C2_PtConstr") ($startJoint+"_C1") ($startJoint+"_Bendy_Parent"); //skip the correct axis!
+pointConstraint -weight 1 -skip $skipAxis1 -skip $skipAxis2 -n ($startJoint+"_C2_PtConstr") ($startJoint+"_C3") ($startJoint+"_Bendy_Parent");
+
+//make sure that the last cluster stays with the endJoint so it will stretch the curve when the control skeleton stretches
+pointConstraint -weight 1 -n ($startJoint+"_C3_PtConstr") $endCntrlJoint ($startJoint+"_C3");
+
+
+//locking and hiding
+JTDlockAttrs(($startJoint+"_EE"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_EE"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_splineIK"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_splineIK"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_IKcurve"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_IKcurve"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_C1"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_C1"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_C2"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_C2"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_C3"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_C3"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_Bendy"), {0}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_Bendy"), {0}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_Bendy_Parent"), {0}, {1}, {1}, 0);
+JTDhideAttrs(($startJoint+"_Bendy_Parent"), {1}, {1}, {1}, 1);
+
+//see if there is an associated primitive, then add attributes to it
+string $lr;
+string $nodes[] = `ls -typ script`;
+for($node in $nodes)
+{
+	if( startsWith($node,($name+"_Prim_")) )
+	{
+		if(!objExists($node+".twist"))
+		{
+			$lr = `getAttr ($node+".lr")`;
+			if(objExists(($node+".bendy"+$cnt))) $cnt++;
+			if(!objExists(($node+".bendy"+$cnt)))
+			{
+				addAttr -ln ("bendy"+$cnt) -at "message" $node;
+				connectAttr -f ($startJoint+"_Bendy.message") ($node+".bendy"+$cnt);
+			}
+		}
+		
+	}
+}
+
+//group the spline curves under the rigXtras node if it exists
+if(objExists(($name+"_RigXtras_"+$lr))) parent ($startJoint+"_IKcurve") ($name+"_RigXtras_"+$lr);
+
+//return the name of the bendy parent so we can add an autobend later
+return ($startJoint+"_Bendy_Parent");
+
+}
+
+global proc string JTDdisconnectJoint(string $joint)
+{
+string $parent[] = `listRelatives -p -typ joint $joint`;
+string $endJoints[];
+string $children[];
+int $cnt = 0;
+
+//checking to see if there are any other end joints on this chain
+if($parent[0] != "") 
+{
+	$endJoints = `listRelatives -c -typ joint $parent[0]`;
+	for($ends in $endJoints)
+	{
+		if( startsWith($ends, ($parent[0]+"_End_")) ) $cnt++;
+	}
+	
+	$newJoint = `duplicate -rr $joint`;
+	rename $newJoint[0] ($parent[0]+"_End_"+$cnt);
+	//delete any children it may have
+	$children = `listRelatives -c -f ($parent[0]+"_End_"+$cnt)`;
+	for($child in $children) delete $child;
+	
+	parent -w $joint; //unparent the joint
+	return ($parent[0]+"_End_"+$cnt);
+}
+return $joint;
+}
+
+global proc JTDstretchSpline(string $name, string $curve, string $startJoint, string $endJoint, string $aimAxis, string $world)
+{
+string $child[] = {$startJoint};
+int $cnt = 0;
+
+string $aim = ".tx";
+string $volAxis1 = ".sy";
+string $volAxis2 = ".sz";
+
+if( ($aimAxis == "x") || ($aimAxis == "X") )
+{
+	$aim = ".tx";
+	$volAxis1 = ".sy";
+	$volAxis2 = ".sz";
+}
+if( ($aimAxis == "y") || ($aimAxis == "Y") )
+{
+	$aim = ".ty";
+	$volAxis1 = ".sx";
+	$volAxis2 = ".sz";
+}
+if( ($aimAxis == "z") || ($aimAxis == "Z") )
+{
+	$aim = ".tz";
+	$volAxis1 = ".sx";
+	$volAxis2 = ".sy";
+}
+
+createNode curveInfo -n ($startJoint+"_Info");
+connectAttr ($curve+".local") ($startJoint+"_Info.inputCurve");
+
+createNode multiplyDivide -n ($startJoint+"_Div");
+setAttr ($startJoint+"_Div.operation") 2;
+connectAttr ($startJoint+"_Info.arcLength") ($startJoint+"_Div.input1X");
+setAttr ($startJoint+"_Div.input2X") `getAttr ($startJoint+"_Info.arcLength")`;
+
+createNode multiplyDivide -n ($startJoint+"_DivAdjVol");
+setAttr ($startJoint+"_DivAdjVol.operation") 2;
+setAttr ($startJoint+"_DivAdjVol.input1X") `getAttr ($startJoint+"_Info.arcLength")`;
+connectAttr ($startJoint+"_Info.arcLength") ($startJoint+"_DivAdjVol.input2X");
+
+createNode multiplyDivide -n ($startJoint+"_Volume");
+setAttr ($startJoint+"_Volume.operation") 3;
+connectAttr ($startJoint+"_DivAdjVol.outputX") ($startJoint+"_Volume.input1X");
+setAttr ($startJoint+"_Volume.input2X") 0.5;
+
+//for scaling the stretchy setup
+if($world != "")
+{
+createNode multiplyDivide -n ($startJoint+"_DivAdj");
+setAttr ($startJoint+"_DivAdj.input1X") `getAttr ($startJoint+"_Info.arcLength")`;
+connectAttr ($world+".sy") ($startJoint+"_DivAdj.input2X");
+
+createNode multiplyDivide -n ($startJoint+"_DivAdjVolScale");
+setAttr ($startJoint+"_DivAdjVolScale.operation") 2;
+connectAttr ($startJoint+"_Info.arcLength") ($startJoint+"_DivAdjVolScale.input1X");
+connectAttr ($world+".sy") ($startJoint+"_DivAdjVolScale.input2X");
+
+connectAttr -f ($startJoint+"_DivAdj.outputX") ($startJoint+"_Div.input2X");
+connectAttr -f ($startJoint+"_DivAdjVolScale.outputX") ($startJoint+"_DivAdjVol.input2X");
+}
+
+connectAttr ($startJoint+"_Volume.outputX") ($child[0]+$volAxis1); //connect to the first joint
+connectAttr ($startJoint+"_Volume.outputX") ($child[0]+$volAxis2);
+
+$child = `listRelatives -c -typ joint $child[0]`;//skip the first joint
+while($child[0] != "")
+{
+	createNode multiplyDivide -n ($startJoint+"_Stretch_"+$cnt);
+	setAttr ($startJoint+"_Stretch_"+$cnt+".input1X") `getAttr ($child[0]+$aim)`;
+	connectAttr ($startJoint+"_Div.outputX") ($startJoint+"_Stretch_"+$cnt+".input2X");
+	connectAttr ($startJoint+"_Stretch_"+$cnt+".outputX") ($child[0]+$aim);
+		
+	if($child[0] != $endJoint)
+	{
+		connectAttr ($startJoint+"_Volume.outputX") ($child[0]+$volAxis1);
+		connectAttr ($startJoint+"_Volume.outputX") ($child[0]+$volAxis2);
+	}
+		
+	JTDlockAttrs($child[0], {1}, {0}, {1}, 0);
+	JTDhideAttrs($child[0], {1}, {1}, {1}, 1);
+	setAttr -k false -channelBox false ($child[0]+".radi");
+	
+	$child = `listRelatives -c -typ joint $child[0]`;
+	$cnt++;
+	
+}
+
+//see if there is an associated primitive, then add attributes to it
+$cnt = 0;
+string $nodes[] = `ls -typ script`;
+for($node in $nodes)
+{
+	if( startsWith($node,($name+"_Prim_")) )
+	{
+		if(!objExists($node+".twist"))
+		{
+			if( objExists(($node+".splineDiv"+$cnt)) ) $cnt++;
+			if( !objExists(($node+".splineDiv"+$cnt)) )
+			{
+				addAttr -ln ("splineDiv"+$cnt) -at "message" $node;
+				connectAttr -f ($startJoint+"_Div.message") ($node+".splineDiv"+$cnt);
+			}
+		}
+		
+	}
+}
+
+}
+
+
+global proc JTDcreateRollChain(string $start, string $end, int $numRollJoints)
+{
+select -hi $start;
+string $toOrient[] = `ls -sl -typ joint`;
+JTDorientJoint($toOrient, 1, 2, 2, 0, 0, 0); //the roll chain only works if the +x is down the bone
+JTDinsertRollJoints($start, $end, $numRollJoints);
+
+}
+
+
+global proc string[] JTDinsertRollJoints(string $start, string $end, int $numRollJoints)
+{
+string $rollChain[];
+string $check[];
+string $catchName;
+string $currentJoint;
+float $jointPos[] = {0,0,0};
+float $radius; 
+int $cnt = 1;
+int $i = 0;
+
+
+$check = `listRelatives -c -type joint $start`; //check to see if $end is a child of $start
+
+if(objExists(($start+".radi"))) $radius = `getAttr ($start+".radi")`;
+
+//create curve from start to end
+float $startPos[] = `xform -q -ws -rp $start`;
+float $endPos[] = `xform -q -ws -rp $end`;
+curve -d 1 -p $startPos[0] $startPos[1] $startPos[2] -p $endPos[0] $endPos[1] $endPos[2] -k 0 -k -1 -n "JTDrollJointTemp";
+
+//rebuild the curve with one more CV than the number of roll joints
+rebuildCurve -ch 0 -rpo 1 -rt 0 -end 1 -kr 0 -kcp 0 -kep 1 -kt 0 -s ($numRollJoints+1) -d 1 -tol 0.0001 "JTDrollJointTemp";
+parent JTDrollJointTemp $start; //so we can get local coordinates
+
+$currentJoint = $start;
+
+//insert a joint at each CV position
+while( objExists(("JTDrollJointTemp.cv["+$cnt+"]")) )
+{
+	$jointPos = `pointPosition -l ("JTDrollJointTemp.cv["+$cnt+"]")`;
+	if(strcmp($end,$check[0]) == 0)
+	{
+		if( (`getAttr ($currentJoint+".sx")` != 1) || (`getAttr ($currentJoint+".sy")` != 1) || (`getAttr ($currentJoint+".sz")` != 1) )
+		{
+			warning -sl true "in JTDinserRollJoints: roll joints can not be inserted with non-standard scale, resetting scale";
+			setAttr ($currentJoint+".sx") 1;		
+			setAttr ($currentJoint+".sy") 1;		
+			setAttr ($currentJoint+".sz") 1;		
+		}
+		
+		$catchName = `insertJoint $currentJoint`;
+		rename $catchName ($start+"_Roll_"+$i);
+		joint -e -co -p $jointPos[0] $jointPos[1] $jointPos[2] ($start+"_Roll_"+$i);
+		if(objExists(($start+"_Roll_"+$i+".radi"))) setAttr ($start+"_Roll_"+$i+".radi") $radius;
+		$currentJoint = ($start+"_Roll_"+$i);
+		$rollChain[$i] = ($start+"_Roll_"+$i);
+	}
+	else
+	{
+		delete JTDrollJointTemp;
+		error -sl true "In JTDinsertRollJoints: there can't be any other joints between start and end";
+	}
+	$cnt++;
+	if($cnt == ($numRollJoints+1)) break;
+	$i++;
+	
+	
+}
+delete JTDrollJointTemp;
+select -cl;
+
+return $rollChain;
+}
+
+
+global proc string[] JTDswitchingSetup(string $startJoint, string $midJoint, string $endJoint, string $aimAxis, string $lr, string $name, float $scale)
+{
+string $bindChain[] = {$startJoint, $midJoint, $endJoint};
+string $IKchain[] = JTDdupChain($startJoint, $midJoint, $endJoint, "IK");
+string $FKchain[] = JTDdupChain($startJoint, $midJoint, $endJoint, "FK");
+string $SWchain[] = JTDdupChain($startJoint, $midJoint, $endJoint, "SW");
+string $upAxis;
+float $aim[] = {0,0,0}; //used to determine how the controls should be oriented
+float $perp[] = {0,0,0}; //used to move out the PV snap postion in the correct axis
+float $cntrl = 1.0; //used to reverse an axis
+
+//create an empty group to store all the arm rig parts so you have a clean outliner
+
+group -em -n ($name+"_RigXtras_"+$lr);
+
+//set the aim axis vector
+if(startsWith($aimAxis, "-")) $cntrl = -1.0;
+if( (endsWith($aimAxis,"x")) || (endsWith($aimAxis,"X")) ) $aim[0] = $cntrl; 
+else if( (endsWith($aimAxis,"y")) || (endsWith($aimAxis,"Y")) ) $aim[1] = $cntrl; 
+else if( (endsWith($aimAxis,"z")) || (endsWith($aimAxis,"Z")) )	$aim[2] = $cntrl;
+else	warning -sl true "in JTDswitchingSetup: Please specify the axis that aims down the bone, assuming X axis";
+
+//set the axis vector which is closest to the world Y axis
+$upAxis = JTDupAxis($endJoint, {0,1,0});
+if(startsWith($upAxis, "-")) $cntrl = -1.0;
+else $cntrl = 1;
+
+if( endsWith($upAxis,"x") ) $perp[0] = $cntrl; 
+else if( endsWith($upAxis,"y") ) $perp[1] = $cntrl; 
+else if( endsWith($upAxis,"z") ) $perp[2] = $cntrl; 
+
+//attach some control objects to the FK chain
+for($joint in $FKchain)
+{
+	circle -c 0 0 0 -nr $aim[0] $aim[1] $aim[2] -sw 360 -r $scale -d 3 -ut 0 -tol 0.01 -s 8 -ch 0 -n ($joint+"_Cntrl");
+	parent -r -s `listRelatives -s ($joint+"_Cntrl")` $joint;
+	delete ($joint+"_Cntrl");
+	JTDFKstretch($joint, $aimAxis, $lr);
+}
+
+//setup the IK chain
+//Warn if the IK chain is in a straight line and no preferred angle was set
+float $prefAngle[] = getAttr ($midJoint+".pa");
+if(($prefAngle[0] == 0) && ($prefAngle[1] == 0) && ($prefAngle[2] == 0))
+{
+	float $totalLength = JTDlength($startJoint,$midJoint) + JTDlength($midJoint, $endJoint);
+	float $hyp = JTDlength($startJoint, $endJoint);
+	if($totalLength == $hyp) warning -sl true ("JTDswitchingSetup has reported that the joint chain is not bent. If the IK handle doesnt work, try rotating: " + $midJoint + " before rigging or manually setting the preferred angle before running this script.");
+}
+
+//setup the IK cntrl
+JTDgenerateBox(($name+"_IK_Cntrl_"+$lr), {($scale*1.5),($scale*1.5),($scale*1.5)});
+float $pos[] = `xform -q -ws -rp $endJoint`;
+move -a -ws -rpr $pos[0] $pos[1] $pos[2] ($name+"_IK_Cntrl_"+$lr);
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_IK_Cntrl_"+$lr);
+
+//create an empty group to align the IK Cntrl
+group -em -n ($name+"_IK_Cntrl_Parent_"+$lr);
+move -a -ws -rpr $pos[0] $pos[1] $pos[2] ($name+"_IK_Cntrl_Parent_"+$lr);
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_IK_Cntrl_Parent_"+$lr);
+
+//put the IK cntrl under the parent group and align it
+JTDalignGroup(($name+"_IK_Cntrl_Parent_"+$lr), $IKchain[2]);
+parent ($name+"_IK_Cntrl_"+$lr) ($name+"_IK_Cntrl_Parent_"+$lr);
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_IK_Cntrl_"+$lr);
+
+addAttr -ln child -at "message" ($name+"_IK_Cntrl_Parent_"+$lr);
+connectAttr -f ($name+"_IK_Cntrl_"+$lr+".message") ($name+"_IK_Cntrl_Parent_"+$lr+".child");
+
+//setup the IK handle
+string $endEffector[] = `ikHandle -n ($name+"_IK_Handle_"+$lr) -shf false -sj $IKchain[0] -ee $IKchain[2]`;
+rename $endEffector[1] ($name+"_EE_"+$lr);
+
+//warn if the IK handle caused the elbow to move
+float $origElbowPos[] = `xform -q -ws -rp $IKchain[1]`;
+float $newElbowPos[] = `xform -q -ws -rp $midJoint`;
+if( (!equivalentTol($origElbowPos[0], $newElbowPos[0], 0.01)) || (!equivalentTol($origElbowPos[1], $newElbowPos[1], 0.01)) || (!equivalentTol($origElbowPos[2], $newElbowPos[2], 0.01)) ) warning -sl false ("JTDswitchingSetup has reported that the elbow has moved significantly. This could be because it is bent in the wrong direction");
+
+//store the assigned PV value to use later since it already calculates to correct sinus
+float $initialPV[] = `getAttr($name+"_IK_Handle_"+$lr+".pv")`;
+
+//add a gimble helper
+JTDgenerateSphere(($endJoint+"_GimbleCntrl_"+$lr), $scale);
+$absPos = `joint -q -p -a $endJoint`;
+move $absPos[0] $absPos[1] $absPos[2] ($endJoint+"_GimbleCntrl_"+$lr);
+
+parent ($endJoint+"_GimbleCntrl_"+$lr) ($name+"_IK_Cntrl_"+$lr);
+makeIdentity -apply true -t 1 -r 1 -s 1 ($endJoint+"_GimbleCntrl_"+$lr);
+
+parent ($name+"_IK_Handle_"+$lr) ($endJoint+"_GimbleCntrl_"+$lr);
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_IK_Handle_"+$lr);
+setAttr ($name+"_IK_Handle_"+$lr+".stickiness") 1;
+
+//the gimble control moves the IK wrist
+orientConstraint -weight 1 -n ($endJoint+"_Gimble_"+$lr+"_CntrlOrConstr") ($endJoint+"_GimbleCntrl_"+$lr) $IKchain[2];
+
+//finish up the gimble control
+JTDlockAttrs(($endJoint+"_GimbleCntrl_"+$lr), {1}, {0}, {1}, 0);
+JTDhideAttrs(($endJoint+"_GimbleCntrl_"+$lr), {1}, {0}, {1}, 1);
+
+//do the pole Vector
+JTDgenerateSphere(($name+"_PV_Cntrl_"+$lr), $scale);
+group -em -n ($name+"_PV_Cntrl_Parent_"+$lr);
+parent ($name+"_PV_Cntrl_"+$lr) ($name+"_PV_Cntrl_Parent_"+$lr);
+
+addAttr -ln child -at "message" ($name+"_PV_Cntrl_Parent_"+$lr);
+connectAttr -f ($name+"_PV_Cntrl_"+$lr+".message") ($name+"_PV_Cntrl_Parent_"+$lr+".child");
+
+$pos = `xform -q -ws -rp $midJoint`;
+move -a -ws -rpr $pos[0] $pos[1] $pos[2] ($name+"_PV_Cntrl_Parent_"+$lr);
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_PV_Cntrl_Parent_"+$lr);
+//JTDalignGroup(($name+"_PV_Cntrl_Parent_"+$lr), $midJoint);
+poleVectorConstraint -weight 1 -n ($name+"_PV_"+$lr+"_PVCnstr") ($name+"_PV_Cntrl_"+$lr) ($name+"_IK_Handle_"+$lr);
+
+//make a dummy group to snap to when matching from FK to IK
+$pos = `xform -q -ws -rp $startJoint`;
+group -em -n ($name+"_PV_Snap_"+$lr);
+move -a -ws -rpr $pos[0] $pos[1] $pos[2] ($name+"_PV_Snap_"+$lr);
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_PV_Snap_"+$lr);
+
+//normalize the initial pole vector info
+normalize( {$initialPV[0], $initialPV[1], $initialPV[2]} );
+
+//use the intial pole vector info gleaned when the IK was placed to put the PV in the correct plane
+setAttr ($name+"_PV_Snap_"+$lr+".t") $initialPV[0] $initialPV[1] $initialPV[2];
+
+parent ($name+"_PV_Snap_"+$lr) $FKchain[0]; //group it under the shoulder
+setAttr ($name+"_PV_Snap_"+$lr+".r") 0 0 0; //now it is aligned to the joint
+
+//this will be used later so that we know which axis the bends should move along - it shows which local axis is cosest to the pole vector
+string $PVsnapMove = JTDupAxis($FKchain[1], {$initialPV[0], $initialPV[1], $initialPV[2]});
+
+/*
+//place the snap behind the elbow using some trig
+float $PVangle = JTDangle($startJoint, ($name+"_PV_Snap_"+$lr), $midJoint); //find the angle so we can calculate the hypotenuse
+float $adjacent = JTDlength($startJoint,$midJoint);
+float $PVhyp = $adjacent/`cosd($PVangle)`;
+
+*/
+
+//moving the PVsnap away from the arm
+float $offset = JTDlength($startJoint,$midJoint);
+int $aimMod = -1; //its negative because we usually want to move away from the joint
+if(startsWith($PVsnapMove, "-"))
+{ 
+	$offset = ($offset*-1); 
+	$aimMod = ($aimMod*-1);
+}
+if(endsWith($PVsnapMove, "x")) 
+{
+	//aim PV at the shoulder, so one axis is in the plane
+	aimConstraint -offset 0 0 0 -weight 1 -aimVector $aimMod 0 0 -upVector 0 1 0 -worldUpType "vector" -worldUpVector 0 1 0 -n tempCnstr $startJoint ($name+"_PV_Snap_"+$lr);
+	delete tempCnstr;
+	move -r -os -wd $offset 0 0 ($name+"_PV_Snap_"+$lr);
+}
+if(endsWith($PVsnapMove, "y"))
+{
+	//aim PV at the shoulder, so one axis is in the plane
+	aimConstraint -offset 0 0 0 -weight 1 -aimVector 0 $aimMod 0 -upVector 0 0 1 -worldUpType "vector" -worldUpVector 0 0 1 -n tempCnstr $startJoint ($name+"_PV_Snap_"+$lr);
+	delete tempCnstr;
+	move -r -os -wd 0 $offset 0 ($name+"_PV_Snap_"+$lr);
+}
+if(endsWith($PVsnapMove, "z"))
+{
+	//aim PV at the shoulder, so one axis is in the plane
+	aimConstraint -offset 0 0 0 -weight 1 -aimVector 0 0 $aimMod -upVector 0 1 0 -worldUpType "vector" -worldUpVector 0 1 0 -n tempCnstr $startJoint ($name+"_PV_Snap_"+$lr);
+	delete tempCnstr;
+	move -r -os -wd 0 0 $offset ($name+"_PV_Snap_"+$lr);
+}
+
+
+//Ik stretching
+JTDIKstretch($IKchain[0], $IKchain[1], $IKchain[2], ($name+"_IK_Cntrl_"+$lr), ($name+"_IK_Handle_"+$lr), ($name+"_PV_Cntrl_"+$lr), $aimAxis, $lr, $name);
+
+//constrain the FK and IK chains to the SW chain
+$constraint = JTDconstrainChain($IKchain, $SWchain, "point");
+$constraint = JTDconstrainChain($FKchain, $SWchain, "point");
+
+//JTDgenerate the switcher and hook it up to the constraints
+JTDgenerateIKFK(($name+"_Switcher_"+$lr), $aimAxis, $upAxis, $scale, "Switcher");
+createSwitch("IKFK", $SWchain[2], $constraint);
+
+parent ($name+"_Switcher_"+$lr) $SWchain[2];
+makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_Switcher_"+$lr);
+parent -w ($name+"_Switcher_"+$lr);
+makeIdentity -apply true -t 1 -r 0 -s 0 ($name+"_Switcher_"+$lr);
+
+parent -r -s `listRelatives -s ($name+"_Switcher_"+$lr)` $SWchain[2];
+delete ($name+"_Switcher_"+$lr);
+
+//for IK matching
+addAttr -ln IKpos -at "message" $SWchain[2];
+connectAttr -f ($SWchain[2]+".message") ($SWchain[2]+".IKpos");
+
+addAttr -ln IKcntrl -at "message" $SWchain[2];
+connectAttr -f ($name+"_IK_Cntrl_"+$lr+".message") ($SWchain[2]+".IKcntrl"); //*********IK Handle or IK Cntrl?*******//
+
+addAttr -ln PV -at "message" $SWchain[2];
+connectAttr -f ($name+"_PV_Cntrl_"+$lr+".message") ($SWchain[2]+".PV");
+
+addAttr -ln PVsnapPos -at "message" $SWchain[2];
+connectAttr -f ($name+"_PV_Snap_"+$lr+".message") ($SWchain[2]+".PVsnapPos");
+
+//for FK matching
+addAttr -ln SWup -at "message" $SWchain[2];
+connectAttr -f ($SWchain[0]+".message") ($SWchain[2]+".SWup");
+
+addAttr -ln SWmid -at "message" $SWchain[2];
+connectAttr -f ($SWchain[1]+".message") ($SWchain[2]+".SWmid");
+
+addAttr -ln FKup -at "message" $SWchain[2];
+connectAttr -f ($FKchain[0]+".message") ($SWchain[2]+".FKup");
+
+addAttr -ln FKmid -at "message" $SWchain[2];
+connectAttr -f ($FKchain[1]+".message") ($SWchain[2]+".FKmid");
+
+addAttr -ln FKlow -at "message" $SWchain[2];
+connectAttr -f ($FKchain[2]+".message") ($SWchain[2]+".FKlow");
+
+addAttr -ln IKup -at "message" $SWchain[2];
+connectAttr -f ($IKchain[0]+".message") ($SWchain[2]+".IKup");
+
+addAttr -ln IKmid -at "message" $SWchain[2];
+connectAttr -f ($IKchain[1]+".message") ($SWchain[2]+".IKmid");
+
+//setup the scriptJobs
+//add the scriptjobs that load with each scene
+//string $node = JTDsetupScriptNodes(); 
+//string $cmd = ("//selectionTrigger//\nscriptJob -e \"SelectionChanged\" \"scriptNode -eb ($JTDnameSpace+\\\"JTDselectionTrigger\\\")\" -cu true -kws;\n");
+//if(!JTDscriptInfoExists(`scriptNode -q -bs $node`, $cmd) ) JTDaddToScriptNode($cmd); //so we dont get duplicate scriptJobs
+//add the selectionTrigger scripts
+//$cmd = JTDgetIKFKswitchCmd();
+//if(!JTDscriptInfoExists(`scriptNode -q -bs "JTDselectionTrigger"`, $cmd) ) JTDaddToSelectionTrigger($cmd); //so we dont get duplicate selectionConditions
+
+//Visibility switching for the IK/FK controls
+createNode "condition" -n ($name+"_Viz_"+$lr);
+connectAttr -f ($SWchain[2]+".IKFK") ($name+"_Viz_"+$lr+".firstTerm");
+connectAttr -f ($name+"_Viz_"+$lr+".outColorR") ($name+"_IK_Cntrl_"+$lr+".v");
+connectAttr -f ($name+"_Viz_"+$lr+".outColorR") ($IKchain[0]+".v");
+connectAttr -f ($name+"_Viz_"+$lr+".outColorR") ($name+"_PV_Cntrl_"+$lr+".v");
+createNode "condition" -n ($name+"_Viz2_"+$lr);
+setAttr ($name+"_Viz2_"+$lr+".secondTerm") 1;
+connectAttr -f ($SWchain[2]+".IKFK") ($name+"_Viz2_"+$lr+".firstTerm");
+connectAttr -f ($name+"_Viz2_"+$lr+".outColorR") ($FKchain[0]+".v");
+
+//attach the IK and FK stretch to the SW chain so it will stretch too
+JTDconnectStretchToSwChain($IKchain[1], $FKchain[1], $SWchain[1], $aimAxis, $SWchain[2]);
+JTDconnectStretchToSwChain($IKchain[2], $FKchain[2], $SWchain[2], $aimAxis, $SWchain[2]);
+
+//locking and hiding
+JTDlockAttrs(($name+"_IK_Cntrl_"+$lr), {0}, {0}, {1}, 0);
+JTDhideAttrs(($name+"_IK_Cntrl_"+$lr), {0}, {0}, {1}, 1);
+setAttr -l true -k false ($name+"_IK_Handle_"+$lr+".pvx");
+setAttr -l true -k false ($name+"_IK_Handle_"+$lr+".pvy");
+setAttr -l true -k false ($name+"_IK_Handle_"+$lr+".pvz");
+setAttr -l true -k false ($name+"_IK_Handle_"+$lr+".off");
+setAttr -l true -k false ($name+"_IK_Handle_"+$lr+".rol");
+setAttr -l true -k false ($name+"_IK_Handle_"+$lr+".twi");
+setAttr -l true -k false ($name+"_IK_Handle_"+$lr+".ikb");
+
+//final grouping
+parent $FKchain[0] ($name+"_RigXtras_"+$lr);
+parent $IKchain[0] ($name+"_RigXtras_"+$lr);
+
+//need an empty group above the SW chain so we can make the twist object a sibling of the chain
+group -em -n ($SWchain[0]+"_Parent_"+$lr);
+float $pos[] = `xform -q -ws -rp $SWchain[0]`;
+move -a -ws -rpr $pos[0] $pos[1] $pos[2] ($SWchain[0]+"_Parent_"+$lr);
+makeIdentity -apply true -t 1 -r 1 -s 1 ($SWchain[0]+"_Parent_"+$lr);
+
+parent $SWchain[0] ($SWchain[0]+"_Parent_"+$lr);
+parent ($SWchain[0]+"_Parent_"+$lr) ($name+"_RigXtras_"+$lr);
+
+//attach the SWchain to the clavicle
+
+//snapping with the Rt.Click
+JTDcreateRtClick();
+
+JTDlockAttrs(($name+"_PV_Cntrl_Parent_"+$lr), {0}, {1}, {1}, 1);
+JTDhideAttrs(($name+"_PV_Cntrl_Parent_"+$lr), {0}, {1}, {1}, 1);
+
+JTDlockAttrs(($name+"_PV_Cntrl_"+$lr), {0}, {0}, {1}, 1);
+JTDhideAttrs(($name+"_PV_Cntrl_"+$lr), {0}, {1}, {1}, 1);
+
+JTDlockAttrs(($name+"_PV_Snap_"+$lr), {0}, {1}, {1}, 1);
+JTDhideAttrs(($name+"_PV_Snap_"+$lr), {0}, {1}, {1}, 1);
+
+JTDlockAttrs(($name+"_EE_"+$lr), {1}, {1}, {1}, 1);
+JTDhideAttrs(($name+"_EE_"+$lr), {1}, {1}, {1}, 1);
+
+JTDlockAttrs($SWchain[0], {0}, {1}, {1}, 1);
+JTDhideAttrs($SWchain[0], {0}, {1}, {1}, 1);
+setAttr -k false -channelBox false ($SWchain[0]+".radi");
+
+JTDlockAttrs($SWchain[1], {0,1,1}, {1}, {1}, 1);
+JTDhideAttrs($SWchain[1], {1}, {1}, {1}, 1);
+setAttr -k false -channelBox false ($SWchain[1]+".radi");
+
+JTDlockAttrs($SWchain[2], {1}, {1}, {1}, 1);
+JTDhideAttrs($SWchain[2], {1}, {1}, {1}, 1);
+setAttr -k false -channelBox false ($SWchain[2]+".radi");
+
+JTDlockAttrs($FKchain[0], {1}, {0}, {1}, 0);
+JTDhideAttrs($FKchain[0], {1}, {0}, {1}, 1);
+setAttr -k false -channelBox false ($FKchain[0]+".radi");
+
+JTDlockAttrs($FKchain[1], {1}, {0}, {1}, 0);
+JTDhideAttrs($FKchain[1], {1}, {0}, {1}, 1);
+setAttr -k false -channelBox false ($FKchain[1]+".radi");
+
+JTDlockAttrs($FKchain[2], {1}, {0}, {1}, 0);
+JTDhideAttrs($FKchain[2], {1}, {0}, {1}, 1);
+setAttr -k false -channelBox false ($FKchain[2]+".radi");
+
+JTDlockAttrs($IKchain[0], {1}, {0}, {1}, 0);
+JTDhideAttrs($IKchain[0], {1}, {1}, {1}, 1);
+setAttr -k false -channelBox false ($IKchain[0]+".radi");
+
+JTDlockAttrs($IKchain[1], {1}, {0}, {1}, 0);
+JTDhideAttrs($IKchain[1], {1}, {1}, {1}, 1);
+setAttr -k false -channelBox false ($IKchain[1]+".radi");
+
+JTDlockAttrs($IKchain[2], {1}, {0}, {1}, 0);
+JTDhideAttrs($IKchain[2], {1}, {1}, {1}, 1);
+setAttr -k false -channelBox false ($IKchain[2]+".radi");
+
+//if this has an associated primitive, add the controls to the primitive object
+string $nodes[] = `ls -typ script`;
+for($node in $nodes)
+{
+	if( startsWith($node,($name+"_Prim_")) )
+	{
+		if(!objExists($node+".FKup"))
+		{
+			addAttr -ln FKup -at "message" $node;
+			connectAttr -f ($FKchain[0]+".message") ($node+".FKup");	
+			
+			addAttr -ln FKmid -at "message" $node;
+			connectAttr -f ($FKchain[1]+".message") ($node+".FKmid");	
+			
+			addAttr -ln FKlow -at "message" $node;
+			connectAttr -f ($FKchain[2]+".message") ($node+".FKlow");	
+			
+			addAttr -ln IKcntrl -at "message" $node;
+			connectAttr -f ($name+"_IK_Cntrl_"+$lr+".message") ($node+".IKcntrl");
+			
+			addAttr -ln PV -at "message" $node;
+			connectAttr -f ($name+"_PV_Cntrl_"+$lr+".message") ($node+".PV");	
+		
+			addAttr -ln switcher -at "message" $node;
+			connectAttr -f ($SWchain[2]+".message") ($node+".switcher");
+		}
+	}
+}
+
+$SWchain[3] = ($SWchain[0]+"_Parent_"+$lr);
+$SWchain[4] = ($name+"_IK_Cntrl_Parent_"+$lr);
+$SWchain[5] = ($name+"_PV_Cntrl_Parent_"+$lr);
+$SWchain[6] = $PVsnapMove;
+$SWchain[7] = ($endJoint+"_GimbleCntrl_"+$lr);
+
+return $SWchain;  //for use in the splineSetup proc
+}
+
+global proc string JTDsetupScriptNodes()
+{
+int $cnt = 0;
+string $cmd;
+string $nodes[] = `ls -typ script`;
+
+for($node in $nodes)
+{
+	if(objExists( ($node+".loadJobs") ))
+	{
+		$cnt++;
+	}
+}
+
+if($cnt == 0)
+{
+	$cmd = (
+	"string $JTDnameSpace = \"\";\n"+
+	"string $JTDrefs[] = `file -q -r`;\n"+
+	"for($JTDref in $JTDrefs) {\n"+
+	"$JTDnameSpace = (`file -q -ns $JTDref` + \":\");\n"+
+	"if(!`objExists(($JTDnameSpace+\"JTDloadScriptJobs\"))`) $JTDnameSpace = \"\";}\n"
+	);
+	scriptNode -st 1 -bs $cmd -n "JTDloadScriptJobs"; //create a node to hold the scriptJobs
+		
+	$cmd = JTDgetScriptCmd();	
+	scriptNode -st 1 -bs $cmd -n "JTDselectionTrigger"; //setup the selection parser
+	
+	scriptNode -eb "JTDloadScriptJobs"; //run the scriptJobs
+	
+	addAttr -ln loadJobs -dt "string" JTDloadScriptJobs;
+	setAttr -type "string" JTDloadScriptJobs.loadJobs "JTDloadScriptJobs";
+	setAttr -l true JTDloadScriptJobs.loadJobs;
+}
+return "JTDloadScriptJobs";
+}
+
+
+global proc JTDaddToSelectionTrigger(string $newCmd)
+{
+string $cmd = `scriptNode -q -bs "JTDselectionTrigger"`; //get the script
+$cmd = startString($cmd, (size($cmd)-4)); //remove the last two brackets
+$cmd = ($cmd + $newCmd); //append the new info
+$cmd = ($cmd + "}\n}\n"); //add the last two brackets
+
+scriptNode -e -bs $cmd "JTDselectionTrigger";
+}
+
+global proc JTDaddToScriptNode(string $newCmd)
+{
+string $cmd;
+string $nodes[] = `ls -typ script`;
+
+for($node in $nodes)
+{
+	if(objExists( ($node+".loadJobs") ))
+	{
+		$cmd = `scriptNode -q -bs $node`; //get the script
+		$cmd += $newCmd;
+		scriptNode -e -bs $cmd $node; //setup the selection parser
+		
+		scriptJob -ka;
+		scriptNode -eb $node; //run the scriptJobs
+	}	
+}
+
+}
+
+global proc int JTDscriptInfoExists(string $existingCmd, string $newCmd)
+{
+string $existingBuffer[];
+string $newBuffer[];
+
+tokenize $existingCmd "//" $existingBuffer;
+tokenize $newCmd "//" $newBuffer;
+
+for($i=0;$i<size($newBuffer);$i++)
+{
+	for($j=0;$j<size($existingBuffer);$j++)
+	{
+		if( gmatch($newBuffer[$i], $existingBuffer[$j]) ) return 1;
+	}
+}
+return 0;
+}
+
+
+global proc createSwitch(string $attrName, string $Cntrl, string $constraints[])
+{
+
+if(objExists ($Cntrl+"."+$attrName) == 0)
+{
+	addAttr -ln $attrName -at double  -min 0 -max 1 -dv 0 $Cntrl;
+	setAttr -e -keyable true ($Cntrl+"."+$attrName);
+}
+
+for($i=0;$i<size($constraints);$i++)
+{
+	connectAttr ($Cntrl+"."+$attrName) ($constraints[$i]+".w0");
+	createNode reverse -n ($Cntrl+"_Rev_"+$constraints[$i]);
+	connectAttr ($Cntrl+"."+$attrName) ($Cntrl+"_Rev_"+$constraints[$i]+".inputX");
+	connectAttr ($Cntrl+"_Rev_"+$constraints[$i]+".outputX") ($constraints[$i]+".w1");
+}
+
+}
+
+global proc JTDFKstretch(string $joint, string $axis, string $leftOrRight)
+{
+string $aim = ".tx";
+if( ($axis == "x") || ($axis == "X") )	$aim = ".tx";
+if( ($axis == "y") || ($axis == "Y") )	$aim = ".ty";
+if( ($axis == "z") || ($axis == "Z") )	$aim = ".tz";
+
+string $jointToStretch[] = `listRelatives -c -typ joint $joint`;
+if($jointToStretch[0] != "")
+{
+	addAttr -ln "stretch" -at double  $joint;
+	setAttr -e -keyable true ($joint+".stretch");
+
+	createNode plusMinusAverage -name ($joint+"_stretch");
+	if( ($leftOrRight == "r") || ($leftOrRight == "r_") )
+	{
+		setAttr ($joint+"_stretch.operation") 2;
+	}
+	else
+	{
+		setAttr ($joint+"_stretch.operation") 1;
+	}
+	setAttr ($joint+"_stretch.input1D[0]") (`getAttr ($jointToStretch[0]+$aim)`);
+	connectAttr ($joint+".stretch") ($joint+"_stretch.input1D[1]");
+	connectAttr ($joint+"_stretch.output1D") ($jointToStretch[0]+$aim); 
+}
+}
+
+global proc JTDIKstretch(string $startJoint, string $midJoint, string $endJoint, string $IKcntrl, string $IKhandle, string $PV, string $axis, string $lr, string $name)
+{
+float $length = JTDlength($startJoint, $midJoint) + JTDlength($midJoint, $endJoint);
+addAttr -ln autoStretch -at bool -min 0 -max 1 $IKcntrl;
+setAttr ($IKcntrl+".autoStretch") on;
+setAttr -k true ($IKcntrl+".autoStretch");
+
+addAttr -ln stretch -at double $IKcntrl;
+setAttr -k true ($IKcntrl+".stretch");
+
+//a little length trick from good ole' michael comet, so I dont have to use measure nodes
+group -em -n ($startJoint+"_aimGrp"); //create empty group
+$constraint = `pointConstraint -weight 1 -n ($startJoint+"_aimGrpConstr") $startJoint ($startJoint+"_aimGrp")`; //constrain it to the start joint
+group -em -p ($startJoint+"_aimGrp") -n ($startJoint+"_grpReader"); //create empty group under the previous joint
+$constraint = `aimConstraint -weight 1 -aimVector 1 0 0 -upVector 0 1 0 -worldUpType "vector" -worldUpVector 0 1 0 -n ($startJoint+"_stretchDistAimConstr") $IKhandle ($startJoint+"_aimGrp")`; //aiming along the x axis
+$constraint = `pointConstraint -weight 1 -n ($startJoint+"_stretchDistPtConstr") $IKhandle ($startJoint+"_grpReader")`;
+
+//multiplies the distance node by zero, to turn stretch on or off
+createNode "multiplyDivide" -n ($startJoint+"_stretchOnOff");
+connectAttr ($startJoint+"_grpReader.tx") ($startJoint+"_stretchOnOff.input1X");
+connectAttr ($IKcntrl+".autoStretch") ($startJoint+"_stretchOnOff.input2X");
+
+//takes the adjusted rest length and subtracts it from the measured distance between start and end joints
+createNode plusMinusAverage -n ($startJoint+"_stretchCompare");
+setAttr ($startJoint+"_stretchCompare.operation") 2;
+connectAttr ($startJoint+"_grpReader.tx") ($startJoint+"_stretchCompare.input1D[0]");
+setAttr ($startJoint+"_stretchCompare.input1D[1]") $length;
+
+//divide the resulting distance by two to distribute to the stretch joints
+createNode "multiplyDivide" -n ($startJoint+"_stretchDiv");
+setAttr ($startJoint+"_stretchDiv.operation") 2;
+connectAttr ($startJoint+"_stretchCompare.output1D") ($startJoint+"_stretchDiv.input1X");
+setAttr ($startJoint+"_stretchDiv.input2X") 2;
+
+//make sure it only stretches when it goes past its original length
+createNode "condition" -n ($startJoint+"_stretchCondition");
+setAttr ($startJoint+"_stretchCondition.operation") 2;
+setAttr ($startJoint+"_stretchCondition.secondTerm") $length;
+connectAttr ($startJoint+"_stretchOnOff.outputX") ($startJoint+"_stretchCondition.firstTerm");
+connectAttr  ($startJoint+"_stretchDiv.outputX") ($startJoint+"_stretchCondition.colorIfTrueR");
+setAttr ($startJoint+"_stretchCondition.colorIfFalseR") 0;
+
+JTDFKstretch($startJoint, $axis, ($lr+"_")); //this will add the stretch attribute to the IK joints
+JTDFKstretch($midJoint, $axis, ($lr+"_"));
+
+//for elbow pinning
+//measure the distance from the upper to the PV
+group -em -n ($startJoint+"_PVaimGrp"); //create empty group
+$constraint = `pointConstraint -weight 1 -n ($startJoint+"_PVaimGrpConstr") $startJoint ($startJoint+"_PVaimGrp")`; //constrain it to the start joint
+group -em -p ($startJoint+"_PVaimGrp") -n ($startJoint+"_PVgrpReader"); //create empty group under the previous joint
+$constraint = `aimConstraint -weight 1 -aimVector 1 0 0 -upVector 0 1 0 -worldUpType "vector" -worldUpVector 0 1 0 -n ($startJoint+"_PVstretchDistAimConstr") $PV ($startJoint+"_PVaimGrp")`; //aiming along the x axis
+$constraint = `pointConstraint -weight 1 -n ($startJoint+"_PVstretchDistPtConstr") $PV ($startJoint+"_PVgrpReader")`;
+
+//measure the distance from the lower to the PV
+group -em -n ($endJoint+"_PVaimGrp"); //create empty group
+$constraint = `pointConstraint -weight 1 -n ($endJoint+"_PVaimGrpConstr") $IKcntrl ($endJoint+"_PVaimGrp")`; //constrain it to the start joint
+group -em -p ($endJoint+"_PVaimGrp") -n ($endJoint+"_PVgrpReader"); //create empty group under the previous joint
+$constraint = `aimConstraint -weight 1 -aimVector 1 0 0 -upVector 0 1 0 -worldUpType "vector" -worldUpVector 0 1 0 -n ($endJoint+"_PVstretchDistAimConstr") $PV ($endJoint+"_PVaimGrp")`; //aiming along the x axis
+$constraint = `pointConstraint -weight 1 -n ($endJoint+"_PVstretchDistPtConstr") $PV ($endJoint+"_PVgrpReader")`;
+
+//subtract the original length by the length from the start to the PV
+createNode plusMinusAverage -n ($startJoint+"_PVstretchDiff");
+if(`getAttr ($midJoint+".tx")` > 0) setAttr ($startJoint+"_PVstretchDiff.operation") 2; //subtract
+connectAttr ($startJoint+"_PVgrpReader.tx") ($startJoint+"_PVstretchDiff.input1D[0]");
+setAttr ($startJoint+"_PVstretchDiff.input1D[1]") `getAttr ($midJoint+".tx")`;
+
+createNode plusMinusAverage -n ($endJoint+"_PVstretchDiff");
+if(`getAttr ($endJoint+".tx")` > 0) setAttr ($endJoint+"_PVstretchDiff.operation") 2; //subtract
+connectAttr ($endJoint+"_PVgrpReader.tx") ($endJoint+"_PVstretchDiff.input1D[0]");
+setAttr ($endJoint+"_PVstretchDiff.input1D[1]") `getAttr ($endJoint+".tx")`;
+
+//add an on/off attribute
+addAttr -ln lockMid -at double  -min 0 -max 1 -dv 0 $IKcntrl;
+setAttr -k true ($IKcntrl+".lockMid");
+
+//multiply by the lockMid to blend it on or off
+createNode "multiplyDivide" -n ($startJoint+"_pinOnOff");
+connectAttr ($startJoint+"_PVstretchDiff.output1D") ($startJoint+"_pinOnOff.input1X");
+connectAttr ($IKcntrl+".lockMid") ($startJoint+"_pinOnOff.input2X") ;
+connectAttr ($endJoint+"_PVstretchDiff.output1D") ($startJoint+"_pinOnOff.input1Y");
+connectAttr ($IKcntrl+".lockMid") ($startJoint+"_pinOnOff.input2Y") ;
+
+createNode "condition" -n ($startJoint+"_autoStretchOrPinning");
+setAttr ($startJoint+"_autoStretchOrPinning.operation") 2;
+setAttr ($startJoint+"_autoStretchOrPinning.secondTerm") 0;
+connectAttr ($IKcntrl+".lockMid") ($startJoint+"_autoStretchOrPinning.firstTerm"); //use the auto stretch or pinning
+
+connectAttr  ($startJoint+"_pinOnOff.outputX") ($startJoint+"_autoStretchOrPinning.colorIfTrueR");
+connectAttr  ($startJoint+"_pinOnOff.outputY") ($startJoint+"_autoStretchOrPinning.colorIfTrueG");
+
+connectAttr  ($startJoint+"_stretchCondition.outColorR") ($startJoint+"_autoStretchOrPinning.colorIfFalseR");
+connectAttr  ($startJoint+"_stretchCondition.outColorR") ($startJoint+"_autoStretchOrPinning.colorIfFalseG");
+
+//so we can add some extra stretch if we want
+createNode plusMinusAverage -n ($startJoint+"_xtraStretch");
+connectAttr ($startJoint+"_autoStretchOrPinning.outColorR") ($startJoint+"_xtraStretch.input1D[0]");
+connectAttr ($IKcntrl+".stretch") ($startJoint+"_xtraStretch.input1D[1]");
+
+createNode plusMinusAverage -n ($midJoint+"_xtraStretch");
+connectAttr ($startJoint+"_autoStretchOrPinning.outColorG") ($midJoint+"_xtraStretch.input1D[0]");
+connectAttr ($IKcntrl+".stretch") ($midJoint+"_xtraStretch.input1D[1]");
+
+//add this back to the joints
+connectAttr  ($startJoint+"_xtraStretch.output1D") ($startJoint+".stretch");
+connectAttr  ($midJoint+"_xtraStretch.output1D") ($midJoint+".stretch");
+
+//check to see if this has been called as part of the armRig, then group the extra control under the Xtras node
+if(objExists(($name+"_RigXtras_"+$lr)))
+{
+	parent ($startJoint+"_aimGrp") ($name+"_RigXtras_"+$lr);
+	parent ($startJoint+"_PVaimGrp") ($name+"_RigXtras_"+$lr);
+	parent ($endJoint+"_PVaimGrp") ($name+"_RigXtras_"+$lr);
+}
+}
+
+global proc JTDconnectStretchToSwChain(string $IKJoint, string $FKJoint, string $SWJoint, string $axis, string $switcher)
+{
+//this is code for stretch blending
+string $aim = ".tx";
+if( ($axis == "x") || ($axis == "X") )	$aim = ".tx";
+if( ($axis == "y") || ($axis == "Y") )	$aim = ".ty";
+if( ($axis == "z") || ($axis == "Z") )	$aim = ".tz";
+
+float $originalLength = `getAttr ($SWJoint+$aim)`;
+
+//determine which joint length is smaller or larger
+createNode "condition" -n ($SWJoint+"_SmallerOrLarger");
+setAttr ($SWJoint+"_SmallerOrLarger.operation") 4; //less than
+connectAttr ($FKJoint+$aim) ($SWJoint+"_SmallerOrLarger.firstTerm");
+connectAttr ($IKJoint+$aim) ($SWJoint+"_SmallerOrLarger.secondTerm");
+
+connectAttr ($FKJoint+$aim) ($SWJoint+"_SmallerOrLarger.colorIfTrueR"); 
+connectAttr ($IKJoint+$aim) ($SWJoint+"_SmallerOrLarger.colorIfFalseR"); 
+//outColorR will always output which joint is smaller between FK or IK
+connectAttr ($IKJoint+$aim) ($SWJoint+"_SmallerOrLarger.colorIfTrueG");
+connectAttr ($FKJoint+$aim) ($SWJoint+"_SmallerOrLarger.colorIfFalseG");
+//ourColorG will always output which joint is larger between FK or IK
+
+//we want to know the difference between lengths, so we make sure to subtract smaller length from larger length to keep a positive number
+createNode plusMinusAverage -name ($SWJoint+"_PositiveDifference");
+setAttr ($SWJoint+"_PositiveDifference.operation") 2; //subtract
+connectAttr ($SWJoint+"_SmallerOrLarger.outColorG") ($SWJoint+"_PositiveDifference.input1D[0]"); //larger
+connectAttr ($SWJoint+"_SmallerOrLarger.outColorR") ($SWJoint+"_PositiveDifference.input1D[1]"); //smaller
+
+//multiply difference between lengths by the IKFK blend Value because this will give us a percentage of the distance
+createNode "multiplyDivide" -n ($SWJoint+"_StretchMult");
+connectAttr ($switcher+".IKFK") ($SWJoint+"_StretchMult.input1X");
+connectAttr ($SWJoint+"_PositiveDifference.output1D") ($SWJoint+"_StretchMult.input2X");
+
+//add the difference between lengths to the smaller length
+createNode plusMinusAverage -name ($SWJoint+"_AddPercent");
+connectAttr ($SWJoint+"_SmallerOrLarger.outColorR") ($SWJoint+"_AddPercent.input1D[0]"); //R is always smaller
+connectAttr ($SWJoint+"_StretchMult.outputX") ($SWJoint+"_AddPercent.input1D[1]"); //the difference between lengths as a percentage
+
+//subtract the difference between lengths from the larger length
+createNode plusMinusAverage -name ($SWJoint+"_SubPercent");
+setAttr ($SWJoint+"_SubPercent.operation") 2; //subtract
+connectAttr ($SWJoint+"_SmallerOrLarger.outColorG") ($SWJoint+"_SubPercent.input1D[0]"); //G is always larger
+connectAttr ($SWJoint+"_StretchMult.outputX") ($SWJoint+"_SubPercent.input1D[1]"); //the difference between lengths
+
+//choose whether to use the added or subtracted value from above, if IK is smaller than FK, we use the addedValue otherwise we use the subtracted value
+createNode "condition" -n ($SWJoint+"_AddOrSub");
+connectAttr ($IKJoint+$aim)  ($SWJoint+"_AddOrSub.firstTerm");
+connectAttr ($FKJoint+$aim)  ($SWJoint+"_AddOrSub.secondTerm");
+setAttr ($SWJoint+"_AddOrSub.operation") 4; //less than
+connectAttr ($SWJoint+"_AddPercent.output1D") ($SWJoint+"_AddOrSub.colorIfFalseR"); //reverse these two if the IKFK attribute 1 for FK and 0 for IK
+connectAttr ($SWJoint+"_SubPercent.output1D") ($SWJoint+"_AddOrSub.colorIfTrueR");
+
+connectAttr ($SWJoint+"_AddOrSub.outColorR") ($SWJoint+$aim);
+
+}
+
+
+	
+global proc string[] JTDconstrainChain(string $masterChain[], string $slaveChain[], string $option)
+{
+string $constraintList[];
+int $cnt = 0;
+
+if($option == "point")
+{
+	pointConstraint -weight 1 -n ($slaveChain[0]+"_PtConstr") $slaveChain[0] $masterChain[0];
+}
+
+for($i=0;$i<size($masterChain);$i++)
+{
+	orientConstraint -weight 1 -n ($masterChain[$i]+"_OrConstr") $masterChain[$i] $slaveChain[$i];
+	$constraintList[$cnt] = ($masterChain[$i]+"_OrConstr");
+	$cnt++;
+}
+return $constraintList;
+}
+
+global proc string[] JTDdupChain(string $startJoint, string $midJoint, string $endJoint, string $postfix)
+{
+//proc to duplicate a chain, remove extra joints, and add a postfix
+int $check = 0; //used to test if the joints are in the correct hierarchy
+string $orig[] = {$startJoint};
+string $dup[] = `duplicate -rc $startJoint`;
+string $chain[] = `listRelatives -typ joint $startJoint`;
+
+//make sure that the joints are in the same chain
+for($i=1;$i<size($dup);$i++)
+{
+	if($chain[0] == $midJoint) $check = 1;
+	if(($check == 1) && ($chain[0] == $endJoint)) 
+	{
+		$check = 2; //this means that we found the mid joint first, so it's in the right hierarchy
+		break;
+	}
+	$chain = `listRelatives -c -typ joint $chain[0]`;
+	
+	if(size($chain) > 1) error -sl true "JTDdupChain has reported that you are trying to duplicate a chain with branches";
+}
+
+if($check != 2) 
+{
+	error -sl true "JTDdupChain has reported that these joints are not entered in the correct order, check which is first, middle and last";
+}
+clear $chain; //we'll use this later
+
+//move the duplicate chain under the world only if it's not already
+if(size(`listRelatives -p $startJoint`) != 0) parent -w $dup[0];
+
+select -hi $dup[0];
+$dup = `ls -sl`;
+select -hi $orig[0];
+$orig = `ls -sl`;
+select -cl;
+
+//iterate through the chain, renaming objects
+for($i=0;$i<size($dup);$i++)
+{
+	$chain[$i] = `rename $dup[$i] ($orig[$i]+"_"+$postfix)`; //children usually retain the same name, but the root is often renamed automatically
+	if(objExists( ($chain[$i]+".connectTo") ) ) deleteAttr ($chain[$i]+".connectTo");
+}
+
+$i = 0; //reset the counter for the next loop
+clear $dup; //all the names are changed, so we dont need this anymore
+//now remove extra joints that might be between the start and end to get a clean chain
+for($joint in $chain)
+{
+	if(($joint == ($startJoint+"_"+$postfix) ) || ($joint == ($midJoint+"_"+$postfix) ) || ($joint == ($endJoint+"_"+$postfix) ))
+	{
+		$dup[$i] = $joint;  //save an array of the good joints to return
+		$i++;
+	}
+	else
+	{
+		removeJoint $joint;
+	}
+}
+clear $orig;
+clear $chain;
+return $dup;
+}
+
+global proc JTDalignGroup(string $name, string $joint)
+{
+float $scaleVal[] = getAttr ($name+".s");
+
+parent $name $joint;
+setAttr ($name+".rx") 0;
+setAttr ($name+".ry") 0;
+setAttr ($name+".rz") 0;
+parent -w $name;
+
+setAttr ($name+".sx") $scaleVal[0];
+setAttr ($name+".sy") $scaleVal[1];
+setAttr ($name+".sz") $scaleVal[2];
+}
+
+global proc float JTDangle(string $origin, string $aim, string $offset)
+{
+float $A[] = `xform -q -ws -rp $origin`;
+float $B[] = `xform -q -ws -rp $offset`;
+float $C[] = `xform -q -ws -rp $aim`;
+
+float $Ax = $A[0]-$B[0];
+float $Ay = $A[1]-$B[1];
+float $Az = $A[2]-$B[2];
+
+float $Cx = $A[0]-$C[0];
+float $Cy = $A[1]-$C[1];
+float $Cz = $A[2]-$C[2];
+
+float $dot = dotProduct( {$Ax,$Ay,$Az}, {$Cx,$Cy,$Cz}, 1);
+float $angle;
+catchQuiet($angle = acosd($dot));
+
+
+return $angle;
+}
+
+
+global proc float JTDlength(string $start, string $end)
+{
+float $A[] = `xform -q -ws -rp $start`;
+float $B[] = `xform -q -ws -rp $end`;
+
+float $dx = $A[0]-$B[0]; 
+float $dy = $A[1]-$B[1]; 
+float $dz = $A[2]-$B[2]; 
+float $hyp = sqrt($dx*$dx + $dy*$dy + $dz*$dz);
+
+return $hyp;
+}
+
+global proc JTDlockAttrs(string $name, int $translate[], int $rotate[], int $scale[], int $vis)
+{
+int $option1 = 0;
+
+if(size($translate) == 1)
+{
+	if($translate[0] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -l ($name+".tx")`);
+		setAttr -l $option1 ($name+".tx");
+		$option1 = JTDreverse(`getAttr -l ($name+".ty")`);
+		setAttr -l $option1 ($name+".ty");
+		$option1 = JTDreverse(`getAttr -l ($name+".tz")`);
+		setAttr -l $option1 ($name+".tz");
+	}
+}
+else
+{
+	if($translate[0] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -l ($name+".tx")`);
+		setAttr -l $option1 ($name+".tx");
+	}
+	if($translate[1] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -l ($name+".ty")`);
+		setAttr -l $option1 ($name+".ty");
+	}
+	if($translate[2] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -l ($name+".tz")`);
+		setAttr -l $option1 ($name+".tz");
+	}
+}
+
+if(size($rotate) == 1)
+{
+	if($rotate[0] != 0)
+	{
+		$option1 = JTDreverse(`getAttr -l ($name+".rx")`);
+		setAttr -l $option1 ($name+".rx");
+		$option1 = JTDreverse(`getAttr -l ($name+".ry")`);
+		setAttr -l $option1 ($name+".ry");
+		$option1 = JTDreverse(`getAttr -l ($name+".rz")`);
+		setAttr -l $option1 ($name+".rz");
+	}
+}
+else
+{
+	if($rotate[0] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -l ($name+".rx")`);
+		setAttr -l $option1 ($name+".rx");
+	}
+	if($rotate[1] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -l ($name+".ry")`);
+		setAttr -l $option1 ($name+".ry");
+	}
+	if($rotate[2] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -l ($name+".rz")`);
+		setAttr -l $option1 ($name+".rz");
+	}
+}
+
+if(size($scale) == 1)
+{
+	if($scale[0] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -l ($name+".sx")`);
+		setAttr -l $option1 ($name+".sx");
+		$option1 = JTDreverse(`getAttr -l ($name+".sy")`);
+		setAttr -l $option1 ($name+".sy");
+		$option1 = JTDreverse(`getAttr -l ($name+".sz")`);
+		setAttr -l $option1 ($name+".sz");
+	}
+}
+else
+{
+	
+	if($scale[0] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -l ($name+".sx")`);
+		setAttr -l $option1 ($name+".sx");
+	}
+	if($scale[1] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -l ($name+".sy")`);
+		setAttr -l $option1 ($name+".sy");
+	}
+	if($scale[2] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -l ($name+".sz")`);
+		setAttr -l $option1 ($name+".sz");
+	}
+
+}
+
+
+if($vis == 1)
+{
+	$option1 = JTDreverse(`getAttr -l ($name+".v")`);
+	setAttr -l $option1 ($name+".v");
+}
+
+}
+
+
+global proc JTDhideAttrs(string $name, int $translate[], int $rotate[], int $scale[], int $vis)
+{
+int $option1 = 0;
+
+if(size($translate) == 1)
+{
+	if($translate[0] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -k ($name+".tx")`);
+		setAttr  -k $option1 ($name+".tx");
+		$option1 = JTDreverse(`getAttr -k ($name+".ty")`);
+		setAttr  -k $option1 ($name+".ty");
+		$option1 = JTDreverse(`getAttr -k ($name+".tz")`);
+		setAttr  -k $option1 ($name+".tz");
+	}
+}
+else
+{
+	
+	if($translate[0] != 0)
+	{
+		$option1 = JTDreverse(`getAttr -k ($name+".tx")`);
+		setAttr  -k $option1 ($name+".tx");
+	}
+	if($translate[1] != 0)
+	{
+		$option1 = JTDreverse(`getAttr -k ($name+".ty")`);
+		setAttr  -k $option1 ($name+".ty");
+	}
+	if($translate[2] != 0)
+	{
+		$option1 = JTDreverse(`getAttr -k ($name+".tz")`);
+		setAttr  -k $option1 ($name+".tz");
+	}
+
+}
+
+if(size($rotate) == 1)
+{
+	if($rotate[0] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -k ($name+".rx")`);
+		setAttr  -k $option1 ($name+".rx");
+		$option1 = JTDreverse(`getAttr -k ($name+".ry")`);
+		setAttr  -k $option1 ($name+".ry");
+		$option1 = JTDreverse(`getAttr -k ($name+".rz")`);
+		setAttr  -k $option1 ($name+".rz");
+	}
+}
+else
+{
+	
+	if($rotate[0] != 0)
+	{
+		$option1 = JTDreverse(`getAttr -k ($name+".rx")`);
+		setAttr  -k $option1 ($name+".rx");
+	}
+	if($rotate[1] != 0)
+	{
+		$option1 = JTDreverse(`getAttr -k ($name+".ry")`);
+		setAttr  -k $option1 ($name+".ry");
+	}
+	if($rotate[2] != 0)
+	{
+		$option1 = JTDreverse(`getAttr -k ($name+".rz")`);
+		setAttr  -k $option1 ($name+".rz");
+	}
+
+}
+
+if(size($scale) == 1)
+{
+	if($scale[0] != 0) 
+	{
+		$option1 = JTDreverse(`getAttr -k ($name+".sx")`);
+		setAttr  -k $option1 ($name+".sx");
+		$option1 = JTDreverse(`getAttr -k ($name+".sy")`);
+		setAttr  -k $option1 ($name+".sy");
+		$option1 = JTDreverse(`getAttr -k ($name+".sz")`);
+		setAttr  -k $option1 ($name+".sz");
+	}
+}
+else
+{
+	
+	if($scale[0] != 0)
+	{
+		$option1 = JTDreverse(`getAttr -k ($name+".sx")`);
+		setAttr  -k $option1 ($name+".sx");
+	}
+	if($scale[1] != 0)
+	{
+		$option1 = JTDreverse(`getAttr -k ($name+".sy")`);
+		setAttr  -k $option1 ($name+".sy");
+	}
+	if($scale[2] != 0)
+	{
+		$option1 = JTDreverse(`getAttr -k ($name+".sz")`);
+		setAttr  -k $option1 ($name+".sz");
+	}
+
+}
+
+
+if($vis == 1)
+{
+	$option1 = JTDreverse(`getAttr -k ($name+".v")`);
+	setAttr -k $option1 ($name+".v");
+}
+
+}
+
+global proc int JTDreverse(int $toRev)
+{
+if($toRev == 0) return 1;
+if($toRev > 0) return 0;
+if($toRev < 0) return 0;
+}
+
+global proc JTDgenerateBox(string $name, float $scale[])
+{
+curve -d 1 -p 0.5 0.5 0.5 -p 0.5 0.5 -0.5 -p -0.5 0.5 -0.5 -p -0.5 -0.5 -0.5 -p 0.5 -0.5 -0.5 -p 0.5 0.5 -0.5 -p -0.5 0.5 -0.5 -p -0.5 0.5 0.5 -p 0.5 0.5 0.5 -p 0.5 -0.5 0.5 -p 0.5 -0.5 -0.5 -p -0.5 -0.5 -0.5 -p -0.5 -0.5 0.5 -p 0.5 -0.5 0.5 -p -0.5 -0.5 0.5 -p -0.5 0.5 0.5 -k 0 -k 1 -k 2 -k 3 -k 4 -k 5 -k 6 -k 7 -k 8 -k 9 -k 10 -k 11 -k 12 -k 13 -k 14 -k 15 ;
+rename $name;
+scale $scale[0] $scale[1] $scale[2] $name;
+makeIdentity -apply true -t 1 -r 1 -s 1 $name;
+}
+
+global proc JTDgeneratePin(string $name, float $scale)
+{
+curve -d 3 -p 0 0 0 -p 0 0.6485621402 0 -p 0 1.273996118 0 -p -0.002093002683 1.844268503 -0.002093002683 -p -0.002093002683 1.843895337 -0.002093002683 -p -0.002093002683 1.843609626 -0.002093002683 -p -0.003608046339 1.853908936 0.2868756503 -p -0.003608046339 2.187646821 0.4634469185 -p -0.003608046339 2.543909359 0.3247666035 -p -0.003608046339 2.632759462 0.1132543376 -p -0.003608046339 2.631962202 0.001981948752 -p -0.003608046339 2.631933597 7.454481477e-011 -p 0.1037686719 2.630383825 0 -p 0.3276993565 2.541860984 0 -p 0.4598388722 2.190453911 0 -p 0.292132057 1.85366184 0 -p -0.002093002683 1.843609626 -0.002093002683 -p -0.2904836966 1.853908936 0 -p -0.4670549648 2.187646821 0 -p -0.3283746498 2.543909359 0 -p -0.1168623839 2.632759462 0 -p -0.005589995091 2.631962202 0 -p -0.003608046414 2.631933597 0 -p -0.003608046339 2.630383825 -0.1073767182 -p -0.003608046339 2.541860984 -0.3313074028 -p -0.003608046339 2.190453911 -0.4634469185 -p -0.003608046339 1.85366184 -0.2957401033 -p -0.001515043656 1.843609626 -0.001515043656;
+rename $name;
+
+scale ($scale*0.6) ($scale*0.6) ($scale*0.6) $name;
+makeIdentity -apply true -t 1 -r 1 -s 1 $name;
+}
+
+global proc JTDgenerateDoublePin(string $name, float $scale)
+{
+string $curve0 = `curve -d 3 -p -0.0009090261936 -1.417888013 0.0009090261936 -p -0.002164827803 -1.423919341 0.177444062 -p -0.002164827803 -1.625994584 0.2780681511 -p -0.002164827803 -1.836838827 0.1987844417 -p -0.002164827803 -1.889952532 0.06442603092 -p -0.002164827848 -1.890882395 1.933849563e-016 -p -0.003353997055 -1.890899558 1.933870581e-016 -p -0.07011743034 -1.891377914 1.934456379e-016 -p -0.1970247899 -1.838067852 1.869172539e-016 -p -0.2802329789 -1.62431033 1.607403718e-016 -p -0.174290218 -1.424067599 1.362185197e-016 -p -0.00125580161 -1.417888013 0.00125580161 -p 0.1752792342 -1.423919341 1.36200364e-016 -p 0.2759033233 -1.625994584 1.609466266e-016 -p 0.1966196139 -1.836838827 1.867667467e-016 -p 0.06226120314 -1.889952532 1.932710847e-016 -p -0.002164827803 -1.890882395 -4.472669548e-011 -p -0.002164827803 -1.890899558 -0.001189169251 -p -0.002164827803 -1.891377914 -0.06795260256 -p -0.002164827803 -1.838067852 -0.1948599621 -p -0.002164827803 -1.62431033 -0.2780681511 -p -0.002164827803 -1.424067599 -0.1721253902 -p -0.00125580161 -1.417888013 0.00125580161 -p -0.00125580161 -1.418059439 0.00125580161 -p -0.00125580161 -1.418283339 0.00125580161 -p 0 -1.076119908 9.360862445e-017 -p 0 -0.700859521 4.765399906e-017 -p 0 0 0 -p 0 0.700859521 0 -p 0 1.076119908 0 -p -0.00125580161 1.418283339 -0.00125580161 -p -0.00125580161 1.418059439 -0.00125580161 -p -0.00125580161 1.417888013 -0.00125580161 -p -0.002164827803 1.424067599 0.1721253902 -p -0.002164827803 1.62431033 0.2780681511 -p -0.002164827803 1.838067852 0.1948599621 -p -0.002164827803 1.891377914 0.06795260256 -p -0.002164827803 1.890899558 0.001189169251 -p -0.002164827803 1.890882395 4.472688886e-011 -p 0.06226120314 1.889952532 0 -p 0.1966196139 1.836838827 0 -p 0.2759033233 1.625994584 0 -p 0.1752792342 1.423919341 0 -p -0.00125580161 1.417888013 -0.00125580161 -p -0.174290218 1.424067599 0 -p -0.2802329789 1.62431033 0 -p -0.1970247899 1.838067852 0 -p -0.07011743034 1.891377914 0 -p -0.003353997055 1.890899558 0 -p -0.002164827848 1.890882395 0 -p -0.002164827803 1.889952532 -0.06442603092 -p -0.002164827803 1.836838827 -0.1987844417 -p -0.002164827803 1.625994584 -0.2780681511 -p -0.002164827803 1.423919341 -0.177444062 -p -0.0009090261936 1.417888013 -0.0009090261936 `;
+rename $curve0 $name;
+scale ($scale*0.8) ($scale*0.8) ($scale*0.8) $name;
+}
+
+global proc JTDgeneratePlusPin(string $name, float $scale)
+{
+string $curve0 = `curve -d 1 -p 0.1347054623 0.1347054623 1.822302253 -p 0.1347054623 0.404116387 1.822302253 -p -0.1347054623 0.404116387 1.822302253 -p -0.1347054623 0.1347054623 1.822302253 -p -0.404116387 0.1347054623 1.822302253 -p -0.404116387 -0.1347054623 1.822302253 -p -0.1347054623 -0.1347054623 1.822302253 -p -0.1347054623 -0.404116387 1.822302253 -p 0.1347054623 -0.404116387 1.822302253 -p 0.1347054623 -0.1347054623 1.822302253 -p 0.404116387 -0.1347054623 1.822302253 -p 0.404116387 0.1347054623 1.822302253 -p 0.1347054623 0.1347054623 1.822302253 -p -4.718447855e-016 6.661338148e-016 1.822302253 -p -4.718447855e-016 6.661338148e-016 -1.822302253 -p 0.1347054623 0.1347054623 -1.822302253 -p 0.404116387 0.1347054623 -1.822302253 -p 0.404116387 -0.1347054623 -1.822302253 -p 0.1347054623 -0.1347054623 -1.822302253 -p 0.1347054623 -0.404116387 -1.822302253 -p -0.1347054623 -0.404116387 -1.822302253 -p -0.1347054623 -0.1347054623 -1.822302253 -p -0.404116387 -0.1347054623 -1.822302253 -p -0.404116387 0.1347054623 -1.822302253 -p -0.1347054623 0.1347054623 -1.822302253 -p -0.1347054623 0.404116387 -1.822302253 -p 0.1347054623 0.404116387 -1.822302253 -p 0.1347054623 0.1347054623 -1.822302253 `;
+rename $curve0 $name;
+scale ($scale*0.8) ($scale*0.8) ($scale*0.8) $name;
+}
+
+
+global proc JTDgenerateSphere(string $name, float $scale)
+{
+string $curve0 = `curve -d 3 -p -6.123031769e-017 2.775557562e-017 -1 -p 0.0001235864122 0.1309458726 -1.000064421 -p -0.0002742266176 0.3915585369 -0.9456279823 -p 0.0003389536436 0.6701721217 -0.7635082238 -p -0.000553095051 0.8361532154 -0.5583895923 -p 0.00136260736 0.9283842261 -0.3863202459 -p -0.002687025317 0.9767240213 -0.2252091658 -p 0.005543788969 0.9965337104 -0.104081452 -p -0.02029416706 1.001748696 0.01974071449 -p 0.1045622187 0.9964701624 -0.005400309448 -p 0.2251995147 0.9768000671 0.002536829707 -p 0.3865759161 0.9281011662 -0.001133833653 -p 0.55847278 0.8363931938 0.0002265362106 -p 0.7636871607 0.6693417351 0.0003400282858 -p 0.9091914984 0.4484446812 -0.001118057277 -p 0.9769222686 0.2254092528 0.001863847169 -p 0.9965739775 0.1030007338 -0.005009515802 -p 1.001727199 -0.01993014322 0.01986567934 -p 0.9965036701 0.005554435932 -0.1052637009 -p 0.9764531039 -0.002706584867 -0.2256662848 -p 0.928268689 0.001371864596 -0.3872436884 -p 0.8354616627 -0.0005451533611 -0.5588036842 -p 0.7115984331 3.095565678e-005 -0.7130267558 -p 0.5572978694 0.0004700026651 -0.8364921793 -p 0.3852386368 -0.001247042657 -0.9290306696 -p 0.2241841566 0.0024992799 -0.9768890625 -p 0.1026328241 -0.005218819274 -0.9967063022 -p -0.02039527096 0.01974264581 -1.001723938 -p 0.005745422882 -0.1060612099 -0.9963622373 -p -0.002731469117 -0.2261602615 -0.9765135555 -p 0.001248040393 -0.3877577371 -0.9276668091 -p -0.0002928011379 -0.5594164555 -0.8357208227 -p -0.0002596411497 -0.7644947825 -0.6684940818 -p 0.001004225074 -0.9096915214 -0.4472844699 -p -0.001720648363 -0.9772030976 -0.2243974442 -p 0.004703179619 -0.9966878904 -0.1015426392 -p -0.01931405597 -1.001729382 0.02057196475 -p 0.1067656828 -0.9963774683 -0.005895350006 -p 0.2266216964 -0.9761851817 0.002899367477 -p 0.3884340123 -0.9278062543 -0.001485769115 -p 0.5597338741 -0.8348274164 0.0006133443952 -p 0.7138874842 -0.7107378086 -8.697309974e-005 -p 0.8371211142 -0.5563610625 -0.0004020907283 -p 0.9294926696 -0.384055852 0.001133916015 -p 0.9771495087 -0.223211812 -0.002308477385 -p 0.9968354183 -0.1011621015 0.004885546241 -p 1.001705946 0.02104834724 -0.01917438059 -p 0.9962772194 -0.006151855867 0.1075547626 -p 0.9761598084 0.003072602451 0.2271223737 -p 0.9273585559 -0.001638012236 0.3889399022 -p 0.8348528717 0.0007772763375 0.5603564275 -p 0.6680555775 -0.0007021648041 0.7653084082 -p 0.4453608366 0.0007535675062 0.9101765699 -p 0.2244817227 -0.0008075967659 0.9775027132 -p 0.113234568 0.001578144304 0.9943440719 -p 0.04293180374 -0.003663170975 0.9993319299 -p -0.0148814703 0.00401209051 1.000733336 -p 0.005132560465 0.1056940343 0.9964420516 -p -0.001892882661 0.228105009 0.9760560253 -p 0.001043192628 0.4505890488 0.9084938064 -p -0.0005540194405 0.7271581793 0.7243748842 -p 0.0001026525498 0.9108428438 0.4455543861 -p 0.0003422973437 0.9769601316 0.225006545 -p -0.001278456988 0.9945404819 0.1135364373 -p 0.003398259257 0.9991980337 0.04354352664 -p -0.003480593232 1.000801555 -0.01499408611 -p -0.1053032214 0.9964610032 0.005219460843 -p -0.2276890937 0.9761661186 -0.002021219233 -p -0.4502125185 0.9086693886 0.00129115016 -p -0.7268517968 0.724690637 -0.0009954926063 -p -0.9106610622 0.4459227861 0.0007713475991 -p -0.9768616379 0.2254356728 -0.0007983718556 -p -0.9944929854 0.1139012556 0.001486268857 -p -0.9991762154 0.04409700375 -0.003367543647 -p -1.000811267 -0.01500156765 0.00307513103 -p -0.9965022145 0.005145273523 0.1048631543 -p -0.9762678021 -0.001899159203 0.227292205 -p -0.9088489695 0.001053673186 0.4498244839 -p -0.7250047614 -0.0005721946384 0.7265529019 -p -0.4462900333 0.0001299782263 0.9104747803 -p -0.2258689609 0.0002957271008 0.9767653331 -p -0.1142537218 -0.001164262502 0.9944439874 -p -0.0446838751 0.003092446939 0.9991548948 -p 0.01509019439 -0.002546446191 1.000820279 -p -0.005217574683 -0.1044709336 0.9965437218 -p 0.002014027761 -0.2268767503 0.9763687085 -p -0.001279643226 -0.4494474854 0.9090295248 -p 0.0009765514359 -0.7262464593 0.7253167703 -p -0.0007435773672 -0.910292571 0.4466601902 -p 0.0007515755544 -0.9766665738 0.226297128 -p -0.001372006013 -0.9943960912 0.1146185873 -p 0.003062100188 -0.9991327677 0.04523811157 -p -0.002149208591 -1.00082952 -0.01509289919 -p -0.1040274137 -0.9965847393 0.005146195802 -p -0.2264810541 -0.9764698067 -0.00190074495 -p -0.4490586482 -0.9092092885 0.001061163039 -p -0.7259475598 -0.7256297535 -0.0005880910963 -p -0.9101060835 -0.4470286054 0.0001555757595 -p -0.9765694088 -0.2267280992 0.0002508968003 -p -0.9943483369 -0.1149764848 -0.001053286863 -p -0.9991067227 -0.04581035892 0.002794985949 -p -1.000849258 0.01513761154 -0.001647431399 -p -0.9966065856 -0.005153288798 -0.1035996039 -p -0.9766013721 0.001915397064 -0.2261181321 -p -0.9093286496 -0.001093978788 -0.4485815508 -p -0.726052234 0.0006520568013 -0.7258134881 -p -0.3914560507 -0.0004521734225 -0.9464565038 -p -0.1309942021 0.0002192374476 -0.9996734822 -p -1.110803538e-014 6.123031769e-017 -1 `;
+rename $curve0 $name;
+scale (0.5*$scale) (0.5*$scale) (0.5*$scale) $name;
+makeIdentity -apply true -t 1 -r 1 -s 1 $name;
+}
+
+global proc JTDgenerateIKFK(string $name, string $aim, string $up, float $scale, string $option)
+{
+if($option == "FK")
+{
+	string $curve0 = `curve -d 1 -p -1.646025244 2.407074481 0 -p -1.282243293 2.407074481 0 -p -1.282243293 2.25116793 0 -p -1.464134268 2.25116793 0 -p -1.464134268 2.09526138 0 -p -1.282243293 2.09526138 0 -p -1.282243293 1.939354829 0 -p -1.464134268 1.939354829 0 -p -1.464134268 1.601557303 0 -p -1.646025244 1.601557303 0 -p -1.646025244 1.601557303 0 -p -1.646025244 2.407074481 0 -p -1.282243293 2.407074481 0 `;
+	rename $curve0 $name;
+	string $curve0 = `curve -d 1 -p -0.7235779549 2.407074481 0 -p -0.8802965312 2.063593171 0 -p -0.7235779549 1.601557303 0 -p -0.9314533556 1.601557303 0 -p -1.048383467 1.94666306 0 -p -1.048383467 1.601557303 0 -p -1.230274442 1.601557303 0 -p -1.230274442 2.407074481 0 -p -1.048383467 2.407074481 0 -p -1.048383467 2.094043738 0 -p -0.9054689305 2.407074481 0 -p -0.9054689305 2.407074481 0 -p -0.7235779549 2.407074481 0 `;
+	rename $curve0 K;
+	parent -r -s K|KShape $name;
+	delete K;
+	//xform -cp $name;
+	select -cl;
+}
+if($option == "IK")
+{
+	string $curve0 = `curve -d 2 -p 1.111382582 2.402611111 0 -p 1.11752024 2.402611111 0 -p 1.11752024 2.394112638 0 -p 1.11752024 2.372393369 0 -p 1.11752024 2.266936094 0 -p 1.11752024 2.266898824 0 -p 1.111382582 2.266898824 0 -p 1.049874264 2.266879155 0 -p 1.017703433 2.266859485 0 -p 1.010189967 2.266859485 0 -p 1.010189967 2.266834639 0 -p 1.010189967 1.995969967 0 -p 1.010189967 1.738773754 0 -p 1.010189967 1.738701492 0 -p 1.017703433 1.738701492 0 -p 1.049874264 1.738647294 0 -p 1.111382582 1.738593097 0 -p 1.11752024 1.738593097 0 -p 1.11752024 1.738478687 0 -p 1.11752024 1.633118218 0 -p 1.11752024 1.611398949 0 -p 1.11752024 1.603372178 0 -p 1.111382582 1.603372178 0 -p 0.9362126365 1.603372178 0 -p 0.7610426911 1.603372178 0 -p 0.7549045718 1.603372178 0 -p 0.7549045718 1.611398949 0 -p 0.7549045718 1.633118218 0 -p 0.7549045718 1.738478687 0 -p 0.7549045718 1.738593097 0 -p 0.7610426911 1.738593097 0 -p 0.8225510089 1.738647294 0 -p 0.8547218404 1.738701492 0 -p 0.8622347419 1.738701492 0 -p 0.8622347419 1.738773754 0 -p 0.8622347419 1.995969967 0 -p 0.8622347419 2.266834639 0 -p 0.8622347419 2.266859485 0 -p 0.8547218404 2.266859485 0 -p 0.8225510089 2.266879155 0 -p 0.7610426911 2.266898824 0 -p 0.7549045718 2.266898824 0 -p 0.7549045718 2.266936094 0 -p 0.7549045718 2.372393369 0 -p 0.7549045718 2.394112638 0 -p 0.7549045718 2.402611111 0 -p 0.7610426911 2.402611111 0 -p 0.9362126365 2.402611111 0 -p 1.111382582 2.402611111 0 -p 1.111382582 2.402611111 0 `;
+	rename $curve0 $name;
+	string $curve0 = `curve -d 1 -p 1.674348521 2.407074481 0 -p 1.517629945 2.063593171 0 -p 1.674348521 1.601557303 0 -p 1.466473121 1.601557303 0 -p 1.34954301 1.94666306 0 -p 1.34954301 1.601557303 0 -p 1.167652034 1.601557303 0 -p 1.167652034 2.407074481 0 -p 1.34954301 2.407074481 0 -p 1.34954301 2.094043738 0 -p 1.492457546 2.407074481 0 -p 1.492457546 2.407074481 0 -p 1.674348521 2.407074481 0 `;
+	rename $curve0 K;
+	parent -r -s K|KShape $name;
+	delete K;
+	//xform -cp $name;
+	select -cl;
+}
+if($option == "Switcher")
+{
+	string $curve0 = `curve -d 1 -p -0.3503910124 1.805914023 0 -p 0.3496089876 1.805914023 0 -p 0.3496089876 1.603571001 0 -p 0.7519527735 2.005914023 0 -p 0.3496089876 2.407476547 0 -p 0.3496089876 2.205914023 0 -p -0.3503910124 2.205914023 0 -p -0.3503910124 2.407476547 0 -p -0.7519527735 2.005914023 0 -p -0.3503910124 1.604352263 0 -p -0.3503910124 1.604352263 0 -p -0.3503910124 1.805914023 0 `;
+	rename $curve0 $name;
+	//xform -cp $name;
+	select -cl;
+}
+scale $scale $scale $scale $name;
+makeIdentity -apply true -t 1 -r 1 -s 1 $name;
+}
+
+
+global proc string JTDgetAttachedPrim(string $obj, string $type)
+{
+if($obj == "") return "";
+string $primitive[] = `listConnections -type script $obj`;
+for($prims in $primitive)
+{
+if( (match($type, $prims) != "") && (objExists(($prims+".name"))) ) return $prims;
+}
+return "";
+}
+
+global proc string JTDgetScriptCmd()
+{
+string $cmd = (
+
+"proc JTDmatchFKIK(string $JTDswitcher, string $JTDupSW, string $JTDmidSW, string $JTDlowSW, string $JTDupFK, string $JTDmidFK, string $JTDlowFK, string $JTDupIK, string $JTDmidIK)\n"+
+"{\n"+
+"if(getAttr(($JTDswitcher+\".IKFK\")) != 0){\n"+
+"float $upStretch = `getAttr ($JTDupIK+\".stretch\")`;\n"+
+"float $midStretch = `getAttr ($JTDmidIK+\".stretch\")`;\n"+
+"float $upRot[] = `xform -q -ws -ro $JTDupSW`;\n"+
+"float $midRot[] = `xform -q -ws -ro $JTDmidSW`;\n"+
+"float $lowRot[] = `xform -q -ws -ro $JTDlowSW`;\n"+
+"rotate -a -ws $upRot[0] $upRot[1] $upRot[2] $JTDupFK;\n"+
+"rotate -a -ws $midRot[0] $midRot[1] $midRot[2] $JTDmidFK;\n"+
+"rotate -a -ws $lowRot[0] $lowRot[1] $lowRot[2] $JTDlowFK;\n"+
+"setAttr ($JTDupFK+\".stretch\") $upStretch;\n"+
+"setAttr ($JTDmidFK+\".stretch\") ($midStretch);\n"+
+"setAttr ($JTDswitcher+\".IKFK\") 0;}\n"+
+"select -r $JTDlowFK;\n"+
+"}\n\n"+
+
+"proc JTDmatchIKFK(string $JTDswitcher, string $JTDIKpos, string $JTDIKcntrl, string $JTDPV, string $JTDPVpos)\n"+
+"{\n"+
+"if(getAttr(($JTDswitcher+\".IKFK\")) != 1){\n"+
+"float $lowRot[] = `xform -q -ws -ro $JTDIKpos`;\n"+
+"float $lowPos[] = `xform -q -ws -rp $JTDIKpos`;\n"+
+"float $midPos[] = `xform -q -ws -rp $JTDPVpos`;\n"+
+"move -a -ws -rpr $lowPos[0] $lowPos[1] $lowPos[2] $JTDIKcntrl;\n"+
+"rotate -a -ws $lowRot[0] $lowRot[1] $lowRot[2] $JTDIKcntrl;\n"+
+"move -a -ws -rpr $midPos[0] $midPos[1] $midPos[2] $JTDPV;\n"+
+"setAttr ($JTDswitcher+\".IKFK\") 1;}\n"+
+"select -r $JTDIKcntrl;\n"+
+"}\n\n"+
+
+"string $JTDselected[] = `ls -sl -typ transform`;\n"+
+"if(size($JTDselected) > 0){\n"+
+"for($objs in $JTDselected){\n"+
+
+
+"}\n"+
+"}\n"
+);
+
+return $cmd;
+}
+
+global proc string JTDgetIKFKswitchCmd()
+{
+string $cmd = (
+"if(objExists(($objs+\".FKswitcher\")))\n"+
+"{\n"+
+"string $JTDswitcher[] = `listConnections ($objs+\".FKswitcher\")`;\n"+
+"string $JTDupSW[] = `listConnections ($objs+\".SWup\")`;\n"+
+"string $JTDmidSW[] = `listConnections ($objs+\".SWmid\")`;\n"+
+"string $JTDlowSW[] = {$JTDswitcher[0]};\n"+
+"string $JTDupFK[] = `listConnections ($objs+\".FKup\")`;\n"+
+"string $JTDmidFK[] = `listConnections ($objs+\".FKmid\")`;\n"+
+"string $JTDlowFK[] = `listConnections ($objs+\".FKlow\")`;\n"+
+"string $JTDupIK[] = `listConnections ($objs+\".IKup\")`;\n"+
+"string $JTDmidIK[] = `listConnections ($objs+\".IKmid\")`;\n"+
+"JTDmatchFKIK($JTDswitcher, $JTDupSW, $JTDmidSW, $JTDlowSW, $JTDupFK, $JTDmidFK, $JTDlowFK, $JTDupIK, $JTDmidIK);\n"+
+"}\n"+
+"//FKswitcher//\n"+
+"\n"+
+
+"if(objExists(($objs+\".IKswitcher\")))\n"+
+"{\n"+
+"string $JTDswitcher[] = `listConnections ($objs+\".IKswitcher\")`;\n"+
+"string $JTDIKpos[] = `listConnections ($objs+\".IKpos\")`;\n"+
+"string $JTDlowSW[] = {$JTDswitcher[0]};\n"+
+"string $JTDIKcntrl[] = `listConnections ($objs+\".IKcntrl\")`;\n"+
+"string $JTDPV[] = `listConnections ($objs+\".PV\")`;\n"+
+"string $JTDPVpos[] = `listConnections ($objs+\".PVsnapPos\")`;\n"+
+"JTDmatchIKFK($JTDswitcher, $JTDIKpos, $JTDIKcntrl, $JTDPV, $JTDPVpos);\n"+
+"}\n"+
+"//IKswitcher//\n"+
+"\n"
+);
+
+return $cmd;
+
+}
+
+global proc JTDencodeString()
+{
+
+
+string $holder = `scriptNode -q -bs dagMenuProc`;
+string $buffer[] = stringToStringArray($holder, "\r\n");
+string $buffer2[];
+string $newStuff[];
+string $cmd;
+
+for($i=0;$i<size($buffer);$i++)
+{
+	$buffer[$i] = encodeString($buffer[$i]);
+	$newStuff[$i] = "\"" + $buffer[$i] + "\\n\"+";
+	$cmd += ($newStuff[$i] + "\r");
+}
+
+scriptNode -e -bs $cmd dagMenuProc;
+
+}

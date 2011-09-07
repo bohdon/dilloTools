@@ -20,7 +20,7 @@ from pymel.core import mel
 import logging
 import os
 
-__version__ = '3.0.34'
+__version__ = '3.1'
 __author__ = 'Bohdon Sayre'
 
 DILLO_DIR = os.path.normpath(os.path.dirname(__file__))

@@ -54,7 +54,6 @@ def dilloMenuItem(stp, kwargs):
     """Create a menu item using mel or python depending on stp."""
     if stp == 'mel':
         kwargs['command'] = 'mel.eval("{0}")'.format(kwargs['command'])
-        print('newCommand: {0}'.format(kwargs['command']))
     menuItem(**kwargs)
 
 

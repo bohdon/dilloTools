@@ -1,0 +1,717 @@
+
+global proc string JTDfingerRig(string $wrist, string $meta, string $upper, string $mid, string $lower, int $curlType, int $neg, int $fingerType, int $thumbType, int $side, string $name, float $scale)
+{
+string $chain[];
+string $rigChain[];
+string $lr = "_l";
+float $toTransform;
+//float $cross[];
+string $aimAxis = ".tx";
+string $upAxis = ".ty";
+string $curlAxis = ".rz";
+string $spreadAxis = ".ry";
+string $twistAxis = ".rx";
+string $curveCurlAttrName;
+int $aimCntrl = 1;
+int $upCntrl = 1;
+int $rotCntrl = 1;
+int $cnt, $attrCnt = 0;
+string $needNewControl = 1;
+string $attrName;
+string $origName;
+string $toAttach[];
+
+//make sure the input boxes arent empty
+if( ($wrist == "") || ($upper == "") || ($mid == "") || ($lower == "") ) return "";
+if($name == "") error "in JTDfingerRig: Please specify a character name";
+
+//set the left or right variable
+if($side == 2) $lr = "_r";
+
+//metacarpals are useful, but not required
+if($meta != "") 
+{
+	//make sure it's a valid chain
+	if(! JTDisValidChain( {$meta, $upper, $mid, $lower} ) ) //check over the chain
+	{
+		error -sl true "in JTDfingerRig: The joints you've input are not in a valid sequence or have branches";
+		return "";
+	}
+	else 
+	{
+		$chain[0] = $meta;
+		$chain[1] = $upper;
+		$chain[2] = $mid;
+		$chain[3] = $lower;
+		
+		//duplicate the fingers, we'll connect them later
+		$rigChain = JTDprepareChain($chain, "rig_", $name);
+	}
+}
+else
+{
+	//make sure it's a valid chain
+	if(! JTDisValidChain( {$upper, $mid, $lower} ) ) //check over the chain
+	{
+		error -sl true "in JTDfingerRig: The joints you've input are not in a valid sequence or have branches";
+	}
+	else
+	{
+		$chain[0] = $upper;
+		$chain[1] = $mid;
+		$chain[2] = $lower;
+		
+		//duplicate the fingers, we'll connect them later
+		$rigChain = JTDprepareChain($chain, "rig_", $name);
+		$rigChain = stringArrayCatenate({""}, $rigChain); //we need to shift the values since there isnt really a [0] element
+	}
+
+}
+
+
+
+
+
+//modify the name 
+$origName = $name;
+$name = ($name+"_finger");
+
+//generate a control object associated with the wrist, check to see if there is already one there
+if($curlType == 1) {$curlAxis = ".ry"; $spreadAxis = ".rz"; $twistAxis = ".rx"; $curveCurlAttrName = "rotateY";}
+if($curlType == 2) {$curlAxis = ".rz"; $spreadAxis = ".ry"; $twistAxis = ".rx"; $curveCurlAttrName = "rotateZ";}
+
+
+if(($curlType == 1) && ($neg == 1)) $rotCntrl = -1;//curl on -y spread on +z
+if(($curlType == 1) && ($neg == 0)) $rotCntrl = 1; //curl on +y spread on -z
+
+if(($curlType == 2) && ($neg == 1)) $rotCntrl = 1; //curl on -z spread on -y
+if(($curlType == 2) && ($neg == 0)) $rotCntrl = -1;//curl on +z spread on +y
+
+//find the aim axis
+$aimAxis = JTDaimAxis($wrist);
+if(startsWith($aimAxis, "-")) $aimCntrl = -1;
+if(endsWith($aimAxis, "x")) $aimAxis = ".tx";
+else if(endsWith($aimAxis, "y")) $aimAxis = ".ty";
+else if(endsWith($aimAxis, "z")) $aimAxis = ".tz";
+else $aimAxis = ".tx";
+
+//find the up axis
+$upAxis = JTDupAxis($wrist, {0,1,0});
+if(startsWith($upAxis, "-")) $upCntrl = -1;
+if(endsWith($upAxis, "x")) $upAxis = "x";
+else if(endsWith($upAxis, "y")) $upAxis = "y";
+else if(endsWith($upAxis, "z")) $upAxis = "z";
+else $upAxis = "y";
+
+//find a vector to orient the control object
+string $prevJoint[] = `listRelatives -p -typ joint $wrist`;
+string $nextJoint[] = `listRelatives -c -typ joint $wrist`;
+float $posA[];
+float $posB[];
+if($prevJoint[0] != "")
+{
+	if(($nextJoint[0] != "") && ($nextJoint[0] != $meta) && ($nextJoint[0] != $upper)) $posA = `xform -q -ws -rp $nextJoint[0]`;
+	else $posA = `xform -q -ws -rp $prevJoint[0]`;
+	
+	$posB = `xform -q -ws -rp $wrist`;
+	float $vectorAim[]; //a vector that aims down the bone
+	$vectorAim[0] = $posA[0]-$posB[0];
+	$vectorAim[1] = $posA[1]-$posB[1];
+	$vectorAim[2] = $posA[2]-$posB[2];
+		
+	$cross = `crossProduct $vectorAim {0.0,1.0,0.0} 1 1`;
+}
+else $cross = {0.0,0.0,1.0};
+
+
+//find length from wrist to it's next child, use this as an arbitrary length to transform the control in the direction of the aim
+if($nextJoint[0] != "") $toTransform = `getAttr ($nextJoint[0]+$aimAxis)`;
+else $toTransform = 1;
+
+while(objExists(($name+"_Cntrl"+$cnt+$lr)))
+{
+	string $checker[] = `listConnections ($name+"_Cntrl"+$cnt+$lr+".wrist")`;
+	if($checker[0] == $wrist)
+	{
+		//use this control
+		$needNewControl = 0;
+		break;
+	}
+	else
+	{
+		//find another control, or create a new one
+		$cnt++;
+	}
+}
+
+if($needNewControl == 1)	
+{
+	//create the control
+	circle -c 0 0 0 -nr $cross[0] $cross[1] $cross[2] -sw 360 -r ($scale*0.5) -d 3 -ut 0 -tol 0.01 -s 8 -ch 0 -n ($name+"_Cntrl"+$cnt+$lr);
+		
+	//add a check attribute
+	addAttr -ln wrist -at "message" ($name+"_Cntrl"+$cnt+$lr);
+	connectAttr -f ($wrist+".message") ($name+"_Cntrl"+$cnt+$lr+".wrist");
+	
+	float $pos[] = `xform -q -ws -rp $wrist`;
+	move -a -ws -rpr $pos[0] $pos[1] $pos[2] ($name+"_Cntrl"+$cnt+$lr);
+	makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_Cntrl"+$cnt+$lr);
+	
+	parent ($name+"_Cntrl"+$cnt+$lr) $wrist;
+	
+	if($aimAxis == ".tx") 
+	{
+		move -r -ls -wd $toTransform 0 0 ($name+"_Cntrl"+$cnt+$lr);
+		if($upAxis == "y") move -r -ls -wd 0 ($aimCntrl*$upCntrl*$toTransform) 0 ($name+"_Cntrl"+$cnt+$lr);
+		if($upAxis == "z") move -r -ls -wd 0 0 ($aimCntrl*$upCntrl*$toTransform) ($name+"_Cntrl"+$cnt+$lr);
+	}
+	if($aimAxis == ".ty")
+	{
+		move -r -ls -wd 0 $toTransform 0 ($name+"_Cntrl"+$cnt+$lr);
+		if($upAxis == "x") move -r -ls -wd ($aimCntrl*$upCntrl*$toTransform) 0 0 ($name+"_Cntrl"+$cnt+$lr);
+		if($upAxis == "z") move -r -ls -wd 0 0 ($aimCntrl*$upCntrl*$toTransform) ($name+"_Cntrl"+$cnt+$lr);
+	}
+	if($aimAxis == ".tz") 
+	{
+		move -r -ls -wd 0 0 $toTransform ($name+"_Cntrl"+$cnt+$lr);
+		if($upAxis == "x") move -r -ls -wd ($aimCntrl*$upCntrl*$toTransform) 0 0 ($name+"_Cntrl"+$cnt+$lr);
+		if($upAxis == "y") move -r -ls -wd 0 ($aimCntrl*$upCntrl*$toTransform) 0 ($name+"_Cntrl"+$cnt+$lr);
+	}
+	
+	parent -w ($name+"_Cntrl"+$cnt+$lr);
+	makeIdentity -apply true -t 1 -r 1 -s 1 ($name+"_Cntrl"+$cnt+$lr);
+	
+}
+
+
+//determine the type of control needed
+if($fingerType == 1) $attrName = "Index";
+if($fingerType == 2) $attrName = "Middle";
+if($fingerType == 3) $attrName = "Ring";
+if($fingerType == 4) $attrName = "Pinky";
+if($thumbType == 1) $attrName = "Thumb";
+if($thumbType == 2) $attrName = "Extra";
+
+//see if there is an attribute of the same type already existing on the control
+if(objExists(($name+"_Cntrl"+$cnt+$lr+"."+$attrName)))
+{
+	$attrCnt++;
+	while(objExists(($name+"_Cntrl"+$cnt+$lr+"."+$attrName+$attrCnt)))
+	{
+		$attrCnt++;
+	}
+}
+
+
+//add initial attributes to the control - supports more than one attribute of the same type
+if($attrCnt > 0) //this is the case where there are multiple attributes of the same finger type
+{
+	addAttr -ln ($attrName+$attrCnt) -at bool  ($name+"_Cntrl"+$cnt+$lr);
+	setAttr -e -keyable true -l true ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+$attrCnt);
+	
+	//add curl attributes to the control
+		
+	addAttr -ln ($attrName+$attrCnt+"_1") -at double  -min -10 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+	setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+$attrCnt+"_1");
+	
+	addAttr -ln ($attrName+$attrCnt+"_2") -at double  -min -10 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+	setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+$attrCnt+"_2");
+	
+	addAttr -ln ($attrName+$attrCnt+"_3") -at double  -min -10 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+	setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+$attrCnt+"_3");
+	
+	}
+else //this is the case where there is only one of these types of attributes
+{
+	addAttr -ln $attrName -at bool  ($name+"_Cntrl"+$cnt+$lr);
+	setAttr -e -keyable true -l true ($name+"_Cntrl"+$cnt+$lr+"."+$attrName);
+	
+	//add curl attributes to the control
+	
+	addAttr -ln ($attrName+"_1") -at double  -min -10 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+	setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1");
+	
+	addAttr -ln ($attrName+"_2") -at double  -min -10 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+	setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2");
+	
+	addAttr -ln ($attrName+"_3") -at double  -min -10 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+	setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3");
+	
+	if($attrName == "Thumb")
+	{
+		if($meta != "")
+		{
+			addAttr -ln ($attrName+"Reach") -at double  -min -10 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+			setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Reach");
+		}
+		
+		addAttr -ln ($attrName+"Spread") -at double  -min -10 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+		setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread");
+		
+		addAttr -ln ($attrName+"Twist") -at double  -min -10 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+		setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist");
+	}
+	
+	//add spread attribute to the control
+	if(!objExists(($name+"_Cntrl"+$cnt+$lr+".Spread"))) //only need one spread attribute per control
+	{
+		if($attrName != "Thumb")
+		{
+			addAttr -ln Spread -at bool  ($name+"_Cntrl"+$cnt+$lr);
+			setAttr -e -keyable true -l true ($name+"_Cntrl"+$cnt+$lr+".Spread");
+		
+			addAttr -ln "AllSpread" -at double  -min -10 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+			setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+".AllSpread");
+		}
+		if($meta != "")
+		{
+			addAttr -ln "Squeeze" -at double  -min 0 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+			setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+".Squeeze");
+		}
+	}
+	else
+	{
+		//get a list of all user defined attributes on this control
+		string $foundAttrs[] = `listAttr -ud ($name+"_Cntrl"+$cnt+$lr)`;
+
+		//find out which ones are spread attriutes
+		for($udAttr in $foundAttrs)
+		{
+			if( (endsWith($udAttr, "Spread")) || (endsWith($udAttr, "Squeeze")) )
+			{
+				if(!startsWith($udAttr, "Thumb"))
+				{
+					//move them to the bottom
+					//reorder the attributes, renaming an attr moves it to the bottom	
+					int $locked = `getAttr -l ($name+"_Cntrl"+$cnt+$lr+"."+$udAttr)`;
+					setAttr -l false ($name+"_Cntrl"+$cnt+$lr+"."+$udAttr);
+					renameAttr ($name+"_Cntrl"+$cnt+$lr+"."+$udAttr) "Temp";
+    					renameAttr ($name+"_Cntrl"+$cnt+$lr+".Temp") $udAttr;
+    					if($locked == 1) setAttr -l true ($name+"_Cntrl"+$cnt+$lr+"."+$udAttr);	
+    				}
+			}
+		}
+	}
+	
+	if($attrName != "Thumb")
+	{
+		addAttr -ln ($attrName+"Spread") -at double  -min -10 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+		setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread");
+	}
+	
+	//add twist attribute to the control
+	if(!objExists(($name+"_Cntrl"+$cnt+$lr+".Twist"))) //only need one twist attribute per control
+	{
+		addAttr -ln Twist -at bool  ($name+"_Cntrl"+$cnt+$lr);
+		setAttr -e -keyable true -l true ($name+"_Cntrl"+$cnt+$lr+".Twist");
+	}
+	else
+	{
+		//get a list of all user defined attributes on this control
+		string $foundAttrs[] = `listAttr -ud ($name+"_Cntrl"+$cnt+$lr)`;
+
+		//find out which ones are twist attriutes
+		for($udAttr in $foundAttrs)
+		{
+			if( (endsWith($udAttr, "Twist")) && (!startsWith($udAttr, "Thumb")) )
+			//if(endsWith($udAttr, "Twist")
+			{
+				//move them to the bottom
+				//reorder the attributes, renaming an attr moves it to the bottom	
+				int $locked = `getAttr -l ($name+"_Cntrl"+$cnt+$lr+"."+$udAttr)`;
+				setAttr -l false ($name+"_Cntrl"+$cnt+$lr+"."+$udAttr);
+				renameAttr ($name+"_Cntrl"+$cnt+$lr+"."+$udAttr) "Temp";
+	    			renameAttr ($name+"_Cntrl"+$cnt+$lr+".Temp") $udAttr;
+	    			if($locked == 1) setAttr -l true ($name+"_Cntrl"+$cnt+$lr+"."+$udAttr);	
+			}
+		}
+	}
+	
+	if($attrName != "Thumb")
+	{
+		addAttr -ln ($attrName+"Twist") -at double  -min -10 -max 10 -dv 0  ($name+"_Cntrl"+$cnt+$lr);
+		setAttr -e -keyable true -l false ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist");
+	}
+	
+}
+
+//check to see where we should group the new control joints - is there an arm rig in the scene?
+string $connections[] = `listConnections ($wrist+".message")`;
+for($prim in $connections)
+{
+	if(match("Prim", $prim) == "Prim") {$toAttach = `listConnections ($prim+".switcher")`; break;}
+	else $toAttach = {$wrist};
+}
+
+//make two empty groups for the finger joints and put them under the wrist
+if(!objExists(($name+"_allParent_"+$cnt+$lr)))
+{
+	group -em -p $toAttach[0] -n ($name+"_allParent_"+$cnt+$lr);
+	group -em -p ($name+"_allParent_"+$cnt+$lr) -n ($name+"_all_"+$cnt+$lr);
+}
+
+if($meta != "") parent $rigChain[0] ($name+"_all_"+$cnt+$lr);
+else parent $rigChain[1] ($name+"_all_"+$cnt+$lr);
+
+
+//put the control object under the wrist
+string $parentCheck[] = `listRelatives -p ($name+"_Cntrl"+$cnt+$lr)`;
+if($parentCheck[0] != ($name+"_allParent_"+$cnt+$lr)) 
+{
+	parent ($name+"_Cntrl"+$cnt+$lr) ($name+"_allParent_"+$cnt+$lr);
+	
+	//lock and hide attributes
+	JTDlockAttrs(($name+"_Cntrl"+$cnt+$lr), {1}, {1}, {1}, 1);
+	JTDhideAttrs(($name+"_Cntrl"+$cnt+$lr), {1}, {1}, {1}, 1);
+}
+
+if(($fingerType != 0) || ($thumbType == 2)) //as long as it's not a thumb
+{
+	//do the individual spread
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") 0;
+	setAttr ($rigChain[1]+$spreadAxis) 0;
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") ($rigChain[1]+$spreadAxis);
+	if($meta != "")
+	{
+		setAttr ($rigChain[0]+$spreadAxis) 0;
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") ($rigChain[0]+$spreadAxis);
+	}	
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") -10;
+	setAttr ($rigChain[1]+$spreadAxis) ($rotCntrl*25);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") ($rigChain[1]+$spreadAxis);
+	if($meta != "")
+	{
+		setAttr ($rigChain[0]+$spreadAxis) ($rotCntrl*4);
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") ($rigChain[0]+$spreadAxis);
+	}
+	
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") 10;
+	setAttr ($rigChain[1]+$spreadAxis) ($rotCntrl*-25);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") ($rigChain[1]+$spreadAxis);
+	if($meta != "")
+	{
+	setAttr ($rigChain[0]+$spreadAxis) ($rotCntrl*-4);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") ($rigChain[0]+$spreadAxis);
+	}
+	
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") 0;
+
+
+	float $lowSpreadCntrlPos = 0;
+	float $highSpreadCntrlPos = 0;
+	float $lowSpreadCntrlNeg = 0;
+	float $highSpreadCntrlNeg = 0;
+	float $twistNeg = 0;
+	float $metaCurl = 0;
+
+	//do the all-Spread
+	if($attrName == "Index") {$lowSpreadCntrlPos = -1.6; $lowSpreadCntrlNeg = 2.12; $highSpreadCntrlPos = -10; $highSpreadCntrlNeg = 11.75; $twistNeg = 11;}
+	if($attrName == "Middle") {$lowSpreadCntrlPos = 0.4; $lowSpreadCntrlNeg = -0.18; $highSpreadCntrlPos = 2.5; $highSpreadCntrlNeg = -1.1; $twistNeg = 0;}
+	if($attrName == "Ring") {$lowSpreadCntrlPos = 1.6; $lowSpreadCntrlNeg = -3.9; $highSpreadCntrlPos = 10; $highSpreadCntrlNeg = -12.25; $twistNeg = -6;}
+	if($attrName == "Pinky") {$lowSpreadCntrlPos = 3.2; $lowSpreadCntrlNeg = -6.16; $highSpreadCntrlPos = 20; $highSpreadCntrlNeg = -20.5; $twistNeg = -17;}
+	if($attrName == "Extra") {$lowSpreadCntrlPos = 3.2; $lowSpreadCntrlNeg = -6.16; $highSpreadCntrlPos = 20; $highSpreadCntrlNeg = -20.5; $twistNeg = -17;}
+	
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+".AllSpread") 0;
+	setAttr ($rigChain[1]+$spreadAxis) 0;
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".AllSpread") ($rigChain[1]+$spreadAxis);
+	if($meta != "")
+	{
+		setAttr ($rigChain[0]+$spreadAxis) 0;
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".AllSpread") ($rigChain[0]+$spreadAxis);
+	}
+	
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+".AllSpread") 10;
+	setAttr ($rigChain[1]+$spreadAxis) ($rotCntrl*$highSpreadCntrlPos);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".AllSpread") ($rigChain[1]+$spreadAxis);
+	if($meta != "")
+	{
+		setAttr ($rigChain[0]+$spreadAxis) ($rotCntrl*$lowSpreadCntrlPos);
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".AllSpread") ($rigChain[0]+$spreadAxis);
+	}
+	
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+".AllSpread") -10;
+	setAttr ($rigChain[1]+$spreadAxis) ($rotCntrl*$highSpreadCntrlNeg);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".AllSpread") ($rigChain[1]+$spreadAxis);
+	if($meta != "")
+	{
+		setAttr ($rigChain[0]+$spreadAxis) ($rotCntrl*$lowSpreadCntrlNeg);
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".AllSpread") ($rigChain[0]+$spreadAxis);
+	}	
+	setAttr ($name+"_Cntrl"+$cnt+$lr+".AllSpread") 0;
+	
+	if($attrName == "Index") {$lowSpreadCntrlNeg = 1.2; $highSpreadCntrlNeg = 6; $twistNeg = 11; $metaCurl = 0;}
+	if($attrName == "Middle") {$lowSpreadCntrlNeg = -0.1; $highSpreadCntrlNeg = -0.6; $twistNeg = 0; $metaCurl = -4.8;}
+	if($attrName == "Ring") {$lowSpreadCntrlNeg = -2.5; $highSpreadCntrlNeg = -3.5; $twistNeg = -6; $metaCurl = -5.3;}
+	if($attrName == "Pinky") {$lowSpreadCntrlNeg = -4; $highSpreadCntrlNeg = -7; $twistNeg = -17; $metaCurl = -6;}
+	
+	if($meta != "")
+	{
+		//do the Squeeze
+		setAttr ($name+"_Cntrl"+$cnt+$lr+".Squeeze") 0;
+		setAttr ($rigChain[0]+$spreadAxis) 0;
+		setAttr ($rigChain[0]+$curlAxis) 0;
+		setAttr ($rigChain[1]+$spreadAxis) 0;
+		setAttr ($rigChain[2]+$twistAxis) 0;
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".Squeeze") ($rigChain[0]+$spreadAxis);
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".Squeeze") ($rigChain[0]+$curlAxis);
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".Squeeze") ($rigChain[1]+$spreadAxis);
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".Squeeze") ($rigChain[2]+$twistAxis);
+		
+		setAttr ($name+"_Cntrl"+$cnt+$lr+".Squeeze") 10;
+		setAttr ($rigChain[0]+$spreadAxis) ($rotCntrl*$lowSpreadCntrlNeg);
+		setAttr ($rigChain[0]+$curlAxis) ($rotCntrl*$metaCurl);
+		setAttr ($rigChain[1]+$spreadAxis) ($rotCntrl*$highSpreadCntrlNeg);
+		setAttr ($rigChain[2]+$twistAxis) ($rotCntrl*$twistNeg);
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".Squeeze") ($rigChain[0]+$spreadAxis);
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".Squeeze") ($rigChain[0]+$curlAxis);
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".Squeeze") ($rigChain[1]+$spreadAxis);
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+".Squeeze") ($rigChain[2]+$twistAxis);
+		setAttr ($name+"_Cntrl"+$cnt+$lr+".Squeeze") 0;
+	}
+	
+	//do the twist
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") 0;
+	setAttr ($rigChain[1]+$twistAxis) 0;
+	setAttr ($rigChain[2]+$twistAxis) 0;
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") ($rigChain[1]+$twistAxis);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") ($rigChain[2]+$twistAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") 10;
+	setAttr ($rigChain[1]+$twistAxis) ($rotCntrl*20);
+	setAttr ($rigChain[2]+$twistAxis) ($rotCntrl*20);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") ($rigChain[1]+$twistAxis);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") ($rigChain[2]+$twistAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") -10;
+	setAttr ($rigChain[1]+$twistAxis) ($rotCntrl*-20);
+	setAttr ($rigChain[2]+$twistAxis) ($rotCntrl*-20);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") ($rigChain[1]+$twistAxis);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") ($rigChain[2]+$twistAxis);
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") 0;
+	
+	//do the curl
+	if(($curlType == 1) && ($neg == 1)) $rotCntrl = 1;
+	if(($curlType == 1) && ($neg == 0)) $rotCntrl = -1; //curl on +y spread on -z
+	
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") 0;
+	setAttr ($rigChain[1]+$curlAxis) 0;
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") ($rigChain[1]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") 10;
+	setAttr ($rigChain[1]+$curlAxis) ($rotCntrl*-100);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") ($rigChain[1]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") -10;
+	setAttr ($rigChain[1]+$curlAxis) ($rotCntrl*100);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") ($rigChain[1]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") 4;
+	setAttr ($rigChain[1]+$curlAxis) ($rotCntrl*-17);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") ($rigChain[1]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") 6;
+	setAttr ($rigChain[1]+$curlAxis) ($rotCntrl*-31);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") ($rigChain[1]+$curlAxis);
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") 0;
+
+	selectKey -r -k -f 0 ($rigChain[1]+"_"+$curveCurlAttrName) ;
+	keyTangent -itt flat -ott flat;
+
+	selectKey -r -k -f 4 ($rigChain[1]+"_"+$curveCurlAttrName) ;
+	keyTangent -itt spline -ott spline;
+	keyTangent -edit -attribute $curveCurlAttrName -absolute -inAngle ($rotCntrl*-18);
+
+	selectKey -r -k -f 6 ($rigChain[1]+"_"+$curveCurlAttrName) ;
+	keyTangent -itt spline -ott spline;
+	keyTangent -edit -attribute $curveCurlAttrName -absolute -inAngle ($rotCntrl*-11);
+
+
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") 0;
+	setAttr ($rigChain[2]+$curlAxis) 0;
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") ($rigChain[2]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") 10;
+	setAttr ($rigChain[2]+$curlAxis) ($rotCntrl*-120);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") ($rigChain[2]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") -10;
+	setAttr ($rigChain[2]+$curlAxis) ($rotCntrl*120);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") ($rigChain[2]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") 4;
+	setAttr ($rigChain[2]+$curlAxis) ($rotCntrl*-36);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") ($rigChain[2]+$curlAxis);
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") 0;
+
+	selectKey -r -k -f 4 ($rigChain[2]+"_"+$curveCurlAttrName) ;
+	keyTangent -itt spline -ott spline;
+
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") 0;
+	setAttr ($rigChain[3]+$curlAxis) 0;
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") ($rigChain[3]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") 10;
+	setAttr ($rigChain[3]+$curlAxis) ($rotCntrl*-120);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") ($rigChain[3]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") -10;
+	setAttr ($rigChain[3]+$curlAxis) ($rotCntrl*120);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") ($rigChain[3]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") 4;
+	setAttr ($rigChain[3]+$curlAxis) ($rotCntrl*-24);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") ($rigChain[3]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") 6;
+	setAttr ($rigChain[3]+$curlAxis) ($rotCntrl*-80);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") ($rigChain[3]+$curlAxis);
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") 0;
+
+	selectKey -r -k -f 4 ($rigChain[3]+"_"+$curveCurlAttrName) ;
+	keyTangent -itt spline -ott spline;
+	selectKey -r -k -f 6 ($rigChain[3]+"_"+$curveCurlAttrName) ;
+	keyTangent -itt spline -ott spline;
+
+}
+
+if($thumbType == 1)
+{
+	//do the Spread
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") 0;
+	setAttr ($rigChain[1]+$spreadAxis) 0;
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") ($rigChain[1]+$spreadAxis);
+	
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") 10;
+	setAttr ($rigChain[1]+$spreadAxis) ($rotCntrl*-120);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") ($rigChain[1]+$spreadAxis);
+	
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") -10;
+	setAttr ($rigChain[1]+$spreadAxis) ($rotCntrl*120);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") ($rigChain[1]+$spreadAxis);
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Spread") 0;
+	
+	
+	if(($curlType == 1) && ($neg == 1)) $rotCntrl = 1;
+	if(($curlType == 1) && ($neg == 0)) $rotCntrl = -1; //curl on +y spread on -z
+	
+	if($meta != "")
+	{
+		//do the reach
+		setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Reach") 0;
+		setAttr ($rigChain[0]+$curlAxis) 0;
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Reach") ($rigChain[0]+$curlAxis);
+		
+		setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Reach") 10;
+		setAttr ($rigChain[0]+$curlAxis) ($rotCntrl*-120);
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Reach") ($rigChain[0]+$curlAxis);
+			
+		setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Reach") -10;
+		setAttr ($rigChain[0]+$curlAxis) ($rotCntrl*120);
+		setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Reach") ($rigChain[0]+$curlAxis);
+		setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Reach") 0;
+	}
+	
+	//do the twist
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") 0;
+	setAttr ($rigChain[2]+$twistAxis) 0;
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") ($rigChain[2]+$twistAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") 10;
+	setAttr ($rigChain[2]+$twistAxis) ($rotCntrl*40);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") ($rigChain[2]+$twistAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") -10;
+	setAttr ($rigChain[2]+$twistAxis) ($rotCntrl*-40);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") ($rigChain[2]+$twistAxis);
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"Twist") 0;
+	
+	//do the curl
+	
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") 0;
+	setAttr ($rigChain[1]+$curlAxis) 0;
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") ($rigChain[1]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") 10;
+	setAttr ($rigChain[1]+$curlAxis) ($rotCntrl*-100);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") ($rigChain[1]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") -10;
+	setAttr ($rigChain[1]+$curlAxis) ($rotCntrl*100);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") ($rigChain[1]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") 6;
+	setAttr ($rigChain[1]+$curlAxis) ($rotCntrl*-33);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") ($rigChain[1]+$curlAxis);
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_1") 0;
+
+	selectKey -r -k -f 0 ($rigChain[1]+"_"+$curveCurlAttrName) ;
+	keyTangent -itt flat -ott flat;
+
+	selectKey -r -k -f 6 ($rigChain[1]+"_"+$curveCurlAttrName) ;
+	keyTangent -itt spline -ott spline;
+	keyTangent -edit -attribute $curveCurlAttrName -absolute -inAngle ($rotCntrl*-20);
+
+
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") 0;
+	setAttr ($rigChain[2]+$curlAxis) 0;
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") ($rigChain[2]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") 10;
+	setAttr ($rigChain[2]+$curlAxis) ($rotCntrl*-120);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") ($rigChain[2]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") -10;
+	setAttr ($rigChain[2]+$curlAxis) ($rotCntrl*120);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") ($rigChain[2]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") 4;
+	setAttr ($rigChain[2]+$curlAxis) ($rotCntrl*-45);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") ($rigChain[2]+$curlAxis);
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_2") 0;
+
+	selectKey -r -k -f 4 ($rigChain[2]+"_"+$curveCurlAttrName) ;
+	keyTangent -itt spline -ott spline;
+
+
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") 0;
+	setAttr ($rigChain[3]+$curlAxis) 0;
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") ($rigChain[3]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") 10;
+	setAttr ($rigChain[3]+$curlAxis) ($rotCntrl*-120);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") ($rigChain[3]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") -10;
+	setAttr ($rigChain[3]+$curlAxis) ($rotCntrl*120);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") ($rigChain[3]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") 4;
+	setAttr ($rigChain[3]+$curlAxis) ($rotCntrl*-65);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") ($rigChain[3]+$curlAxis);
+
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") 6;
+	setAttr ($rigChain[3]+$curlAxis) ($rotCntrl*-70);
+	setDrivenKeyframe -cd ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") ($rigChain[3]+$curlAxis);
+	setAttr ($name+"_Cntrl"+$cnt+$lr+"."+$attrName+"_3") 0;
+
+	selectKey -r -k -f 4 ($rigChain[3]+"_"+$curveCurlAttrName) ;
+	keyTangent -itt spline -ott spline;
+	selectKey -r -k -f 6 ($rigChain[3]+"_"+$curveCurlAttrName) ;
+	keyTangent -itt spline -ott spline;
+	
+
+
+}
+
+JTDconnectTo($origName);
+return "";
+}

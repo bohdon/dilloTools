@@ -1,0 +1,363 @@
+global proc string JTDspineRig(string $name, string $startJoint, string $endJoint, string $root, float $scale, string $world, string $spineFK)
+{
+string $tempJoint[];
+string $child[];
+string $lastJoint;
+string $handleNames[];
+string $startParent[];
+string $origName = $name;
+string $aimAxis;
+string $aimCheck1, $aimCheck2, $upCheck1, $upCheck2;
+string $chain[] = {$startJoint};
+
+float $pos[];
+float $aim[] = {0,0,0}; //used to determine how the controls should be oriented
+float $cntrl = 1.0; //used to reverse an axis
+int $cnt =1; //the startJoint is already in the aray
+
+if( ($startJoint == "") || ($endJoint == "") ) return "";
+if($name == "") error "in JTDspineRig: Please specify a character name";
+if($startJoint == $endJoint) error "in JTDspineRig: Please specify different start and end joints";
+if($spineFK == $startJoint) error "in JTDspineRig: Please specify an FK Mid different from the start";
+if($spineFK == $endJoint) error "in JTDspineRig: Please specify an FK Mid different from the end";
+if(!objExists($spineFK)) $spineFK = "";
+
+
+if( ($spineFK != "") && (! JTDisValidChain( {$startJoint, $spineFK, $endJoint} )) ) //make sure that the spineFK is between the start and end
+{
+	error -sl true "in JTDspineRig: The FK joint is not between the start and the end";
+	return "";
+}
+
+if(! JTDisValidChain( {$startJoint, $endJoint} ) ) //check over the chain
+{
+	error -sl true "in JTDspineRig: The joints you've input are not in a valid sequence or have branches";
+	return "";
+}
+
+
+//iterate through the chain to make sure that the aim vectors are the same
+$child[0] = $startJoint;
+while($child[0] != $endJoint)
+{
+		
+	$aimCheck1 = JTDaimAxis($child[0]);
+	$upCheck1 = JTDupAxis($child[0], {0,0,1});
+	
+	$child = `listRelatives -c $child[0]`;
+	$chain[$cnt] = $child[0];
+	
+	$aimCheck2 = JTDaimAxis($child[0]);
+	$upCheck2 = JTDupAxis($child[0], {0,0,1});
+	
+	if($aimCheck1 != "x") error "in JTDspineRig: the positive x axis is not the aim axis, for correct twisting please reorient";
+	if($aimCheck1 != $aimCheck2) warning "in JTDspineRig: the spine joints do not have the same aim axis, please reorient";
+	if($upCheck1 != $upCheck2) warning "in JTDspineRig: the spine joints do not have the same up axis, please reorient";
+	if(size($child) != 1) break;
+	if($child[0] == "") break;
+	
+	$cnt++;
+}
+
+if($cnt <= 2) error "in JTDspineRig: There must be at least one joint between start and end";
+
+$cnt = 0;
+
+//set the aim axis vector
+$aimAxis = JTDaimAxis($startJoint);
+
+if($aimCheck1 == "x") $aim[0] = 1;
+else if($aimCheck1 == "-x") $aim[0] = -1;
+else if($aimCheck1 == "y") $aim[1] = 1;
+else if($aimCheck1 == "-y") $aim[1] = -1;
+else if($aimCheck1 == "z") $aim[2] = 1;
+else if($aimCheck1 == "-z") $aim[2] = -1;
+
+$name = ($name+"_spine");
+
+if($root == "") 
+{
+	warning "in JTDspineRig: No root was specified, attempting to find a root...";
+	$startParent = `listRelatives -p -typ joint $startJoint`;
+	
+	if( ($startParent[0] != "") && (size($startParent) == 1) )
+	{
+		warning ("...using "+$startParent[0]+" as the root");
+		$pos = `xform -q -ws -rp $startParent[0]`; //found a pelvis
+		//duplicate the spine hierarchy with the pelvis, we'll connect it to the original later
+		string $newChain[] = JTDprepareChain( {$startParent[0], $endJoint}, "rig_", $origName);
+		$startParent[0] = ("rig_"+$startParent[0]);
+	}
+	else
+	{
+		warning "...using the startJoint as the root";
+		$pos = `xform -q -ws -rp $startJoint`;
+		//duplicate the spine hierarchy without the pelvis, we'll connect it to the original later
+		string $newChain[] = JTDprepareChain( {$startJoint, $endJoint}, "rig_", $origName);
+		$startParent[0] = ("rig_"+$startJoint);
+	}
+}
+else
+{
+
+	$startParent = `listRelatives -p -typ joint $startJoint`;
+	if($startParent[0] == $root) 
+	{
+		$pos = `xform -q -ws -rp $startParent[0]`; //found a pelvis
+		//duplicate the spine hierarchy with the pelvis, we'll connect it to the original later
+		string $newChain[] = JTDprepareChain( {$startParent[0], $endJoint}, "rig_", $origName);
+		$startParent[0] = ("rig_"+$startParent[0]);
+	}
+	else 
+	{
+		if($root == $startJoint) warning "in JTDspineRig: the root and the Start Joint are the same";
+		else warning "in JTDspineRig: There are other joints between the root and the Start Joint";
+		$pos = `xform -q -ws -rp $root`; 
+		//duplicate the spine hierarchy with the pelvis, we'll connect it to the original later
+		string $newChain[] = JTDprepareChain( {$root, $endJoint}, "rig_", $origName);
+		$startParent[0] = ("rig_"+$root);
+	}
+}
+
+
+//we're actually going to be rigging the duplicate and then connecting it to the original later
+$startJoint = ("rig_"+$startJoint);
+$endJoint = ("rig_"+$endJoint);
+$lastJoint = $endJoint;
+
+//make sure the last joint knows what it should be attached to
+string $spineConnection[] = `listConnections ($endJoint+".connectTo")`;
+
+//setup the xtras group
+group -em -n ($name+"_"+$startJoint+"_RigXtras");
+if($startParent[0] != "") parent $startParent[0] ($name+"_"+$startJoint+"_RigXtras");
+
+//create the control curves
+//make the root control first
+
+JTDgenerateBox(($name+"_Root"), {($scale*7), 1, ($scale*7)} );
+move -a -ws -rpr $pos[0] $pos[1] $pos[2] ($name+"_Root");
+makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($name+"_Root");
+
+circle -c $pos[0] $pos[1] $pos[2] -nr 0 1 0 -sw 360 -r ($scale*4) -d 3 -ut 0 -tol 0.01 -s 6 -ch 0 -n ($startJoint+"_Hips");
+xform -cp ($startJoint+"_Hips");
+
+parent ($startJoint+"_Hips") ($name+"_Root");
+if(size($startParent) == 1) parentConstraint -mo -weight 1 -n ($startJoint+"_PrntCnstr") ($startJoint+"_Hips") $startParent[0];
+
+$pos = `xform -q -ws -rp $endJoint`;
+circle -c $pos[0] $pos[1] $pos[2] -nr 0 1 0 -sw 360 -r ($scale*4) -d 3 -ut 0 -tol 0.01 -s 6 -ch 0 -n ($startJoint+"_Shoulders");
+xform -cp ($startJoint+"_Shoulders");
+
+addAttr -ln connectTo -at "message" ($startJoint+"_Shoulders");
+connectAttr -f ($spineConnection[0]+".message") ($startJoint+"_Shoulders.connectTo");
+deleteAttr ($endJoint+".connectTo");
+
+addAttr -ln charName -dt "string" ($startJoint+"_Shoulders");
+setAttr -type "string" ($startJoint+"_Shoulders.charName") $origName;
+setAttr -l true ($startJoint+"_Shoulders.charName");
+
+//create the control curves and IK spline handles
+$handleNames = `ikHandle -sol ikSplineSolver -pcv false -ns 2 -n ($startJoint+"_splineIK") -sj $startJoint -ee $lastJoint`;
+rename $handleNames[1] ($startJoint+"_EE");
+rename $handleNames[2] ($startJoint+"_IKcurve");
+setAttr ($startJoint+"_splineIK.v") 0;
+setAttr ($startJoint+"_IKcurve.v") 0;
+setAttr ($startJoint+"_IKcurve.inheritsTransform") 0;
+setAttr ($startJoint+"_EE.v") 0;
+
+parent ($startJoint+"_splineIK") ($name+"_"+$startJoint+"_RigXtras");
+parent ($startJoint+"_IKcurve") ($name+"_"+$startJoint+"_RigXtras");
+parent ($name+"_"+$startJoint+"_RigXtras") ($name+"_Root");
+
+//setup stretchy spline IK
+JTDstretchSpline($name, ($startJoint+"_IKcurve"), $startJoint, $endJoint, $aimAxis, $world);
+
+//cluster the control curve
+string $cv[] = `cluster ($startJoint+"_IKcurve.cv[0]") ($startJoint+"_IKcurve.cv[1]")`;
+rename $cv[1] ($startJoint+"_C1");
+setAttr ($startJoint+"_C1.v") 0;
+
+$cv = `cluster ($startJoint+"_IKcurve.cv[2]")`;
+rename $cv[1] ($startJoint+"_C2");
+setAttr ($startJoint+"_C2.v") 0;
+
+$pos = `xform -q -ws -rp ($startJoint+"_C2")`;
+circle -c $pos[0] $pos[1] $pos[2] -nr 0 1 0 -sw 360 -r ($scale*4) -d 3 -ut 0 -tol 0.01 -s 6 -ch 0 -n ($startJoint+"_Mid");
+xform -cp ($startJoint+"_Mid");
+group -n ($startJoint+"_Mid_Parent") ($startJoint+"_Mid");
+setAttr ($startJoint+"_Mid.v") 0;
+
+addAttr -ln child -at "message" ($startJoint+"_Mid_Parent");
+connectAttr -f ($startJoint+"_Mid.message") ($startJoint+"_Mid_Parent.child");
+
+parent ($startJoint+"_C2") ($startJoint+"_Mid");
+parent ($startJoint+"_Mid_Parent") ($name+"_Root");
+
+$cv = `cluster ($startJoint+"_IKcurve.cv[3]") ($startJoint+"_IKcurve.cv[4]")`;
+rename $cv[1] ($startJoint+"_C3");
+setAttr ($startJoint+"_C3.v") 0;
+
+//put the clusters under the control curve
+parent ($startJoint+"_C1") ($startJoint+"_Hips");
+parent ($startJoint+"_C3") ($startJoint+"_Shoulders");
+
+//constrain the middle cluster to the hips and shoulder controls
+parentConstraint -mo -weight 1 -n ($startJoint+"_C2_PrntCnstr") ($startJoint+"_Hips") ($startJoint+"_Mid_Parent");
+parentConstraint -mo -weight 1 -n ($startJoint+"_C2_PrntCnstr") ($startJoint+"_Shoulders") ($startJoint+"_Mid_Parent");
+
+//constrain the shoulder joint to the shoulder control
+//parentConstraint -mo -weight 1 -n ($endJoint+"_PrntCnstr") ($startJoint+"_Shoulders") $endJoint;
+//parent $endJoint ($startJoint+"_Shoulders");
+
+//setup the advanced twist
+setAttr ($startJoint+"_splineIK.dTwistControlEnable") 1;
+setAttr ($startJoint+"_splineIK.dWorldUpAxis") 3;
+setAttr ($startJoint+"_splineIK.dWorldUpType") 4;
+setAttr ($startJoint+"_splineIK.dWorldUpVectorY") 0;
+setAttr ($startJoint+"_splineIK.dWorldUpVectorEndY") 0;
+setAttr ($startJoint+"_splineIK.dWorldUpVectorZ") 1;
+setAttr ($startJoint+"_splineIK.dWorldUpVectorEndZ") 1;
+connectAttr ($startJoint+"_Hips.worldMatrix[0]") ($startJoint+"_splineIK.dWorldUpMatrix");
+connectAttr ($startJoint+"_Shoulders.worldMatrix[0]") ($startJoint+"_splineIK.dWorldUpMatrixEnd");
+
+//setup FK controls
+select -cl;
+int $midJoint = (size($chain)-1)/2; //rounds down since it's an int, might not get used if a mid FK has been provided
+
+//place a joint at the start, mid and end;
+$pos = `xform -q -ws -rp $startJoint`;
+joint -p $pos[0] $pos[1] $pos[2] -n ($startJoint+"FK1");
+JTDgenerateDoublePin(($startJoint+"FKPin1"), ($scale+0.7));
+rotate -90 0 0 ($startJoint+"FKPin1");
+makeIdentity -apply true -t 1 -r 1 -s 1 ($startJoint+"FKPin1");
+parent -r -s ($startJoint+"FKPinShape1") ($startJoint+"FK1");
+delete ($startJoint+"FKPin1");
+
+if($chain[$midJoint] != $chain[(size($chain)-2)])
+{
+	if( ($spineFK != "") && ($spineFK != $chain[(size($chain)-2)]) ) $pos = `xform -q -ws -rp $spineFK`;
+	else $pos = `xform -q -ws -rp $chain[$midJoint]`;
+	
+	joint -p $pos[0] $pos[1] $pos[2] -n ($startJoint+"FK2");
+	JTDgenerateDoublePin(($startJoint+"FKPin2"), ($scale+0.7));
+	rotate -90 0 0 ($startJoint+"FKPin2");
+	makeIdentity -apply true -t 1 -r 1 -s 1 ($startJoint+"FKPin2");
+	parent -r -s ($startJoint+"FKPinShape2") ($startJoint+"FK2");
+	delete ($startJoint+"FKPin2");
+}
+
+$pos = `xform -q -ws -rp $chain[(size($chain)-2)]`; //dont want an FK control right at the end
+joint -p $pos[0] $pos[1] $pos[2] -n ($startJoint+"FK3");
+JTDgenerateDoublePin(($startJoint+"FKPin3"), ($scale+0.7));
+rotate -90 0 0 ($startJoint+"FKPin3");
+makeIdentity -apply true -t 1 -r 1 -s 1 ($startJoint+"FKPin3");
+parent -r -s ($startJoint+"FKPinShape3") ($startJoint+"FK3");
+delete ($startJoint+"FKPin3");
+
+//parent the FK chain under the root
+parent ($startJoint+"FK1") ($name+"_Root");
+
+//place the IKshoulders under the last FK joint, but first give it a parent node
+group -em -n ($startJoint+"_ShouldersParent");
+$pos = `xform -q -ws -rp ($startJoint+"_Shoulders")`;
+move -a -ws -rpr $pos[0] $pos[1] $pos[2] ($startJoint+"_ShouldersParent");
+makeIdentity -apply true -t 1 -r 1 -s 1 ($startJoint+"_ShouldersParent");
+parent ($startJoint+"_Shoulders") ($startJoint+"_ShouldersParent");
+parent ($startJoint+"_ShouldersParent")  ($startJoint+"FK3");
+
+//group under the world
+if($world != "") parent ($name+"_Root") $world;
+
+//create the spine rig primitive
+
+//create a spine primitive node with info about each control
+string $nodes[] = `ls -typ script`;
+for($node in $nodes)
+{
+	if( startsWith($node,($name+"_Prim_")) ) $cnt++;
+}
+createNode script -n ($name+"_Prim_"+$cnt);
+
+addAttr -ln name -dt "string";
+setAttr -type "string" ($name+"_Prim_"+$cnt+".name") $name;
+setAttr -l true ($name+"_Prim_"+$cnt+".name");
+
+addAttr -ln root -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($name+"_Root.message") ($name+"_Prim_"+$cnt+".root");
+
+addAttr -ln start -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($startJoint+".message") ($name+"_Prim_"+$cnt+".start");
+
+addAttr -ln end -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($endJoint+".message") ($name+"_Prim_"+$cnt+".end");
+
+addAttr -ln shoulderCntrl -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($startJoint+"_Shoulders.message") ($name+"_Prim_"+$cnt+".shoulderCntrl");
+
+addAttr -ln hipsCntrl -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($startJoint+"_Hips.message") ($name+"_Prim_"+$cnt+".hipsCntrl");
+
+addAttr -ln ($startJoint+"FK1") -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($startJoint+"FK1.message") ($name+"_Prim_"+$cnt+"."+$startJoint+"FK1");
+
+addAttr -ln ($startJoint+"FK2") -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($startJoint+"FK2.message") ($name+"_Prim_"+$cnt+"."+$startJoint+"FK2");
+
+addAttr -ln ($startJoint+"FK3") -at "message" ($name+"_Prim_"+$cnt);
+connectAttr -f ($startJoint+"FK3.message") ($name+"_Prim_"+$cnt+"."+$startJoint+"FK3");
+
+//locking and hiding
+
+JTDlockAttrs(($startJoint+"_C1"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_C1"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_C2"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_C2"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_C3"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_C3"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_IKcurve"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_IKcurve"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_splineIK"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_splineIK"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_EE"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_EE"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($name+"_Root"), {0}, {0}, {1}, 1);
+JTDhideAttrs(($name+"_Root"), {0}, {0}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_Hips"), {0}, {0}, {1}, 1);
+JTDhideAttrs(($startJoint+"_Hips"), {0}, {0}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_Mid"), {0}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_Mid"), {0}, {1}, {1}, 0);
+
+JTDlockAttrs(($startJoint+"_Mid_Parent"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_Mid_Parent"), {1}, {1}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"_Shoulders"), {0}, {0}, {1}, 1);
+JTDhideAttrs(($startJoint+"_Shoulders"), {0}, {0}, {1}, 1);
+
+JTDlockAttrs(($startJoint+"FK1"), {1}, {0}, {1}, 1);
+JTDhideAttrs(($startJoint+"FK1"), {1}, {0}, {1}, 1);
+setAttr -k false -channelBox false ($startJoint+"FK1.radi");
+
+JTDlockAttrs(($startJoint+"FK2"), {1}, {0}, {1}, 1);
+JTDhideAttrs(($startJoint+"FK2"), {1}, {0}, {1}, 1);
+setAttr -k false -channelBox false ($startJoint+"FK2.radi");
+
+JTDlockAttrs(($startJoint+"FK3"), {1}, {0}, {1}, 1);
+JTDhideAttrs(($startJoint+"FK3"), {1}, {0}, {1}, 1);
+setAttr -k false -channelBox false ($startJoint+"FK3.radi");
+
+JTDlockAttrs(($startJoint+"_ShouldersParent"), {1}, {1}, {1}, 1);
+JTDhideAttrs(($startJoint+"_ShouldersParent"), {1}, {1}, {1}, 1);
+
+JTDconnectTo($origName);
+return ($name+"_Prim_"+$cnt);
+}
+
