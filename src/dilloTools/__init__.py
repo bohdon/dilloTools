@@ -28,7 +28,7 @@
 
 
 import logging, os
-import dilloTools.userScriptPaths
+import dilloTools.userPaths
 import dilloTools.tools as tools
 from pymel.core import mel
 
@@ -97,7 +97,7 @@ def deleteShelf():
 
 
 #extension of userSetup, dilloTools must be imported during maya startup
-dilloTools.userScriptPaths.add([__SCRIPTS_DIR__])
+dilloTools.userPaths.addScript([__SCRIPTS_DIR__])
 if os.environ.has_key('MAYA_PLUG_IN_PATH'):
         os.environ['MAYA_PLUG_IN_PATH'] += ';{0}'.format(__PLUGIN_DIR__)
 mel.eval("source boRightClickManager")
