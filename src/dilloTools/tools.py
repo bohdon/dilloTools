@@ -34,7 +34,7 @@ def addAllTools(d):
     d.addCat('Animation', color=[101, 31, 35], colorDepth=255)
     d.addMelTool('Grease Pencil', 'js_greasePencil_4;', 'greasePencil.png')
     d.addMelTool('Perfect Arc', 'perfectArc;', 'perfectArc.png')
-    d.addMelTool('Pose Library', 'source poseLib_0452.mel; poseLib;', 'poseLibrary.png')
+    d.addMelTool('Pose Library', 'source poseLib_0456.mel; poseLib;', 'poseLibrary.png')
     d.addMelTool('Retimer', 'source retimingTool_090c.mel; retimingTool;', 'retimer.png')
     d.addMelTool('abx Picker', 'abxPicker;', 'abxPicker.png')
     d.addMelTool('boSmear', 'source boSmear; boSmear;', 'boSmear.png')

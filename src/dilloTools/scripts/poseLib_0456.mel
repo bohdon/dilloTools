@@ -30,7 +30,7 @@ proc poseLibInitializeVariables()
 	global int $poseLibUseTexturesForIconPreview;// Should we display textures when capturing an icon.
 	global string $poseLibIconFormat = "";		// The image format used for the icons.
 	//global string $poseLibCancelIsolateCmd;
-	$poseLibVersion = "4.5.2";
+	$poseLibVersion = "4.5.6";
 	$poseLibCurrentProject = `workspace -q -fn`;
 	$poseLibCharacterList = {"default"};
 	$poseLibCategoryList =	{"default"};
@@ -104,14 +104,19 @@ global proc poseLibSavePrefs()
 	// Store all the option choices in option variables.
 	optionVar -stringValue poseLibDefaultPathStatus $poseLibBasePath;
 	optionVar -stringValue poseLibTextEditorStatus $poseLibTextEditor;
-	optionVar -intValue useCurrentCharacterStatus `checkBox -q -v useCurrentCharacterCB`;
-	optionVar -intValue useCustomNamespaceStatus `checkBox -q -v useCustomNamespaceCB`;
+	//optionVar -intValue useCurrentCharacterStatus `checkBox -q -v useSelectionNamespaceCB`;
+	//optionVar -intValue useCustomNamespaceStatus `checkBox -q -v useCustomNamespaceCB`;
+	if (`checkBox -ex forceExactNamespaceCB`)
+		optionVar -intValue forceExactNamespaceStatus `checkBox -q -v forceExactNamespaceCB`;
 	optionVar -stringValue namespaceTextFieldStatus `textField -q -tx namespaceTextFieldTF`;
 	optionVar -stringValue characterChoiceStatus `optionMenu -q -v characterChoiceOM`;
 	optionVar -stringValue categoryChoiceStatus `optionMenu -q -v categoryChoiceOM`;
 	optionVar -intValue iconsSizeWidthStatus $poseLibIconsSize[0];
 	optionVar -intValue iconsSizeHeightStatus $poseLibIconsSize[1];
-	
+
+	if (`radioCollection -ex namespaceChoiceRC`)
+		optionVar -stringValue namespaceChoiceStatus `radioCollection -q -sl namespaceChoiceRC`;
+
 	// We save the color as a string, but we change them to float[] when we recall them.
 	optionVar -stringValue iconsBackgroundColorStatus ($poseLibIconsBGColor[0] + " " + $poseLibIconsBGColor[1] + " " + $poseLibIconsBGColor[2]);
 	optionVar -stringValue captureCameraBackgroundColorStatus ($poseLibCaptureCameraBGColor[0] + " " + $poseLibCaptureCameraBGColor[1] + " " + $poseLibCaptureCameraBGColor[2]);
@@ -128,9 +133,10 @@ global proc poseLibSavePrefs()
 
 	// Index business ------------------------------------------------------------
 	// what we need to do is to embed the poses index order in the pose files
-	
+
 	// Get the list of poses currently displayed and their index.
-	string $posesUINames[] = `flowLayout -q -ca plPosesSL`;
+	string $posesUINames[] = `shelfLayout -q -ca plPosesSL`;
+	//string $posesUINames[] = `flowLayout -q -ca plPosesSL`;
 	string $poseNames[] = {};
 	for ($i=0;$i<`size $posesUINames`;$i++)
 		{
@@ -603,7 +609,7 @@ global proc poseLibDoCreateNewPose()
 		{
 		// Get the list of attributes to save.
 		select -r $selection[$i];
-		$theAttributes = `listAttr -k -s`;//print ($selection[$i] + "\n");
+		$theAttributes = `listAttr -k -m -s`;//print ($selection[$i] + "\n");
 
 		// Get the short name of the control.
 		string $selection[] = `ls -l -sl`;
@@ -619,8 +625,12 @@ global proc poseLibDoCreateNewPose()
 			{
 			// Write down the lines in the pose file.
 			fprint $fileId ( "\n" + $controlName + " envelope " + `blendShape -q -envelope` );
-			string $listOfTargets[] = `aliasAttr -q $selection[0]`;
-			fprint $fileId ( "\n" + $controlName + " " + $listOfTargets[0] + " " + (`getAttr ($selection[0] + "." + $listOfTargets[0])`) );
+			string $listOfTargets[] = `listAttr -k -m $selection[0]`; //print "\n$listOfTargets: \n"; print $listOfTargets;
+
+			for ($target in $listOfTargets)
+				{
+				fprint $fileId ( "\n" + $controlName + " " + $target + " " + (`getAttr ($selection[0] + "." + $target)`) );
+				}
 			}
 
 		// Are we dealing with a character set?
@@ -710,10 +720,10 @@ global proc poseLibRenamePose(int $controlNumber)
 	string $poseNameTmp = `shelfButton -q -l ("poseButton_" + $controlNumber + "_")`;
 	string $poseName = `strip $poseNameTmp`; //print ("\n$poseName=" + $poseName );
 
-	window -tlb off -rtf on -w 300 -h 85 -title "Rename Pose" poseLibRenamePoseWindow;
+	window -tlb off -rtf on -w 30 -h 30 -title "Rename Pose" poseLibRenamePoseWindow;
 		columnLayout -adj true;
 			textFieldGrp -cw2 50 150 -l "Name" -cc ("poseLibDoRenamePose ( \"" + $poseName + "\" )") -tx $poseName setNameField;
-			button -w 100 -l "Cancel" -al "center" -c "deleteUI poseLibRenamePoseWindow";
+			button -w 100 -l "Close" -al "center" -c "deleteUI poseLibRenamePoseWindow";
 
 	if ( $poseName != "" )
 		{
@@ -761,7 +771,7 @@ global proc poseLibDoRenamePose(string $nameTmp)
 		print ( "poseLib: Renamed pose \"" + $nameTmp + "\" to \"" + $newName + "\"\n" );
 		}
 
-	deleteUI poseLibRenamePoseWindow;
+	//deleteUI poseLibRenamePoseWindow;
 	}
 
 global proc poseLibMoveCopyUpdateMenu(string $defaultPathTmp)
@@ -963,7 +973,7 @@ global proc poseLibReplacePose(int $controlNumber)
 			{
 			// Get the list of attributes to save.
 			select -r $selection[$i];
-			$theAttributes = `listAttr -k -s`;//print ($selection[$i] + "\n");
+			$theAttributes = `listAttr -k -m -s`;//print ($selection[$i] + "\n");
 
 			// Get the short name of the control.
 			string $selection[] = `ls -l -sl`;
@@ -985,8 +995,12 @@ global proc poseLibReplacePose(int $controlNumber)
 				{
 				// Write down the lines in the pose file.
 				fprint $fileId ( "\n" + $controlName + " envelope " + `blendShape -q -envelope` );
-				string $listOfTargets[] = `aliasAttr -q $selection[0]`;
-				fprint $fileId ( "\n" + $controlName + " " + $listOfTargets[0] + " " + (`getAttr ($selection[0] + "." + $listOfTargets[0])`) );
+				string $listOfTargets[] = `listAttr -k -m $selection[0]`;
+
+				for ($target in $listOfTargets)
+					{
+					fprint $fileId ( "\n" + $controlName + " " + $target + " " + (`getAttr ($selection[0] + "." + $target)`) );
+					}
 				}
 
 			else
@@ -1023,6 +1037,7 @@ global proc poseLibSelectPoseControls(int $controlNumber)
 	string $categoryName = `optionMenu -q -v categoryChoiceOM`;
 	string $actualControlName[] = {};
 	string $controlsToSelect[] = {};
+	string $sel[] = `ls -sl`;
 
 	string $poseNameTmp = `shelfButton -q -l ("poseButton_" + $controlNumber + "_")`;
 	string $poseName = `strip $poseNameTmp`; //print ("\n$poseName=" + $poseName );
@@ -1040,6 +1055,35 @@ global proc poseLibSelectPoseControls(int $controlNumber)
 	string $consTmp = "";
 	string $controlsToSelect[] = {};
 	string $array[] = {};
+
+	// Get the namespace of the current selection (based on the first object selected).
+	string $selectionNamespace = "";
+	$tmp = `match "[^:]*$"  $sel[0]`;
+	$selectionNamespace = `substitute $tmp $sel[0] ""`;//print ("\n$selectionNamespace = " + $selectionNamespace);
+
+	// Get the namespace of the current selection (based on the first object selected).
+	string $bufferTmp[];
+	int $numTokens = `tokenize $sel[0] ":" $bufferTmp`; //print ($buffer[`size $buffer`-1]);
+
+	if ( `size $bufferTmp` > 1 && `size $bufferTmp` < 3)
+		$selectionNamespace = $bufferTmp[0];
+	else if ( `size $bufferTmp` >= 3 )
+		$selectionNamespace = $bufferTmp[0] + ":" + $bufferTmp[1];
+
+	if ($selectionNamespace != "")
+		{
+		if (!endsWith($selectionNamespace, ":"))
+			$selectionNamespace = $selectionNamespace + ":";
+		}
+	//print ("\n$selectionNamespace = " + $selectionNamespace);
+
+	string $customNamespace = `textField -q -text namespaceTextFieldTF`;
+	if ($customNamespace != "")
+		{
+		if (!endsWith($customNamespace, ":"))
+			$customNamespace = $customNamespace + ":";
+		}
+	//print ("\n$customNamespace = " + $customNamespace);
 
 	while ( size( $controlName ) > 0 )
 		{
@@ -1063,13 +1107,24 @@ global proc poseLibSelectPoseControls(int $controlNumber)
 
 	for ($i=0;$i<`size $controlsToSelect`;$i++)
 		{
-		// If we're in ref mode, add the namespace to the control name.
-		if ( `checkBox -q -v useCurrentCharacterCB` )
-			$namespace = $characterName + ":"; //print ($namespace + "\n");
-		else if ( `checkBox -q -v useCustomNamespaceCB` )
-			$namespace = `textField -q -tx namespaceTextFieldTF` + ":";
+		string $buffer[];
+		int $numTokens = `tokenize $controlsToSelect[$i] ":" $buffer`; //print ($buffer[`size $buffer`-1]);
 
-		$controlsToSelect[$i] = $namespace + $controlsToSelect[$i];
+		// If we're in ref mode, add the namespace to the control name.
+		if ( `radioCollection -q -sl namespaceChoiceRC` == "useSelectionNamespaceRB" )
+			{
+			$namespace = $selectionNamespace; //print ($namespace + "\n");
+
+			if (`checkBox -q -v forceExactNamespaceCB`)
+				$controlsToSelect[$i] = $controlsToSelect[$i];
+			else if ( $sel[0] != "" )
+				$controlsToSelect[$i] = $namespace + $buffer[(size ($buffer)-1)];
+			}
+		else if ( `radioCollection -q -sl namespaceChoiceRC` == "useCustomNamespaceRB" )
+			{
+			$namespace = $customNamespace;
+			$controlsToSelect[$i] = $namespace + $buffer[(size ($buffer)-1)];
+			}
 
 		if ( `objExists $controlsToSelect[$i]` )
 			{
@@ -1077,6 +1132,7 @@ global proc poseLibSelectPoseControls(int $controlNumber)
 			$didSomething = 1; //print ("\n$controlsToSelect[$i]=" + $controlsToSelect[$i] );
 			}
 		}
+	//print "\n\n$controlsToSelect:\n"; print $controlsToSelect;
 
 	if ( $didSomething == 0 )
 		warning " ---> Could not find the controls! (check reference mode)\n";
@@ -1449,24 +1505,38 @@ global proc poseLibDoApplyPose(string $poseName, int $altKeyDown)
 	// Find out what is selected.
 	string $sel[] = `ls -sl`;
 	string $revisedSelection[] = {};
+	$revisedSelection = $sel;
+	//print "\n$revisedSelection = "; print $revisedSelection; print "\n";
 
-	// Build the revised selection.
-	// For each selected object:
-	for ( $o in $sel )
+	// Get the namespace of the current selection (based on the first object selected).
+	string $selectionNamespace = "";
+	$tmp = `match "[^:]*$"  $sel[0]`;
+	$selectionNamespace = `substitute $tmp $sel[0] ""`;//print ("\n$selectionNamespace = " + $selectionNamespace);
+
+	// Get the namespace of the current selection (based on the first object selected).
+	string $bufferTmp[];
+	int $numTokens = `tokenize $sel[0] ":" $bufferTmp`; //print ($buffer[`size $buffer`-1]);
+
+	if ( `size $bufferTmp` > 1 && `size $bufferTmp` < 3)
+		$selectionNamespace = $bufferTmp[0];
+	else if ( `size $bufferTmp` >= 3 )
+		$selectionNamespace = $bufferTmp[0] + ":" + $bufferTmp[1];
+
+	if ($selectionNamespace != "")
 		{
-		// Find out if it's an attribute.
-		string $buffer[];
-		int $numTokens = `tokenize $o "." $buffer`; //print ($buffer[`size $buffer`-1]);
-
-		// If not (only the control is selected), then add a ".everything" dummy attribute.
-		if ( `size $buffer` < 2 )
-			{
-			$revisedSelection[`size $revisedSelection`] = ($o + ".everythingDummy");
-			}
-		else
-			$revisedSelection[`size $revisedSelection`] = $o;
+		if (!endsWith($selectionNamespace, ":"))
+			$selectionNamespace = $selectionNamespace + ":";
 		}
-	//print "\n$revisedSelection = "; print $revisedSelection;
+	//print ("\n$selectionNamespace = " + $selectionNamespace);
+	//print ("\n$controlName = " + $controlName);
+
+	string $customNamespace = `textField -q -text namespaceTextFieldTF`;
+	if ($customNamespace != "")
+		{
+		if (!endsWith($customNamespace, ":"))
+			$customNamespace = $customNamespace + ":";
+		}
+	//print ("\n$customNamespace = " + $customNamespace);
 
 	// Parse the pose file.
 	if ( `filetest -r $poseFilePath` )
@@ -1487,52 +1557,50 @@ global proc poseLibDoApplyPose(string $poseName, int $altKeyDown)
 			string $attributeName = `fgetword $fileId`; //print ($attributeName + "\n");
 			string $attributeValue = `fgetword $fileId`; //print ($attributeValue + "\n");
 			string $newControlName = "";
-			string $namespace = "";
-
-			// Get the namespace of the current selection (based on the first object selected).
-			string $bufferTmp[];
-			int $numTokens = `tokenize $sel[0] ":" $bufferTmp`; //print ($buffer[`size $buffer`-1]);
-
-			if ( `size $bufferTmp` > 1 )
-				$namespace = $bufferTmp[0];
 
 			// Check for a namespace in the pose control name.
 			string $buffer[];
 			int $numTokens = `tokenize $controlName ":" $buffer`; //print ($buffer[`size $buffer`-1]);
 
-			// If there's no namespace in the pose control name...
-			if ( `size $buffer` < 2 )
+			// If we should use the selection namespace...
+			if ( `radioCollection -q -sl namespaceChoiceRC` == "useSelectionNamespaceRB" )
 				{
-				// Should we override the pose namespace with the current selection namespace?
-				if ( `checkBox -q -v useCurrentCharacterCB` && $sel[0] != "" )
-					$newControlName = $namespace + ":" + $controlName;
+				// If there is a selection, override the pose namespace with the current selection namespace:
+				if ($sel[0] != "")
+					{
+					// If we should only enforce the pose verbatim.
+					if (`checkBox -q -v forceExactNamespaceCB` && `objExists $controlName`)
+						$newControlName = $controlName;
+					else
+						{
+						// If the selection doesn't have a namespace:
+						if ($selectionNamespace == "")
+							$newControlName = $buffer[(size ($buffer)-1)];
+						// If the selection does have a namespace, then we replace the one from the pose control:
+						else
+							$newControlName = $selectionNamespace + $buffer[(size ($buffer)-1)];
+						}
+					}
 				else
-					//$newControlName = $characterName + ":" + $controlName;
 					$newControlName = $controlName;
 				//print ("\n$newControlName (after namespace operation) = " + $newControlName);
 				}
-			// ... If there's already a namespace, should we override it with the current selection namespace?
-			else if ( `checkBox -q -v useCurrentCharacterCB` && $sel[0] != "" )
+			// ... If we should use a custom namespace:
+			else if ( `radioCollection -q -sl namespaceChoiceRC` == "useCustomNamespaceRB" )
 				{
-				// Replace the pose's control namespace by the one in the current selection.
-				string $bufferTmp[];
-				int $numTokens = `tokenize $controlName ":" $bufferTmp`; //print ($buffer[`size $buffer`-1]);
-				if ( $namespace == "" )
-					{
-					$newControlName = $bufferTmp[1];// print ($newControlName);
-					}
+				// Replace the pose's control namespace by the custom one.
+				if ($customNamespace != "")
+					$newControlName = $customNamespace + $buffer[(size ($buffer)-1)];
 				else
-					{
-					$newControlName = $namespace + ":" + $bufferTmp[1];// print ($newControlName);
-					}
+					$newControlName = $buffer[(size ($buffer)-1)];
 				}
-			else
-				$newControlName = $controlName;
-			//print ("\n$newControlName + $attribute = " + $newControlName + "." + $attributeName);
+			//print ("\n$newControlName plus $attributeName (after namespace operation) = " + $newControlName + "." + $attributeName + "\n");
 
 			// If the pose control name and attribute are part of the revised selection or if there is a ($controlName + ".everything") in the revised selection then add the info to the command.
 			// Or if there's nothing selected, check if the pose control exists. If it does, then add the info to the command.
-			if ( `objExists ($newControlName + "." + $attributeName)` && (stringArrayContains(($newControlName + "." + $attributeName), $revisedSelection) || stringArrayContains(($newControlName + ".everythingDummy"), $revisedSelection)) || ( $sel[0] == ""  && `objExists ($newControlName + "." + $attributeName)` ) )
+			if ( `objExists ($newControlName + "." + $attributeName)`
+				&& (stringArrayContains(($newControlName + "." + $attributeName), $revisedSelection) || stringArrayContains(($newControlName), $revisedSelection))
+				|| ($sel[0] == ""  && `objExists ($newControlName + "." + $attributeName)`) )
 				{
 				if ( `getAttr -se ($newControlName + "." + $attributeName)` )
 					{
@@ -1570,7 +1638,6 @@ global proc poseLibDoApplyPose(string $poseName, int $altKeyDown)
 							string $gPassOnVal = $currValPlusModVal; // get the modified value into a string form
 							$attributeValue = $gPassOnVal; //  pass on the results
 							}
-
 						}
 
 					$poseLibApplyPoseCommand = $poseLibApplyPoseCommand + " setAttr " + $newControlName + "." + $attributeName + " " + $attributeValue + "; $didSomething = 1;";
@@ -2360,9 +2427,10 @@ global proc poseLibRefreshPoseList(string $categoryName)
 	// 3- Clear previous poses icons.
 	// ------------------------------
 	frameLayout -e -m off plPosesFL;
-	//shelfLayout -e -m off -st "iconAndTextVertical" -h 200 -cw ($poseLibIconsSize[0] + 5) -ch ($poseLibIconsSize[1] + 23) plPosesSL;
-	flowLayout -e -m off -h 200 plPosesSL;
-	string $iconsToDelete[] = `flowLayout -q -ca plPosesSL`;
+	shelfLayout -e -m off -st "iconAndTextVertical" -h 200 -cw ($poseLibIconsSize[0] + 5) -ch ($poseLibIconsSize[1] + 23) plPosesSL;
+	//flowLayout -e -m off -h 200 plPosesSL;
+	string $iconsToDelete[] = `shelfLayout -q -ca plPosesSL`;
+	//string $iconsToDelete[] = `flowLayout -q -ca plPosesSL`;
 
 	for ($icon in $iconsToDelete)
 		deleteUI $icon;
@@ -2418,18 +2486,19 @@ global proc poseLibRefreshPoseList(string $categoryName)
 		$listOfPosesByIndex[$listOfIndexes[$i]] = $listOfPoses[$i];
 		//print ("\n$listOfPosesByIndex[" + $listOfIndexes[$i] + "] = " + $listOfPosesByIndex[$listOfIndexes[$i]]);
 		}
-	//$finalListOfPoses = stringArrayRemoveExact({""}, $listOfPosesByIndex);
+	$finalListOfPoses = stringArrayRemoveExact({""}, $listOfPosesByIndex);
 	//print "\n\n$listOfPoses = "; print $listOfPoses;
 	//print "\n\n$listOfPosesByIndex = "; print $listOfPosesByIndex; print "<--- end!";
+	//print "\n\n$finalListOfPoses = "; print $finalListOfPoses;
 
 	// Now add the poses that didn't have an index
 
 	// ------------------------------
 	// 5- Create new poses buttons.
 	// ------------------------------
-	for ($i=0;$i<`size $listOfPoses`;$i++)
+	for ($i=0;$i<`size $finalListOfPoses`;$i++)
 		{
-		if ( $listOfPoses[$i] != "" )
+		if ( $finalListOfPoses[$i] != "" )
 			{
 			shelfButton
 				//-style "iconOnly"
@@ -2438,13 +2507,13 @@ global proc poseLibRefreshPoseList(string $categoryName)
 				-bgc $poseLibIconsBGColor[0] $poseLibIconsBGColor[1] $poseLibIconsBGColor[2]
 				-parent plPosesSL
 				//-iol $listOfPoses[$i]
-				-label $listOfPoses[$i]
+				-label $finalListOfPoses[$i]
 				//-fn "smallPlainLabelFont"
 				-w ($poseLibIconsSize[0]+4)
 				-h ($poseLibIconsSize[1]+24)
 				-c ("poseLibApplyPose (" + $realNumber + ")")
-				-dragCallback howToDragCB
-				-dropCallback howToDropCB
+				//-dragCallback howToDragCB
+				//-dropCallback howToDropCB
 				poseButton[$realNumber];
 
 			//Add a popup to each shelfButton so we can edit its parameters, or delete it.
@@ -2474,21 +2543,21 @@ global proc poseLibRefreshPoseList(string $categoryName)
 			//print ($iconsPath + $listOfPoses[$i] + ".bmp\n");
 
 			// Assign the icon if it exists.
-			if ( `filetest -r ($iconsPath + $listOfPoses[$i] + ".xpm")` && !`filetest -r ($iconsPath + $listOfPoses[$i] + ".bmp")`)
+			if ( `filetest -r ($iconsPath + $finalListOfPoses[$i] + ".xpm")` && !`filetest -r ($iconsPath + $finalListOfPoses[$i] + ".bmp")`)
 				{
 				//print ("\nIcon file for \"" + $listOfPoses[$i] + "\" = " + $iconsPath + $listOfPoses[$i] + ".xpm");
-				shelfButton -e -image1 ($iconsPath + $listOfPoses[$i] + ".xpm") ("poseButton_" + $realNumber + "_");
+				shelfButton -e -image1 ($iconsPath + $finalListOfPoses[$i] + ".xpm") ("poseButton_" + $realNumber + "_");
 				}
-			else if ( `filetest -r ($iconsPath + $listOfPoses[$i] + ".bmp")` )
+			else if ( `filetest -r ($iconsPath + $finalListOfPoses[$i] + ".bmp")` )
 				{
 				//print ("\nIcon file for \"" + $listOfPoses[$i] + "\" = " + $iconsPath + $listOfPoses[$i] + ".bmp");
-				shelfButton -e -image1 ($iconsPath + $listOfPoses[$i] + ".bmp") ("poseButton_" + $realNumber + "_");
+				shelfButton -e -image1 ($iconsPath + $finalListOfPoses[$i] + ".bmp") ("poseButton_" + $realNumber + "_");
 				}
 				// If there's no icon for the pose, just display a red background.
 			else
 				{
 				shelfButton -e -bgc .9 .2 0 ("poseButton_" + $realNumber + "_");
-				print ("\n-> Did not find an icon file (either .xpm or .bmp) for \"" + $listOfPoses[$i] + "\"");
+				print ("\n-> Did not find an icon file (either .xpm or .bmp) for \"" + $finalListOfPoses[$i] + "\"");
 				}
 
 			$realNumber++;
@@ -2499,9 +2568,10 @@ global proc poseLibRefreshPoseList(string $categoryName)
 	// 6- Update frame layouts.
 	// --------------------------
 	frameLayout -e -m on plPosesFL;
-	flowLayout -e -m on plPosesSL;
+	shelfLayout -e -m on plPosesSL;
+	//flowLayout -e -m on plPosesSL;
 	int $tmp = `frameLayout -q -w plPosesFL` / 2.5;
-	frameLayout -e -li 0 /*-lw 75*/ -l ("Poses: " + $realNumber) -fn "smallFixedWidthFont" plPosesFL;
+	frameLayout -e -li $tmp /*-lw 75*/ -l ("Poses: " + $realNumber) -fn "smallFixedWidthFont" plPosesFL;
 	}
 
 global proc poseLib()
@@ -2583,7 +2653,8 @@ global proc poseLib()
 	// --------------
 	string $form = `formLayout -numberOfDivisions 100 plMainFL`;
 	string $posesFrameLayout = `frameLayout -m off -mw 2 -mh 2 -p plMainFL -l "Poses: " -fn "smallFixedWidthFont" -collapsable false -borderStyle "etchedOut" plPosesFL`;
-	string $posesShelfLayout = `flowLayout -wr true -p $posesFrameLayout -h 200 plPosesSL`;
+	string $posesShelfLayout = `shelfLayout -p $posesFrameLayout -h 200 plPosesSL`;
+	//string $posesShelfLayout = `flowLayout -wr true -p $posesFrameLayout -h 200 plPosesSL`;
 	string $optionsFrameLayout = `frameLayout -lv off -p plMainFL -collapsable false -borderVisible off plOptionsFL`;
 	string $optionsColumn = `columnLayout -p $optionsFrameLayout -adjustableColumn true plOptionsColumn`;
 
@@ -2592,14 +2663,15 @@ global proc poseLib()
 	// ---------------
 	frameLayout -mw 5 -bv on -lv off -collapsable false -borderStyle "etchedOut" -w 190 -p plOptionsColumn namespaceFrameLayoutFL;
 		columnLayout -adjustableColumn true -p namespaceFrameLayoutFL;
-			separator -st none -h 4 -w 150;
-			checkBox -al "left" -l "Use Current Namespace" -en on -value 0 -onc "checkBox -e -v 0 -en off useCustomNamespaceCB; textField -e -en off namespaceTextFieldTF" -ofc "checkBox -e -en on useCustomNamespaceCB" useCurrentCharacterCB;
-			checkBox -al "left" -l "Use Custom Namespace" -en on -value 0 -onc "textField -e -en on namespaceTextFieldTF" -ofc "textField -e -en off namespaceTextFieldTF" useCustomNamespaceCB;
+			//separator -st none -h 4 -w 150;
+			radioCollection namespaceChoiceRC;
+				radioButton -label "Use Selection Namespace" -onc "textField -e -en off namespaceTextFieldTF; checkBox -e -en on forceExactNamespaceCB" -ofc "textField -e -en on namespaceTextFieldTF; checkBox -e -en off forceExactNamespaceCB" useSelectionNamespaceRB;
+				radioButton -label "Use Custom Namespace" useCustomNamespaceRB;
 			textField -w 150 -en off -text "myNamespace" namespaceTextFieldTF;
-
+			checkBox -l "Force Exact Namespace Only" -ann "Force the exclusive use of the namespace saved within the pose.\n\nIf the current selection is not strictly part of the pose, then the pose won't be applied.\n(Only useful when several characters are saved within a single pose)" -v 0 forceExactNamespaceCB;
+			radioCollection -e -sl useSelectionNamespaceRB namespaceChoiceRC;
 			//floatFieldGrp -cw2 110 66 -h ($h-2) -adj off -label "Translate Scale Filter:" -v1 1.0	plTranslateScaleFFG;
-
-			separator -st none -h 4 -w 150;
+			separator -st none -h 2 -w 150;
 		setParent ..;
 	setParent ..;
 
@@ -2614,13 +2686,14 @@ global proc poseLib()
 					menuItem -label $c;
 					}
 
-			separator -st none -h 4;
+			separator -st none -h 2;
 
-			optionMenu -h ($h+2) -label "Category: " -cc "poseLibRefreshPoseList(\"\")" categoryChoiceOM;
+			optionMenu -h ($h+2) -label "Category:  " -cc "poseLibRefreshPoseList(\"\")" categoryChoiceOM;
 				for ($i=0;$i<`size $poseLibCategoryList`;$i++)
 					{
 					menuItem -label $poseLibCategoryList[$i] -p categoryChoiceOM categoryMI[$i];
 					}
+			separator -st none -h 2;
 		setParent ..;
 	setParent ..;
 
@@ -2659,7 +2732,7 @@ global proc poseLib()
 			separator -st none -h 2;
 
 			button -label "Save Preferences" -h $h //-bgc .85 .85 .85
-				-ann "Create a new pose based on the current selection" -c "poseLibSavePrefs" savePrefsButton;
+				-ann "Save poseLib preferences" -c "poseLibSavePrefs" savePrefsButton;
 
 			separator -st none -h 4;
 
@@ -2689,7 +2762,6 @@ global proc poseLib()
 		-attachForm     $optionsFrameLayout "right"  2
 	$form;
 
-
 	// Finally show the window.
 	showWindow poseLibWindow;
 
@@ -2698,17 +2770,18 @@ global proc poseLib()
 	if ( `optionVar -exists characterChoiceStatus` )
 		{
 		string $characterTmp = `optionVar -q characterChoiceStatus`;
-		catchQuiet ( `optionMenu -e -v $characterTmp characterChoiceOM` );
+		if ( stringArrayContains($characterTmp, $poseLibCharacterList) )
+			catchQuiet ( `optionMenu -e -v $characterTmp characterChoiceOM` );
 		}
 
 	if ( `optionVar -exists categoryChoiceStatus` )
 		{
 		string $categoryTmp = `optionVar -q categoryChoiceStatus`;
 		poseLibRefreshPoseList($categoryTmp);
-		catchQuiet( `optionMenu -e -v $categoryTmp categoryChoiceOM` );
+		if ( stringArrayContains($categoryTmp, $poseLibCategoryList) )
+			catchQuiet( `optionMenu -e -v $categoryTmp categoryChoiceOM` );
 		}
 	// ---------------------------------------------------------------------
-
 
 	// If we're on Linux, the first frame appears by default with 0 height!!!
 	if ( `about -os` == "linux" )
@@ -2722,16 +2795,19 @@ global proc poseLib()
 	// ---------------------
 	// Recall preferences.
 	// ---------------------
-	if ( `optionVar -exists useCurrentCharacterStatus` )
+	if ( `optionVar -exists namespaceChoiceStatus` )
 		{
-		checkBox -e -v `optionVar -q useCurrentCharacterStatus` useCurrentCharacterCB;
-		checkBox -e -en (!`optionVar -q useCurrentCharacterStatus`) useCustomNamespaceCB;
+		radioCollection -e -sl `optionVar -q namespaceChoiceStatus` namespaceChoiceRC;
 		}
 
-	if ( `optionVar -exists useCustomNamespaceStatus` )
+	if ( `optionVar -exists namespaceTextFieldStatus` )
 		{
-		checkBox -e -v `optionVar -q useCustomNamespaceStatus` useCustomNamespaceCB;
-		textField -e -en `checkBox -q -v useCustomNamespaceCB` namespaceTextFieldTF;
+		textField -e -tx `optionVar -q namespaceTextFieldStatus` namespaceTextFieldTF;
+		}
+
+	if ( `optionVar -exists forceExactNamespaceStatus` )
+		{
+		checkBox -e -v `optionVar -q forceExactNamespaceStatus` forceExactNamespaceCB;
 		}
 
 	if ( `optionVar -exists pathsBookmarksStatus` )
