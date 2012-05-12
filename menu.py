@@ -19,7 +19,11 @@ def createMenu(tools, p=None):
     passing a menu or window to the p parameter"""
     LOG.debug('Building Menu...')
     if p is None:
-        p = melGlobals['gMainWindow']
+        if '$gMainWindow' in melGlobals.keys():
+            p = melGlobals['gMainWindow']
+        else:
+            LOG.warning('cannot add Dillo Tools menu, gMainWindow not found')
+            return
     
     setParent(p)
     longName = '{0}|{1}'.format(p, __MENU_NAME__)
