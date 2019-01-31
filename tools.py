@@ -6,17 +6,12 @@ def addAllTools(d):
     
     d.clearAllTools()
     d.addCat('Modeling', color=[73, 103, 55], colorDepth=255)
-    d.addMelTool('Mirror Geometry with Crease', 'boMirrorGeometryCrease;', 'mirrorGeometryCrease.png')
     d.addMelTool('Roadkill', 'RoadKill;', 'roadkill.png')
     d.addPyTool('UV Snapshot', 'import boUVSnapshot\nboUVSnapshot.GUI()', 'uvSnapshot.png')
     d.addMelTool('Face Putty', 'facePutty;', 'facePutty.png')
     d.addMelTool('Symmetry Tool', 'source abSymMesh.mel; abSymMesh;', 'abSymmMesh.png')
     d.addMelTool('Blend Taper', 'source blendTaper.mel; blendTaper;', 'blendTaper.png')
-    d.addMelTool('Multi Blend Slider', 'source boBlendShapes; bbsMultiBlendSlider;', 'multiBlendSlider.png')
-    d.addMelTool('Add Inbetweens', 'source boBlendShapes; bbsAddInbetween;', 'addInBetween.png')
-    d.addMelTool('Add Inbetweens - Auto', 'source boBlendShapes; bbsAddInbetweenAuto;', 'addInBetweenAuto.png')
     d.addMelTool('Blendshape Head Rebuilder', 'mdBlendCorrect;', 'blendCorrect.png')
-    d.addMelTool('Blendshape Resurrector', 'source bRes.mel; bRes;', 'blendResurrect.png')
     
     d.addCat('Rigging', color=[75, 115, 145], colorDepth=255)
     d.addMelTool('Triggers', 'source boTriggers; boTriggers;', 'boTriggers.png')
