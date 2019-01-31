@@ -33,8 +33,6 @@ def createMenu(tools, p=None):
     with menu(__MENU_NAME__, l='Dillo Tools', p=p, to=True):
         createMenuTools(tools)
         createGuiShortcuts()
-        menuItem(d=True)
-        menuItem(l='v{0}'.format(dilloTools.getVersion()), en=False)
 
 
 def createMenuTools(tools):

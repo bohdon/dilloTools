@@ -36,7 +36,7 @@ class DilloToolsWindow(object):
     
     def __init__(self):
         self.name = __WIN_NAME__
-        self.title = 'Dillo Tools {0}'.format(dilloTools.getVersion())
+        self.title = 'Dillo Tools'
         self.mainColumn = None
         self.heightBuffer = 0
         self.bgMult = .75
