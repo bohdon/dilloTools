@@ -76,6 +76,5 @@ def deleteShelf():
 #extension of userSetup, dilloTools must be imported during maya startup
 userPaths.addScript(SCRIPTS_DIR)
 userPaths.addPlugin(PLUGIN_DIR)
-mel.eval("source boRightClickManager")
 
 
